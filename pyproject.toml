@@ -51,9 +51,9 @@ pyinfra = [
     'pyinfra>=2.6.1',
 ]
 ansible = [
-    'ansible',
-    'ansible-core',
-    'ansible-runner',
+    'ansible>=10.5.0',
+    'ansible-core>=2.17.5',
+    'ansible-runner>=2.4.0',
 ]
 all = [
     "pydantic-pkgr[pyinfra,ansible]",
