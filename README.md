@@ -1,4 +1,4 @@
-<h1><a href="https://github.com/ArchiveBox/pydantic-pkgr"><code>pydantic-pkgr</code></a> &nbsp; &nbsp; &nbsp; &nbsp; 📦  <small><code>apt</code>&nbsp; <code>brew</code>&nbsp; <code>pip</code>&nbsp; <code>npm</code> &nbsp;₊₊₊</small><br/><sub>Simple Python interfaces for package managers + installed binaries.</sub></h1>
+<h1><a href="https://github.com/ArchiveBox/abx-pkg"><code>abx-pkg</code></a> &nbsp; &nbsp; &nbsp; &nbsp; 📦  <small><code>apt</code>&nbsp; <code>brew</code>&nbsp; <code>pip</code>&nbsp; <code>npm</code> &nbsp;₊₊₊</small><br/><sub>Simple Python interfaces for package managers + installed binaries.</sub></h1>
 <br/>
 
 [![PyPI][pypi-badge]][pypi]
@@ -17,7 +17,7 @@ It's designed for when `requirements.txt` isn't enough, and your app has to dete
 
 
 ```shell
-pip install pydantic-pkgr
+pip install pydantic-pkgr   # will be renamed to abx-pkg soon
 ```
 
 
@@ -34,9 +34,9 @@ pip install pydantic-pkgr
 > This is `BETA` software, the API is mostly stable but there may be minor changes later on.
 
 
-**Source Code**: [https://github.com/ArchiveBox/pydantic-pkgr/](https://github.com/ArchiveBox/pydantic-pkgr/)
+**Source Code**: [https://github.com/ArchiveBox/abx-pkg/](https://github.com/ArchiveBox/abx-pkg/)
 
-**Documentation**: [https://github.com/ArchiveBox/pydantic-pkgr/blob/main/README.md](https://github.com/ArchiveBox/pydantic-pkgr/blob/main/README.md)
+**Documentation**: [https://github.com/ArchiveBox/abx-pkg/blob/main/README.md](https://github.com/ArchiveBox/abx-pkg/blob/main/README.md)
 
 <br/>
 
@@ -118,7 +118,7 @@ print(ffmpeg.model_json_schema())   # ... OpenAPI-ready JSON schema showing all 
 pip install pydantic-pkgr
 ```
 
-### [`BinProvider`](https://github.com/ArchiveBox/pydantic-pkgr/blob/main/pydantic_pkgr/binprovider.py#:~:text=class%20BinProvider)
+### [`BinProvider`](https://github.com/ArchiveBox/abx-pkg/blob/main/pydantic_pkgr/binprovider.py#:~:text=class%20BinProvider)
 
 **Implementations: `EnvProvider`, `AptProvider`, `BrewProvider`, `PipProvider`, `NpmProvider`**
 
@@ -166,7 +166,7 @@ print(django_bin.abspath)             # Path('/usr/lib/python3.10/site-packages/
 print(django_bin.version)             # SemVer('5.0.2')
 ```
 
-### [`Binary`](https://github.com/ArchiveBox/pydantic-pkgr/blob/main/pydantic_pkgr/binary.py#:~:text=class%20Binary)
+### [`Binary`](https://github.com/ArchiveBox/abx-pkg/blob/main/pydantic_pkgr/binary.py#:~:text=class%20Binary)
 
 This type represents a single binary dependency aka a package (e.g. `wget`, `curl`, `ffmpeg`, etc.).  
 It can define one or more `BinProvider`s that it supports, along with overrides to customize the behavior for each.
@@ -255,7 +255,7 @@ print(custom_docker.version)              # SemVer('5.0.2')
 print(custom_docker.is_valid)             # True
 ```
 
-### [`SemVer`](https://github.com/ArchiveBox/pydantic-pkgr/blob/main/pydantic_pkgr/semver.py#:~:text=class%20SemVer)
+### [`SemVer`](https://github.com/ArchiveBox/abx-pkg/blob/main/pydantic_pkgr/semver.py#:~:text=class%20SemVer)
 
 ```python
 from pydantic_pkgr import SemVer
@@ -340,13 +340,13 @@ assert obj.binary.abspath == curl.abspath
 print(obj.binary.abspath)                         #   Path('/usr/local/bin/curl')
 obj.binary.exec(['--version'])                    #   curl 7.81.0 (x86_64-apple-darwin23.0) libcurl/7.81.0 ...
 ```
-*For a full example see our provided [`django_example_project/`](https://github.com/ArchiveBox/pydantic-pkgr/tree/main/django_example_project)...*
+*For a full example see our provided [`django_example_project/`](https://github.com/ArchiveBox/abx-pkg/tree/main/django_example_project)...*
 
 <br/>
 
 ### Django Admin Usage: Display `Binary` objects nicely in the Admin UI
 
-<img height="220" alt="Django Admin binaries list view" src="https://github.com/ArchiveBox/pydantic-pkgr/assets/511499/a9980217-f39e-434e-b266-20cd6feb17c3" align="top"><img height="220" alt="Django Admin binaries detail view" src="https://github.com/ArchiveBox/pydantic-pkgr/assets/511499/d4d9086e-c8f4-4b6e-8ee8-8c8a864715b0" align="top">
+<img height="220" alt="Django Admin binaries list view" src="https://github.com/ArchiveBox/abx-pkg/assets/511499/a9980217-f39e-434e-b266-20cd6feb17c3" align="top"><img height="220" alt="Django Admin binaries detail view" src="https://github.com/ArchiveBox/abx-pkg/assets/511499/d4d9086e-c8f4-4b6e-8ee8-8c8a864715b0" align="top">
 
 ```bash
 pip install pydantic-pkgr django-admin-data-views
@@ -383,7 +383,7 @@ ADMIN_DATA_VIEWS = {
     ],
 }
 ```
-*For a full example see our provided [`django_example_project/`](https://github.com/ArchiveBox/pydantic-pkgr/tree/main/django_example_project)...*
+*For a full example see our provided [`django_example_project/`](https://github.com/ArchiveBox/abx-pkg/tree/main/django_example_project)...*
 
 <details>
 <summary><i>Note: If you override the default site admin, you must register the views manually...</i></summary>
@@ -407,7 +407,7 @@ register_admin_views(custom_admin)
 
 ### ~~Django Admin Usage: JSONFormWidget for editing `BinProvider` and `Binary` data~~
 
-<img src="https://github.com/ArchiveBox/pydantic-pkgr/assets/511499/63705a57-4f62-4dbe-9f3a-0515323d8b5e" width="600px"/>
+<img src="https://github.com/ArchiveBox/abx-pkg/assets/511499/63705a57-4f62-4dbe-9f3a-0515323d8b5e" width="600px"/>
 
 > [!IMPORTANT]
 > This feature is coming soon but is blocked on a few issues being fixed first:  
@@ -437,7 +437,7 @@ admin.site.register(MyModel, MyModelAdmin)
 
 </details>
 
-*For a full example see our provided [`django_example_project/`](https://github.com/ArchiveBox/pydantic-pkgr/tree/main/django_example_project)...*
+*For a full example see our provided [`django_example_project/`](https://github.com/ArchiveBox/abx-pkg/tree/main/django_example_project)...*
 
 <br/>
 
@@ -512,19 +512,19 @@ print(rg.version)                       # SemVer(14, 1, 0)
 - https://github.com/surenkov/django-pydantic-field
 - https://github.com/jordaneremieff/djantic
 
-[coverage-badge]: https://coveralls.io/repos/github/ArchiveBox/pydantic-pkgr/badge.svg?branch=main
-[status-badge]: https://img.shields.io/github/actions/workflow/status/ArchiveBox/pydantic-pkgr/test.yml?branch=main
+[coverage-badge]: https://coveralls.io/repos/github/ArchiveBox/abx-pkg/badge.svg?branch=main
+[status-badge]: https://img.shields.io/github/actions/workflow/status/ArchiveBox/abx-pkg/test.yml?branch=main
 [pypi-badge]: https://img.shields.io/pypi/v/pydantic-pkgr?v=1
-[licence-badge]: https://img.shields.io/github/license/ArchiveBox/pydantic-pkgr?v=1
-[repo-badge]: https://img.shields.io/github/last-commit/ArchiveBox/pydantic-pkgr?v=1
-[issues-badge]: https://img.shields.io/github/issues-raw/ArchiveBox/pydantic-pkgr?v=1
+[licence-badge]: https://img.shields.io/github/license/ArchiveBox/abx-pkg?v=1
+[repo-badge]: https://img.shields.io/github/last-commit/ArchiveBox/abx-pkg?v=1
+[issues-badge]: https://img.shields.io/github/issues-raw/ArchiveBox/abx-pkg?v=1
 [version-badge]: https://img.shields.io/pypi/pyversions/pydantic-pkgr?v=1
 [downloads-badge]: https://img.shields.io/pypi/dm/pydantic-pkgr?v=1
 [django-badge]: https://img.shields.io/pypi/djversions/pydantic-pkgr?v=1
 
-[coverage]: https://coveralls.io/github/ArchiveBox/pydantic-pkgr?branch=main
-[status]: https://github.com/ArchiveBox/pydantic-pkgr/actions/workflows/test.yml
+[coverage]: https://coveralls.io/github/ArchiveBox/abx-pkg?branch=main
+[status]: https://github.com/ArchiveBox/abx-pkg/actions/workflows/test.yml
 [pypi]: https://pypi.org/project/pydantic-pkgr
-[licence]: https://github.com/ArchiveBox/pydantic-pkgr/blob/main/LICENSE
-[repo]: https://github.com/ArchiveBox/pydantic-pkgr/commits/main
-[issues]: https://github.com/ArchiveBox/pydantic-pkgr/issues
+[licence]: https://github.com/ArchiveBox/abx-pkg/blob/main/LICENSE
+[repo]: https://github.com/ArchiveBox/abx-pkg/commits/main
+[issues]: https://github.com/ArchiveBox/abx-pkg/issues
