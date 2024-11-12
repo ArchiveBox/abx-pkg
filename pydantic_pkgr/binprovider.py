@@ -205,9 +205,15 @@ class BinProvider(BaseModel):
     _install_timeout: int = 120
     _version_timeout: int = 10
     _cache: Dict[str, Dict[str, Any]] | None = None
-    _INSTALLER_BIN_ABSPATH: HostBinPath | None = None   # speed optimization only, faster to cache the abspath than to recompute it on every access
+    _INSTALLER_BIN_ABSPATH: HostBinPath | None = None    # speed optimization only, faster to cache the abspath than to recompute it on every access
     _INSTALLER_BINARY: ShallowBinary | None = None       # speed optimization only, faster to cache the binary than to recompute it on every access
     
+    def __eq__(self, other: Any) -> bool:
+        try:
+            return dict(self) == dict(other)             # only compare pydantic fields, ignores classvars/@properties/@cached_properties/_fields/etc.
+        except Exception:
+            return False
+
     @property
     def EUID(self) -> int:
         """
