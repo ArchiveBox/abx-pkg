@@ -215,8 +215,12 @@ class InstallTest(unittest.TestCase):
         # print(binary_bin, binary_bin.bin_dir, binary_bin.loaded_abspath)
         # print('\n'.join(f'{provider}={path}' for provider, path in binary.loaded_abspaths.items()), '\n')
         # print()
-
-        self.assertEqual(binary_bin.loaded_binprovider, provider_bin.loaded_binprovider)
+        try:
+            self.assertEqual(binary_bin.loaded_binprovider, provider_bin.loaded_binprovider)
+        except AssertionError:
+            print('binary_bin', dict(binary_bin.loaded_binprovider))
+            print('provider_bin', dict(provider_bin.loaded_binprovider))
+            raise
         self.assertEqual(binary_bin.loaded_abspath, provider_bin.loaded_abspath)
         self.assertEqual(binary_bin.loaded_version, provider_bin.loaded_version)
         self.assertEqual(binary_bin.loaded_sha256, provider_bin.loaded_sha256)
@@ -254,7 +258,7 @@ class InstallTest(unittest.TestCase):
     def test_pip_provider(self):
         # pipprovider = PipProvider()
         pipprovider = PipProvider(pip_venv=os.environ.get('VIRTUAL_ENV', None))
-        print('PIP BINPROVIDER', pipprovider.INSTALLER_BIN_ABSPATH, 'PATH=', pipprovider.PATH)
+        # print('PIP BINPROVIDER', pipprovider.INSTALLER_BIN_ABSPATH, 'PATH=', pipprovider.PATH)
         binary = Binary(name='yt-dlp', binproviders=[pipprovider])
         self.install_with_binprovider(pipprovider, binary)
 
@@ -288,7 +292,7 @@ class InstallTest(unittest.TestCase):
         is_on_windows = sys.platform.lower().startswith('win') or os.name == 'nt'
         is_on_macos = 'darwin' in sys.platform.lower()
         is_on_linux = 'linux' in sys.platform.lower()
-        has_brew = shutil.which('brew') or os.path.isfile('/home/linuxbrew/.linuxbrew/bin/brew')
+        has_brew = shutil.which('brew')
         # has_apt = shutil.which('dpkg') is not None
         
         provider = BrewProvider()
@@ -296,7 +300,7 @@ class InstallTest(unittest.TestCase):
             self.assertTrue(provider.PATH)
             self.assertTrue(provider.is_valid)
         else:
-            print('SHOULD NOT HAVE BREW, but got', provider.INSTALLER_BIN_ABSPATH, 'PATH=', provider.PATH)
+            # print('SHOULD NOT HAVE BREW, but got', provider.INSTALLER_BIN_ABSPATH, 'PATH=', provider.PATH)
             self.assertFalse(provider.is_valid)
 
         exception = None
