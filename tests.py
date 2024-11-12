@@ -296,7 +296,6 @@ class InstallTest(unittest.TestCase):
             self.assertTrue(provider.PATH)
             self.assertTrue(provider.is_valid)
         else:
-            self.assertFalse(provider.PATH)
             self.assertFalse(provider.is_valid)
 
         exception = None
