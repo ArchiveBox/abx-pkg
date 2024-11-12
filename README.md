@@ -13,7 +13,7 @@
 **It's an ORM for your package managers, providing a nice python types for packages + installers.**  
   
 **This is a [Python library](https://pypi.org/project/pydantic-pkgr/) for installing & managing packages locally with a variety of package managers.**  
-It's designed for when `requirements.txt` isn't enough, and your app has to detect or install dependencies at runtime.  
+It's designed for when `requirements.txt` isn't enough, and you have to detect or install dependencies at runtime.
 
 
 ```shell
