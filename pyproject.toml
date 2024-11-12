@@ -36,6 +36,7 @@ classifiers = [
 ]
 
 dependencies = [
+    "pip>=24.3.1",
     "typing-extensions>=4.11.0",
     "platformdirs>=4.3.6",
     "pydantic>=2.7.1",
@@ -56,14 +57,11 @@ all = [
 ]
 
 [build-system]
-requires = ["pdm-backend"]
-build-backend = "pdm.backend"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-[tool.pdm]
-distribution = true
-
-[tool.pdm.dev-dependencies]
-dev = [
+[tool.uv]
+dev-dependencies = [
     "mypy>=1.10.0",
     "pyright",
     "django>=4.0",
