@@ -17,7 +17,7 @@ It's designed for when `requirements.txt` isn't enough, and you have to detect o
 
 
 ```shell
-pip install abx-pkg   # will be renamed to abx-pkg soon
+pip install abx-pkg
 ```
 
 
@@ -492,6 +492,8 @@ print(rg.version)                       # SemVer(14, 1, 0)
 ---
 
 <br/>
+
+*Note:* this package used to be called `pydantic-pkgr`, it was renamed to `abx-pkg` on 2024-11-12.
 
 ### TODO
 
