@@ -407,6 +407,8 @@ register_admin_views(custom_admin)
 
 ### ~~Django Admin Usage: JSONFormWidget for editing `BinProvider` and `Binary` data~~
 
+<details><summary>Expand to see more...</summary>
+
 <img src="https://github.com/ArchiveBox/abx-pkg/assets/511499/63705a57-4f62-4dbe-9f3a-0515323d8b5e" width="600px"/>
 
 > [!IMPORTANT]
@@ -414,8 +416,6 @@ register_admin_views(custom_admin)
 > - https://github.com/surenkov/django-pydantic-field/issues/64
 > - https://github.com/surenkov/django-pydantic-field/issues/65
 > - https://github.com/surenkov/django-pydantic-field/issues/66
-
-<details><summary>Expand to see more...</summary>
 
 ~~Install `django-jsonform` to get auto-generated Forms for editing BinProvider, Binary, etc. data~~
 ```bash
