@@ -33,8 +33,8 @@ jobs:
 
     - name: Install dependencies with uv
       run: |
-        uv sync --all-extras --dev
+        uv venv && uv sync --all-extras --dev
 
     - name: Run Tests
       run: |
-        uv run python tests.py
+        source .venv/bin/activate && python tests.py
