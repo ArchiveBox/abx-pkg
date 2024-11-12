@@ -254,7 +254,7 @@ class InstallTest(unittest.TestCase):
     def test_pip_provider(self):
         # pipprovider = PipProvider()
         pipprovider = PipProvider(pip_venv=os.environ.get('VIRTUAL_ENV', None))
-        print('PIP BINPROVIDER', provider.INSTALLER_BIN_ABSPATH, 'PATH=', provider.PATH)
+        print('PIP BINPROVIDER', pipprovider.INSTALLER_BIN_ABSPATH, 'PATH=', pipprovider.PATH)
         binary = Binary(name='yt-dlp', binproviders=[pipprovider])
         self.install_with_binprovider(pipprovider, binary)
 
@@ -288,7 +288,7 @@ class InstallTest(unittest.TestCase):
         is_on_windows = sys.platform.lower().startswith('win') or os.name == 'nt'
         is_on_macos = 'darwin' in sys.platform.lower()
         is_on_linux = 'linux' in sys.platform.lower()
-        has_brew = shutil.which('brew') is not None
+        has_brew = shutil.which('brew') or os.path.isfile('/home/linuxbrew/.linuxbrew/bin/brew')
         # has_apt = shutil.which('dpkg') is not None
         
         provider = BrewProvider()
