@@ -86,7 +86,7 @@ class SemVer(SemVerTuple):
             # raise Exception('Tried to parse semver from empty version output (is binary installed and available?)')
             return None
 
-        just_numbers = lambda col: '.'.join([chunk for chunk in re.split(r'[\D]', col.lower().strip('v'), 10) if chunk.isdigit()][:3])  # split on any non-num character e.g. 5.2.26(1)-release -> ['5', '2', '26', '1', '', '', ...]
+        just_numbers = lambda col: '.'.join([chunk for chunk in re.split(r'[\D]', col.lower().strip('v'), maxsplit=10) if chunk.isdigit()][:3])  # split on any non-num character e.g. 5.2.26(1)-release -> ['5', '2', '26', '1', '', '', ...]
         contains_semver = lambda col: (
             col.count('.') in (1, 2, 3)
             and all(chunk.isdigit() for chunk in col.split('.')[:3])  # first 3 chunks can only be nums
