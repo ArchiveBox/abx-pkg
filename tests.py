@@ -254,7 +254,7 @@ class InstallTest(unittest.TestCase):
     def test_pip_provider(self):
         # pipprovider = PipProvider()
         pipprovider = PipProvider(pip_venv=os.environ.get('VIRTUAL_ENV', None))
-        # print(provider.PATH)
+        print('PIP BINPROVIDER', provider.INSTALLER_BIN_ABSPATH, 'PATH=', provider.PATH)
         binary = Binary(name='yt-dlp', binproviders=[pipprovider])
         self.install_with_binprovider(pipprovider, binary)
 
@@ -296,6 +296,7 @@ class InstallTest(unittest.TestCase):
             self.assertTrue(provider.PATH)
             self.assertTrue(provider.is_valid)
         else:
+            print('SHOULD NOT HAVE BREW, but got', provider.INSTALLER_BIN_ABSPATH, 'PATH=', provider.PATH)
             self.assertFalse(provider.is_valid)
 
         exception = None
