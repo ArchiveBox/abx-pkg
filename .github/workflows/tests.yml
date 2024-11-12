@@ -1,6 +1,3 @@
-# This workflow will install Python dependencies, run tests and lint with a single version of Python
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
-
 name: Run Tests
 
 on:
@@ -31,10 +28,10 @@ jobs:
         enable-cache: true
         cache-dependency-glob: "uv.lock"
 
-    - name: Install dependencies with uv
+    - name: Setup venv and install pip dependencies
       run: |
         uv venv && uv sync --all-extras --dev
 
-    - name: Run Tests
+    - name: Run tests
       run: |
         source .venv/bin/activate && python tests.py
