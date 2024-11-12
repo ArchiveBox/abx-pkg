@@ -30,7 +30,10 @@ jobs:
 
     - name: Setup venv and install pip dependencies
       run: |
-        uv venv && uv sync --all-extras --dev
+        uv venv \
+        && uv sync \
+        && uv pip install pip \
+        && ln -s /home/linuxbrew/.linuxbrew/bin/brew /usr/local/bin/brew 2>/dev/null || true
 
     - name: Run tests
       run: |
