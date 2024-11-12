@@ -33,8 +33,9 @@ jobs:
         uv venv \
         && uv sync \
         && uv pip install pip \
-        && ln -s /home/linuxbrew/.linuxbrew/bin/brew /usr/local/bin/brew 2>/dev/null || true
+        && echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
 
     - name: Run tests
       run: |
-        source .venv/bin/activate && python tests.py
+        source .venv/bin/activate \
+        && python tests.py
