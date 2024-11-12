@@ -2,10 +2,10 @@
 
 
 ```bash
-git clone 'https://github.com/ArchiveBox/pydantic-pkgr'
-cd pydantic-pkgr
+git clone 'https://github.com/ArchiveBox/abx-pkg'
+cd abx-pkg
 
-pip install -e .             # install pydantic_pkgr from source
+pip install -e .             # install abx_pkg from source
 
 cd django_example_project/   # then go into the demo project dir
 

@@ -18,7 +18,7 @@ def get_binary(name: str) -> Binary:
 
     from . import settings
 
-    for binary in settings.PYDANTIC_PKGR_GET_ALL_BINARIES():
+    for binary in settings.ABX_PKG_GET_ALL_BINARIES():
         if binary.name == key:
             return binary
     return None
@@ -41,7 +41,7 @@ def binaries_list_view(request: HttpRequest, **kwargs) -> TableContext:
         "Description": [],
     }
 
-    for binary in settings.get_all_pkgr_binaries():
+    for binary in settings.get_all_abx_pkg_binaries():
         binary = binary.load_or_install()
 
         rows['Binary'].append(ItemLink(binary.name, key=binary.name))
@@ -63,7 +63,7 @@ def binary_detail_view(request: HttpRequest, key: str, **kwargs) -> ItemContext:
 
     from . import settings
 
-    binary = settings.get_pkgr_binary(key)
+    binary = settings.get_abx_pkg_binary(key)
 
     assert binary, f'Could not find a binary matching the specified name: {key}'
 

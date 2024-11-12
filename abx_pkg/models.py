@@ -5,7 +5,7 @@
 # from django.db import models
 # from django_pydantic_field import SchemaField
 #
-# from pydantic_pkgr import BinProvider, EnvProvider, Binary
+# from abx_pkg import BinProvider, EnvProvider, Binary
 #
 # DEFAULT_PROVIDER = EnvProvider()
 #

@@ -1,7 +1,7 @@
 
 #!/usr/bin/env python3
 
-__package__ = "pydantic_pkgr"
+__package__ = "abx_pkg"
 
 import os
 import sys
@@ -26,7 +26,7 @@ _CACHED_HOME_DIR: Path = Path('~').expanduser().absolute()
 
 USER_CACHE_PATH = Path(tempfile.gettempdir()) / 'npm-cache'
 try:    
-    user_cache_path = user_cache_path(appname='npm', appauthor='pydantic-pkgr', ensure_exists=True)
+    user_cache_path = user_cache_path(appname='npm', appauthor='abx-pkg', ensure_exists=True)
     if os.access(user_cache_path, os.W_OK):
         USER_CACHE_PATH = user_cache_path
 except Exception:

@@ -12,12 +12,12 @@
 
 **It's an ORM for your package managers, providing a nice python types for packages + installers.**  
   
-**This is a [Python library](https://pypi.org/project/pydantic-pkgr/) for installing & managing packages locally with a variety of package managers.**  
+**This is a [Python library](https://pypi.org/project/abx-pkg/) for installing & managing packages locally with a variety of package managers.**  
 It's designed for when `requirements.txt` isn't enough, and you have to detect or install dependencies at runtime.
 
 
 ```shell
-pip install pydantic-pkgr   # will be renamed to abx-pkg soon
+pip install abx-pkg   # will be renamed to abx-pkg soon
 ```
 
 
@@ -41,7 +41,7 @@ pip install pydantic-pkgr   # will be renamed to abx-pkg soon
 <br/>
 
 ```python
-from pydantic_pkgr import *
+from abx_pkg import *
 
 apt, brew, pip, npm, env = AptProvider(), BrewProvider(), PipProvider(), NpmProvider(), EnvProvider()
 
@@ -63,7 +63,7 @@ for binary in dependencies:
 
 ```python
 from pydantic import InstanceOf
-from pydantic_pkgr import Binary, BinProvider, BrewProvider, EnvProvider
+from abx_pkg import Binary, BinProvider, BrewProvider, EnvProvider
 
 # you can also define binaries as classes, making them usable for type checking
 class CurlBinary(Binary):
@@ -77,7 +77,7 @@ curl.exec(cmd=['--version'])                                        # curl 8.4.0
 ```
 
 ```python
-from pydantic_pkgr import Binary, EnvProvider, PipProvider
+from abx_pkg import Binary, EnvProvider, PipProvider
 
 # We also provide direct package manager (aka BinProvider) APIs
 apt = AptProvider()
@@ -115,10 +115,10 @@ print(ffmpeg.model_json_schema())   # ... OpenAPI-ready JSON schema showing all 
 ## Usage
 
 ```bash
-pip install pydantic-pkgr
+pip install abx-pkg
 ```
 
-### [`BinProvider`](https://github.com/ArchiveBox/abx-pkg/blob/main/pydantic_pkgr/binprovider.py#:~:text=class%20BinProvider)
+### [`BinProvider`](https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/binprovider.py#:~:text=class%20BinProvider)
 
 **Implementations: `EnvProvider`, `AptProvider`, `BrewProvider`, `PipProvider`, `NpmProvider`**
 
@@ -140,7 +140,7 @@ This type represents a "provider of binaries", e.g. a package manager like `apt`
 ```python
 import platform
 from typing import List
-from pydantic_pkgr import EnvProvider, PipProvider, AptProvider, BrewProvider
+from abx_pkg import EnvProvider, PipProvider, AptProvider, BrewProvider
 
 ### Example: Finding an existing install of bash using the system $PATH environment
 env = EnvProvider()
@@ -166,7 +166,7 @@ print(django_bin.abspath)             # Path('/usr/lib/python3.10/site-packages/
 print(django_bin.version)             # SemVer('5.0.2')
 ```
 
-### [`Binary`](https://github.com/ArchiveBox/abx-pkg/blob/main/pydantic_pkgr/binary.py#:~:text=class%20Binary)
+### [`Binary`](https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/binary.py#:~:text=class%20Binary)
 
 This type represents a single binary dependency aka a package (e.g. `wget`, `curl`, `ffmpeg`, etc.).  
 It can define one or more `BinProvider`s that it supports, along with overrides to customize the behavior for each.
@@ -180,7 +180,7 @@ It can define one or more `BinProvider`s that it supports, along with overrides 
 - `sha256: str`
 
 ```python
-from pydantic_pkgr import BinProvider, Binary, BinProviderName, BinName, ProviderLookupDict, SemVer
+from abx_pkg import BinProvider, Binary, BinProviderName, BinName, ProviderLookupDict, SemVer
 
 class CustomBrewProvider(BrewProvider):
     name: str = 'custom_brew'
@@ -215,7 +215,7 @@ print(ytdlp.is_valid)                     # True
 ```
 
 ```python
-from pydantic_pkgr import BinProvider, Binary, BinProviderName, BinName, ProviderLookupDict, SemVer
+from abx_pkg import BinProvider, Binary, BinProviderName, BinName, ProviderLookupDict, SemVer
 
 #### Example: Create a binary that uses Podman if available, or Docker otherwise
 class DockerBinary(Binary):
@@ -255,10 +255,10 @@ print(custom_docker.version)              # SemVer('5.0.2')
 print(custom_docker.is_valid)             # True
 ```
 
-### [`SemVer`](https://github.com/ArchiveBox/abx-pkg/blob/main/pydantic_pkgr/semver.py#:~:text=class%20SemVer)
+### [`SemVer`](https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/semver.py#:~:text=class%20SemVer)
 
 ```python
-from pydantic_pkgr import SemVer
+from abx_pkg import SemVer
 
 ### Example: Use the SemVer type directly for parsing & verifying version strings
 SemVer.parse('Google Chrome 124.0.6367.208+beta_234. 234.234.123')  # SemVer(124, 0, 6367')
@@ -290,7 +290,7 @@ With a few more packages, you get type-checked Django fields & forms that suppor
 > - [`django-admin-data-views`](https://github.com/MrThearMan/django-admin-data-views)
 > - [`django-pydantic-field`](https://github.com/surenkov/django-pydantic-field)
 > - [`django-jsonform`](https://django-jsonform.readthedocs.io/)  
-> `pip install pydantic-pkgr django-admin-data-views django-pydantic-field django-jsonform`
+> `pip install abx-pkg django-admin-data-views django-pydantic-field django-jsonform`
 
 <br/>
 
@@ -307,7 +307,7 @@ Example Django `models.py` showing how to store `Binary` and `BinProvider` insta
 from typing import List
 from django.db import models
 from pydantic import InstanceOf
-from pydantic_pkgr import BinProvider, Binary, SemVer
+from abx_pkg import BinProvider, Binary, SemVer
 from django_pydantic_field import SchemaField
 
 class InstalledBinary(models.Model):
@@ -349,7 +349,7 @@ obj.binary.exec(['--version'])                    #   curl 7.81.0 (x86_64-apple-
 <img height="220" alt="Django Admin binaries list view" src="https://github.com/ArchiveBox/abx-pkg/assets/511499/a9980217-f39e-434e-b266-20cd6feb17c3" align="top"><img height="220" alt="Django Admin binaries detail view" src="https://github.com/ArchiveBox/abx-pkg/assets/511499/d4d9086e-c8f4-4b6e-8ee8-8c8a864715b0" align="top">
 
 ```bash
-pip install pydantic-pkgr django-admin-data-views
+pip install abx-pkg django-admin-data-views
 ```
 *For more info see the [`django-admin-data-views`](https://github.com/MrThearMan/django-admin-data-views) docs...*
 
@@ -358,24 +358,24 @@ Then add this to your `settings.py`:
 INSTALLED_APPS = [
     # ...
     'admin_data_views'
-    'pydantic_pkgr'
+    'abx_pkg'
     # ...
 ]
 
 # point these to a function that gets the list of all binaries / a single binary
-PYDANTIC_PKGR_GET_ALL_BINARIES = 'pydantic_pkgr.views.get_all_binaries'
-PYDANTIC_PKGR_GET_BINARY = 'pydantic_pkgr.views.get_binary'
+ABX_PKG_GET_ALL_BINARIES = 'abx_pkg.views.get_all_binaries'
+ABX_PKG_GET_BINARY = 'abx_pkg.views.get_binary'
 
 ADMIN_DATA_VIEWS = {
     "NAME": "Environment",
     "URLS": [
         {
             "route": "binaries/",
-            "view": "pydantic_pkgr.views.binaries_list_view",
+            "view": "abx_pkg.views.binaries_list_view",
             "name": "binaries",
             "items": {
                 "route": "<str:key>/",
-                "view": "pydantic_pkgr.views.binary_detail_view",
+                "view": "abx_pkg.views.binary_detail_view",
                 "name": "binary",
             },
         },
@@ -398,7 +398,7 @@ class YourSiteAdmin(admin.AdminSite):
 custom_admin = YourSiteAdmin()
 custom_admin.register(get_user_model())
 ...
-from pydantic_pkgr.admin import register_admin_views
+from abx_pkg.admin import register_admin_views
 register_admin_views(custom_admin)
 </code></pre>
 </details>
@@ -453,7 +453,7 @@ admin.site.register(MyModel, MyModelAdmin)
 ```python
 from subprocess import run, PIPE
 
-from pydantic_pkgr import BinProvider, BinProviderName, BinName, SemVer
+from abx_pkg import BinProvider, BinProviderName, BinName, SemVer
 
 class CargoProvider(BinProvider):
     name: BinProviderName = 'cargo'
@@ -514,17 +514,17 @@ print(rg.version)                       # SemVer(14, 1, 0)
 
 [coverage-badge]: https://coveralls.io/repos/github/ArchiveBox/abx-pkg/badge.svg?branch=main
 [status-badge]: https://img.shields.io/github/actions/workflow/status/ArchiveBox/abx-pkg/test.yml?branch=main
-[pypi-badge]: https://img.shields.io/pypi/v/pydantic-pkgr?v=1
+[pypi-badge]: https://img.shields.io/pypi/v/abx-pkg?v=1
 [licence-badge]: https://img.shields.io/github/license/ArchiveBox/abx-pkg?v=1
 [repo-badge]: https://img.shields.io/github/last-commit/ArchiveBox/abx-pkg?v=1
 [issues-badge]: https://img.shields.io/github/issues-raw/ArchiveBox/abx-pkg?v=1
-[version-badge]: https://img.shields.io/pypi/pyversions/pydantic-pkgr?v=1
-[downloads-badge]: https://img.shields.io/pypi/dm/pydantic-pkgr?v=1
-[django-badge]: https://img.shields.io/pypi/djversions/pydantic-pkgr?v=1
+[version-badge]: https://img.shields.io/pypi/pyversions/abx-pkg?v=1
+[downloads-badge]: https://img.shields.io/pypi/dm/abx-pkg?v=1
+[django-badge]: https://img.shields.io/pypi/djversions/abx-pkg?v=1
 
 [coverage]: https://coveralls.io/github/ArchiveBox/abx-pkg?branch=main
 [status]: https://github.com/ArchiveBox/abx-pkg/actions/workflows/test.yml
-[pypi]: https://pypi.org/project/pydantic-pkgr
+[pypi]: https://pypi.org/project/abx-pkg
 [licence]: https://github.com/ArchiveBox/abx-pkg/blob/main/LICENSE
 [repo]: https://github.com/ArchiveBox/abx-pkg/commits/main
 [issues]: https://github.com/ArchiveBox/abx-pkg/issues

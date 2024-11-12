@@ -41,7 +41,7 @@ INSTALLED_APPS = [
     'admin_data_views',
     'django_jsonform',
     
-    'pydantic_pkgr',
+    'abx_pkg',
 
     'project',
 ]
@@ -130,8 +130,8 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
-PYDANTIC_PKGR_GET_ALL_BINARIES = 'project.views.get_all_binaries'
-PYDANTIC_PKGR_GET_BINARY = 'project.views.get_binary'
+ABX_PKG_GET_ALL_BINARIES = 'project.views.get_all_binaries'
+ABX_PKG_GET_BINARY = 'project.views.get_binary'
 
 
 ADMIN_DATA_VIEWS = {
@@ -139,11 +139,11 @@ ADMIN_DATA_VIEWS = {
     "URLS": [
         {
             "route": "binaries/",
-            "view": "pydantic_pkgr.views.binaries_list_view",
+            "view": "abx_pkg.views.binaries_list_view",
             "name": "binaries",
             "items": {
                 "route": "<str:key>/",
-                "view": "pydantic_pkgr.views.binary_detail_view",
+                "view": "abx_pkg.views.binary_detail_view",
                 "name": "binary",
             },
         },

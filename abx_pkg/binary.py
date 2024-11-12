@@ -1,4 +1,4 @@
-__package__ = 'pydantic_pkgr'
+__package__ = 'abx_pkg'
 
 from typing import Any, Optional, Dict, List
 from typing_extensions import Self

@@ -1,4 +1,4 @@
-from pydantic_pkgr.binary import Binary
+from abx_pkg.binary import Binary
 
 
 def get_all_binaries() -> list[Binary]:
@@ -13,9 +13,9 @@ def get_all_binaries() -> list[Binary]:
 def get_binary(name: str) -> Binary:
     """Override this function implement getting the list of binaries to render"""
 
-    from pydantic_pkgr import settings
+    from abx_pkg import settings
 
-    for binary in settings.get_all_pkgr_binaries():
+    for binary in settings.get_all_abx_pkg_binaries():
         if binary.name == name:
             return binary
     return None

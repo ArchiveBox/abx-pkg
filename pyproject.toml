@@ -1,16 +1,12 @@
 [project]
-name = "pydantic-pkgr"
-version = "0.5.4"
-description = "System package manager APIs in strongly typed Python"
+name = "abx-pkg"
+version = "0.6.0"
+description = "System package manager interfaces with Python type hints"
 authors = [
-    {name = "Nick Sweeting", email = "pydantic-pkgr-pyproject-toml@sweeting.me"},
+    {name = "Nick Sweeting", email = "abx-pkg-pyproject-toml@sweeting.me"},
 ]
 requires-python = ">=3.10"
 license = {text = "MIT"}
-# platform = "py3-none-any"
-# packages = [
-#     { include = "pydantic_pkgr" },
-# ]
 readme = "README.md"
 keywords = [
     "pydantic",
@@ -56,7 +52,7 @@ ansible = [
     'ansible-runner>=2.4.0',
 ]
 all = [
-    "pydantic-pkgr[pyinfra,ansible]",
+    "abx-pkg[pyinfra,ansible]",
 ]
 
 [build-system]
@@ -78,7 +74,7 @@ dev = [
 ]
 
 [tool.mypy]
-mypy_path = "pydantic_pkgr"
+mypy_path = "abx_pkg"
 python_version = "3.10"
 warn_return_any = "True"
 warn_unused_configs = "True"
@@ -87,7 +83,7 @@ plugins = [
 ]
 
 [tool.pyright]
-include = ["pydantic_pkgr"]
+include = ["abx_pkg"]
 exclude = [
     "**/node_modules",
     "**/__pycache__",
@@ -100,9 +96,9 @@ pythonPlatform = "Linux"
 
 
 [project.urls]
-Homepage = "https://github.com/ArchiveBox/pydantic-pkgr"
-Source = "https://github.com/ArchiveBox/pydantic-pkgr"
-Documentation = "https://github.com/ArchiveBox/pydantic-pkgr"
-"Bug Tracker" = "https://github.com/ArchiveBox/pydantic-pkgr/issues"
-Changelog = "https://github.com/ArchiveBox/pydantic-pkgr/releases"
+Homepage = "https://github.com/ArchiveBox/abx-pkg"
+Source = "https://github.com/ArchiveBox/abx-pkg"
+Documentation = "https://github.com/ArchiveBox/abx-pkg"
+"Bug Tracker" = "https://github.com/ArchiveBox/abx-pkg/issues"
+Changelog = "https://github.com/ArchiveBox/abx-pkg/releases"
 Donate = "https://github.com/ArchiveBox/ArchiveBox/wiki/Donations"

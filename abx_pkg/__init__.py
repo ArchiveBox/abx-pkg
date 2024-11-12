@@ -1,4 +1,4 @@
-__package__ = "pydantic_pkgr"
+__package__ = "abx_pkg"
 
 from .base_types import (
     BinName,

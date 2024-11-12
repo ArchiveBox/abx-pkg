@@ -11,7 +11,7 @@ from pathlib import Path
 
 # from rich import print
 
-from pydantic_pkgr import (
+from abx_pkg import (
     BinProvider, EnvProvider, Binary, SemVer, BinProviderOverrides,
     PipProvider, NpmProvider, AptProvider, BrewProvider,
 )

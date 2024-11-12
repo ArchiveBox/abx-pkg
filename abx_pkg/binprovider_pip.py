@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-__package__ = "pydantic_pkgr"
+__package__ = "abx_pkg"
 
 import os
 import sys
@@ -26,7 +26,7 @@ _CACHED_GLOBAL_PIP_BIN_DIRS: Set[str] | None = None
 
 USER_CACHE_PATH = Path(tempfile.gettempdir()) / 'pip-cache'
 try:    
-    user_cache_path = user_cache_path(appname='pip', appauthor='pydantic-pkgr', ensure_exists=True)
+    user_cache_path = user_cache_path(appname='pip', appauthor='abx-pkg', ensure_exists=True)
     if os.access(user_cache_path, os.W_OK):
         USER_CACHE_PATH = user_cache_path
 except Exception:

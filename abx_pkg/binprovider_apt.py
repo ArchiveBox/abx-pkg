@@ -1,6 +1,6 @@
 
 #!/usr/bin/env python
-__package__ = "pydantic_pkgr"
+__package__ = "abx_pkg"
 
 import sys
 import time
