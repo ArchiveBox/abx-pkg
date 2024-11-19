@@ -105,7 +105,7 @@ class BrewProvider(BinProvider):
         # not all brew-installed binaries are symlinked into the default bin dir (e.g. curl)
         # because it might conflict with a system binary of the same name (e.g. /usr/bin/curl)
         # so we need to check for the binary in the namespaced opt dir and Cellar paths as well
-        extra_path = self.PATH.replace('/bin', '/opt/{bin_name}/bin')     # e.g. /opt/homebrew/opt/curl/bin/curl
+        extra_path = self.PATH.replace('/bin', f'/opt/{bin_name}/bin')     # e.g. /opt/homebrew/opt/curl/bin/curl
         search_paths = f'{self.PATH}:{extra_path}'
         
         # add unlinked Cellar paths,e.g. /opt/homebrew/Cellar/curl/8.10.1/bin
