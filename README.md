@@ -68,7 +68,7 @@ from abx_pkg import Binary, BinProvider, BrewProvider, EnvProvider
 # you can also define binaries as classes, making them usable for type checking
 class CurlBinary(Binary):
     name: str = 'curl'
-    binproviders: List[InstanceOf[BinProvider]] = [BrewProvider(), EnvProvider()]
+    binproviders: list[InstanceOf[BinProvider]] = [BrewProvider(), EnvProvider()]
 
 curl = CurlBinary().install()
 assert isinstance(curl, CurlBinary)                                 # CurlBinary is a unique type you can use in annotations now
@@ -175,7 +175,7 @@ It can define one or more `BinProvider`s that it supports, along with overrides 
 - `load()`, `install()`, `load_or_install()` `->` `Binary`
 - `binprovider: InstanceOf[BinProvider]`
 - `abspath: Path`
-- `abspaths: List[Path]`
+- `abspaths: list[Path]`
 - `version: SemVer`
 - `sha256: str`
 
@@ -185,7 +185,7 @@ from abx_pkg import BinProvider, Binary, BinProviderName, BinName, ProviderLooku
 class CustomBrewProvider(BrewProvider):
     name: str = 'custom_brew'
 
-    def get_macos_packages(self, bin_name: str, **context) -> List[str]:
+    def get_macos_packages(self, bin_name: str, **context) -> list[str]:
         extra_packages_lookup_table = json.load(Path('macos_packages.json'))
         return extra_packages_lookup_table.get(platform.machine(), [bin_name])
 
@@ -195,11 +195,11 @@ class YtdlpBinary(Binary):
     name: BinName = 'ytdlp'
     description: str = 'YT-DLP (Replacement for YouTube-DL) Media Downloader'
 
-    binproviders_supported: List[BinProvider] = [EnvProvider(), PipProvider(), AptProvider(), CustomBrewProvider()]
+    binproviders_supported: list[BinProvider] = [EnvProvider(), PipProvider(), AptProvider(), CustomBrewProvider()]
     
     # customize installed package names for specific package managers
-    provider_overrides: Dict[BinProviderName, ProviderLookupDict] = {
-        'pip': {'packages': ['yt-dlp[default,curl-cffi]']}, # can use literal values (packages -> List[str], version -> SemVer, abspath -> Path, install -> str log)
+    provider_overrides: dict[BinProviderName, ProviderLookupDict] = {
+        'pip': {'packages': ['yt-dlp[default,curl-cffi]']}, # can use literal values (packages -> list[str], version -> SemVer, abspath -> Path, install -> str log)
         'apt': {'packages': lambda: ['yt-dlp', 'ffmpeg']},  # also accepts any pure Callable that returns a list of packages
         'brew': {'packages': 'self.get_macos_packages'},    # also accepts string reference to function on self (where self is the BinProvider)
     }
@@ -221,9 +221,9 @@ from abx_pkg import BinProvider, Binary, BinProviderName, BinName, ProviderLooku
 class DockerBinary(Binary):
     name: BinName = 'docker'
 
-    binproviders_supported: List[BinProvider] = [EnvProvider(), AptProvider()]
+    binproviders_supported: list[BinProvider] = [EnvProvider(), AptProvider()]
     
-    provider_overrides: Dict[BinProviderName, ProviderLookupDict] = {
+    provider_overrides: dict[BinProviderName, ProviderLookupDict] = {
         'env': {
             # example: prefer podman if installed (falling back to docker)
             'abspath': lambda: os.which('podman') or os.which('docker') or os.which('docker-ce'),
@@ -313,7 +313,7 @@ from django_pydantic_field import SchemaField
 class InstalledBinary(models.Model):
     name = models.CharField(max_length=63)
     binary: Binary = SchemaField()
-    binproviders: List[InstanceOf[BinProvider]] = SchemaField(default=[])
+    binproviders: list[InstanceOf[BinProvider]] = SchemaField(default=[])
     version: SemVer = SchemaField(default=(0,0,1))
 ```
 
