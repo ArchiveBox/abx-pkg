@@ -16,7 +16,7 @@
 It's designed for when `requirements.txt` isn't enough, and you have to detect or install dependencies at runtime.
 
 
-```shell
+```python
 pip install abx-pkg
 
 python
