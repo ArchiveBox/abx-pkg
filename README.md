@@ -18,6 +18,15 @@ It's designed for when `requirements.txt` isn't enough, and you have to detect o
 
 ```shell
 pip install abx-pkg
+
+python
+>>> from abx_pkg import Binary, NpmProvider
+
+>>> curl = Binary('curl').load()
+>>> print(curl.abspath, curl.version, curl.exec(cmd=['--version']))
+/usr/bin/curl 7.81.0 curl 7.81.0 (x86_64-apple-darwin23.0) libcurl/7.81.0 ...
+
+>>> NpmProvider().install('puppeteer')
 ```
 
 
