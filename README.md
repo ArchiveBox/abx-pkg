@@ -13,7 +13,7 @@
 **It's an ORM for your package managers, providing a nice python types for packages + installers.**  
   
 **This is a [Python library](https://pypi.org/project/abx-pkg/) for installing & managing packages locally with a variety of package managers.**  
-It's designed for when `requirements.txt` isn't enough, and you have to detect or install dependencies at runtime.
+It's designed for when `requirements.txt` isn't enough, and you have to detect or install dependencies at runtime. It's great for installing and managing MCP servers and their dependencies at runtime.
 
 
 ```python
