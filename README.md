@@ -207,7 +207,7 @@ class YtdlpBinary(Binary):
     binproviders_supported: list[BinProvider] = [EnvProvider(), PipProvider(), AptProvider(), CustomBrewProvider()]
     
     # customize installed package names for specific package managers
-    provider_overrides: dict[BinProviderName, ProviderLookupDict] = {
+    overrides: dict[BinProviderName, ProviderLookupDict] = {
         'pip': {'packages': ['yt-dlp[default,curl-cffi]']}, # can use literal values (packages -> list[str], version -> SemVer, abspath -> Path, install -> str log)
         'apt': {'packages': lambda: ['yt-dlp', 'ffmpeg']},  # also accepts any pure Callable that returns a list of packages
         'brew': {'packages': 'self.get_macos_packages'},    # also accepts string reference to function on self (where self is the BinProvider)
@@ -232,7 +232,7 @@ class DockerBinary(Binary):
 
     binproviders_supported: list[BinProvider] = [EnvProvider(), AptProvider()]
     
-    provider_overrides: dict[BinProviderName, ProviderLookupDict] = {
+    overrides: dict[BinProviderName, ProviderLookupDict] = {
         'env': {
             # example: prefer podman if installed (falling back to docker)
             'abspath': lambda: os.which('podman') or os.which('docker') or os.which('docker-ce'),
