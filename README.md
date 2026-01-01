@@ -29,19 +29,14 @@ python
 >>> NpmProvider().install('puppeteer')
 ```
 
-
-> ✨ Built with [`pydantic`](https://pydantic-docs.helpmanual.io/) v2 for strong static typing guarantees and json import/export compatibility  
-> 📦 Provides consistent cross-platform interfaces for dependency resolution & installation at runtime  
-> 🌈 Integrates with [`django`](https://docs.djangoproject.com/en/5.0/) >= 4.0, [`django-ninja`](https://django-ninja.dev/), and OpenAPI + [`django-jsonform`](https://django-jsonform.readthedocs.io/) out-of-the-box  
-> 🦄 Lets you use the builtin `abx-pkg` methods, or [`pyinfra`](https://github.com/pyinfra-dev/pyinfra) / [`ansible`](https://github.com/ansible/ansible) for the install operations
+> 📦 Provides consistent interfaces for runtime dependency resolution & installation across multiple package managers & OSs
+> ✨ Built with [`pydantic`](https://pydantic-docs.helpmanual.io/) v2 for strong static typing guarantees and easy conversion to/from json
+> 🌈 Usable with [`django`](https://docs.djangoproject.com/en/5.0/) >= 4.0, [`django-ninja`](https://django-ninja.dev/), and OpenAPI + [`django-jsonform`](https://django-jsonform.readthedocs.io/) to build UIs & APIs
+> 🦄 Driver layer can be [`pyinfra`](https://github.com/pyinfra-dev/pyinfra) / [`ansible`](https://github.com/ansible/ansible) / or built-in `abx-pkg` engine
 
 <sub><i>Built by <a href="https://github.com/ArchiveBox">ArchiveBox</a> to install & auto-update our extractor dependencies at runtime (<code>chrome</code>, <code>wget</code>, <code>curl</code>, etc.) on `macOS`/`Linux`/`Docker`.</i></sub>
 
 <br/>
-
-> [!WARNING]
-> This is `BETA` software, the API is mostly stable but there may be minor changes later on.
-
 
 **Source Code**: [https://github.com/ArchiveBox/abx-pkg/](https://github.com/ArchiveBox/abx-pkg/)
 
