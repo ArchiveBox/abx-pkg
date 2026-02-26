@@ -174,6 +174,16 @@ class TestBinProvider(unittest.TestCase):
         self.assertTrue('BinProvider(name=custom) has no install handler implemented for Binary(name=doesnotexist)' in str(exc))
 
 
+class TestForwardRefs(unittest.TestCase):
+
+    def test_subclass_without_overrides_import(self):
+        class CustomProvider(BinProvider):
+            name: str = 'custom'
+
+        provider = CustomProvider()
+        self.assertEqual(provider.name, 'custom')
+
+
 class TestBinary(unittest.TestCase):
 
     def test_python_bin(self):

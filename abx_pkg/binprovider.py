@@ -770,3 +770,7 @@ BinaryOverrides = Dict[BinProviderName, HandlerDict]
 # BinProvider.overrides map BinName:HandlerType:Handler       {'wget': {'packages': [...]}}
 BinProviderOverrides = Dict[BinName | Literal['*'], HandlerDict]
 
+# Resolve forward refs at import time so downstream subclasses don't need to call model_rebuild().
+ShallowBinary.model_rebuild(_types_namespace=globals())
+BinProvider.model_rebuild(_types_namespace=globals())
+EnvProvider.model_rebuild(_types_namespace=globals())
