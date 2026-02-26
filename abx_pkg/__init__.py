@@ -48,8 +48,8 @@ ALL_PROVIDERS = [
     AnsibleProvider,
     PyinfraProvider,
 ]
-ALL_PROVIDER_NAMES = [provider.__fields__['name'].default for provider in ALL_PROVIDERS]
-ALL_PROVIDER_CLASSES = [provider.__class__.__name__ for provider in ALL_PROVIDERS]
+ALL_PROVIDER_NAMES = [provider.model_fields['name'].default for provider in ALL_PROVIDERS]  # pip, apt, brew, etc.
+ALL_PROVIDER_CLASS_NAMES = [provider.__name__ for provider in ALL_PROVIDERS]                 # PipProvider, AptProvider, BrewProvider, etc.
 
 
 __all__ = [
@@ -91,5 +91,5 @@ __all__ = [
     "PYTHON_BIN_DIR",
     
     # BinProviders
-    *ALL_PROVIDER_CLASSES,
+    *ALL_PROVIDER_CLASS_NAMES,
 ]
