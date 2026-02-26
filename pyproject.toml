@@ -5,7 +5,7 @@ description = "System package manager interfaces with Python type hints"
 authors = [
     {name = "Nick Sweeting", email = "abx-pkg-pyproject-toml@sweeting.me"},
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = {text = "MIT"}
 readme = "README.md"
 keywords = [
@@ -21,36 +21,34 @@ classifiers = [
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Framework :: Django",
     "Framework :: Django :: 4.0",
-    "Framework :: Django :: 4.1",
-    "Framework :: Django :: 4.2",
     "Framework :: Django :: 5.0",
-    "Framework :: Django :: 5.1",
+    "Framework :: Django :: 6.0",
     "Environment :: Web Environment",
     "Intended Audience :: Developers",
     "Natural Language :: English",
 ]
 
 dependencies = [
-    "pip>=24.3.1",
-    "typing-extensions>=4.11.0",
-    "platformdirs>=4.3.6",
-    "pydantic>=2.7.1",
-    "pydantic-core>=2.18.2",
+    "pip>=26.0.1",
+    "typing-extensions>=4.15.0",
+    "platformdirs>=4.9.2",
+    "pydantic>=2.12.5",
 ]
 
 [project.optional-dependencies]
 pyinfra = [
-    'pyinfra>=2.6.1',
+    'pyinfra>=3.6.1',
 ]
 ansible = [
-    'ansible>=10.5.0',
-    'ansible-core>=2.17.5',
-    'ansible-runner>=2.4.0',
+    'ansible>=12.3.0',
+    'ansible-core>=2.0.0',
+    'ansible-runner>=2.4.2',
 ]
 all = [
     "abx-pkg[pyinfra,ansible]",
@@ -62,7 +60,7 @@ build-backend = "hatchling.build"
 
 [tool.uv]
 dev-dependencies = [
-    "mypy>=1.10.0",
+    "mypy>=1.19.1",
     "pyright",
     "django>=4.0",
     "django-stubs>=5.0.0",
@@ -90,7 +88,7 @@ exclude = [
 ]
 reportMissingImports = true
 reportMissingTypeStubs = false
-pythonVersion = "3.10"
+pythonVersion = "3.11"
 pythonPlatform = "Linux"
 
 
