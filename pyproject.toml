@@ -1,6 +1,6 @@
 [project]
 name = "abx-pkg"
-version = "0.6.2"
+version = "0.6.3"
 description = "System package manager interfaces with Python type hints"
 authors = [
     {name = "Nick Sweeting", email = "abx-pkg-pyproject-toml@sweeting.me"},
