@@ -1,0 +1,23 @@
+abx_pkg/binary.py
+  ff99bc04b1bec027 35,70-73,118-126,255
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.11",
+  "base_commit_sha": "03e7ca1af1cb200b467001952726fe0a16d5bf70",
+  "prompts": {
+    "ff99bc04b1bec027": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019cf052-6a50-74f3-a2b1-80b5cfa316c7",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 15,
+      "overriden_lines": 0
+    }
+  }
+}
