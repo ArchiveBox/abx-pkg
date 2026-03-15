@@ -13,8 +13,6 @@ permissions:
 jobs:
   build:
     runs-on: ${{ matrix.os }}
-    env:
-      ABX_PKG_LIVE_PKG_TESTS: "1"
     strategy:
       fail-fast: true
       matrix:
@@ -42,7 +40,33 @@ jobs:
         && uv pip install pip \
         && echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
 
-    - name: Run tests
+    - name: Run standard test suite
       run: |
         source .venv/bin/activate \
         && python tests.py
+
+    - name: Run live package lifecycle tests on macOS
+      if: runner.os == 'macOS'
+      env:
+        ABX_PKG_LIVE_PKG_TESTS: "1"
+      run: |
+        source .venv/bin/activate \
+        && python -m unittest tests.LiveUpdateAndUninstallTest
+
+    - name: Run non-root live package lifecycle tests on Linux
+      if: runner.os == 'Linux'
+      env:
+        ABX_PKG_LIVE_PKG_TESTS: "1"
+      run: |
+        source .venv/bin/activate \
+        && python -m unittest \
+          tests.LiveUpdateAndUninstallTest.test_npm_provider_live_update_and_uninstall \
+          tests.LiveUpdateAndUninstallTest.test_pip_provider_live_update_and_uninstall
+
+    - name: Run root-required live package lifecycle tests on Linux
+      if: runner.os == 'Linux'
+      run: |
+        sudo env "PATH=$PATH" "ABX_PKG_LIVE_PKG_TESTS=1" ./.venv/bin/python -m unittest \
+          tests.LiveUpdateAndUninstallTest.test_apt_provider_live_update_and_uninstall \
+          tests.LiveUpdateAndUninstallTest.test_pyinfra_provider_live_update_and_uninstall \
+          tests.LiveUpdateAndUninstallTest.test_ansible_provider_live_update_and_uninstall

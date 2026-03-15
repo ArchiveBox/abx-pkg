@@ -638,6 +638,8 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             raise unittest.SkipTest('pyinfra is not available on this host')
 
         if 'linux' in sys.platform and shutil.which('apt-get'):
+            if os.geteuid() != 0:
+                raise unittest.SkipTest('pyinfra apt lifecycle tests require root on Linux')
             provider = PyinfraProvider(pyinfra_installer_module='operations.apt.packages')
             binary = Binary(name=self.pick_missing_apt_package(), binproviders=[provider])
         elif shutil.which('brew'):
@@ -653,6 +655,8 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             raise unittest.SkipTest('ansible is not available on this host')
 
         if 'linux' in sys.platform and shutil.which('apt-get'):
+            if os.geteuid() != 0:
+                raise unittest.SkipTest('ansible apt lifecycle tests require root on Linux')
             provider = AnsibleProvider(ansible_installer_module='ansible.builtin.apt')
             binary = Binary(name=self.pick_missing_apt_package(), binproviders=[provider])
         elif shutil.which('brew'):
@@ -668,6 +672,8 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             raise unittest.SkipTest('apt live lifecycle tests only run on Linux hosts')
         if not shutil.which('apt-get'):
             raise unittest.SkipTest('apt-get is not available on this host')
+        if os.geteuid() != 0:
+            raise unittest.SkipTest('apt lifecycle tests require root on Linux')
 
         provider = AptProvider()
         binary = Binary(name=self.pick_missing_apt_package(), binproviders=[provider])
