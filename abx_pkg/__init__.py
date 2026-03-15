@@ -62,6 +62,21 @@ ALL_PROVIDERS = [
 ALL_PROVIDER_NAMES = [provider.model_fields['name'].default for provider in ALL_PROVIDERS]  # pip, apt, brew, etc.
 ALL_PROVIDER_CLASS_NAMES = [provider.__name__ for provider in ALL_PROVIDERS]                 # PipProvider, AptProvider, BrewProvider, etc.
 
+# Lazy provider singletons: maps provider name -> class
+# e.g. 'apt' -> AptProvider, 'pip' -> PipProvider, 'env' -> EnvProvider
+_PROVIDER_CLASS_BY_NAME = {
+    provider.model_fields['name'].default: provider
+    for provider in ALL_PROVIDERS
+}
+_provider_singletons: dict = {}
+
+def __getattr__(name: str):
+    if name in _PROVIDER_CLASS_BY_NAME:
+        if name not in _provider_singletons:
+            _provider_singletons[name] = _PROVIDER_CLASS_BY_NAME[name]()
+        return _provider_singletons[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     # Main types
@@ -72,7 +87,7 @@ __all__ = [
     "logger",
     "get_logger",
     "configure_logging",
-    
+
     # Helper Types
     "BinName",
     "InstallArgs",
@@ -81,7 +96,7 @@ __all__ = [
     "HostBinPath",
     "HostExistsPath",
     "BinProviderName",
-    
+
     # Override types
     "BinProviderOverrides",
     "BinaryOverrides",
@@ -90,20 +105,23 @@ __all__ = [
     "HandlerValue",
     "HandlerDict",
     "HandlerReturnValue",
-    
+
     # Validator Functions
     "bin_version",
     "bin_name",
     "bin_abspath",
     "bin_abspaths",
     "func_takes_args_or_kwargs",
-    
+
     # Globals
     "OPERATING_SYSTEM",
     "DEFAULT_PATH",
     "DEFAULT_ENV_PATH",
     "PYTHON_BIN_DIR",
-    
-    # BinProviders
+
+    # BinProviders (classes)
     *ALL_PROVIDER_CLASS_NAMES,
+
+    # BinProvider lazy singletons
+    *ALL_PROVIDER_NAMES,
 ]
