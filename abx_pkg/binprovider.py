@@ -37,7 +37,13 @@ from .base_types import (
     bin_abspaths,
     func_takes_args_or_kwargs,
 )
-from .logging import format_command, format_loaded_binary, get_logger, log_method_call
+from .logging import format_command, format_loaded_binary, format_subprocess_output, get_logger, log_method_call
+from .exceptions import (
+    BinProviderInstallError,
+    BinProviderUnavailableError,
+    BinProviderUninstallError,
+    BinProviderUpdateError,
+)
 
 logger = get_logger(__name__)
 
@@ -576,8 +582,7 @@ class BinProvider(BaseModel):
     def default_install_handler(self, bin_name: BinName, install_args: Optional[InstallArgs]=None, **context) -> 'InstallFuncReturnValue':      # aka str
         self.setup()
         install_args = install_args or self.get_install_args(bin_name)
-        if not self.INSTALLER_BIN_ABSPATH:
-            raise Exception(f'{self.name} install method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)')
+        self._require_installer_bin("install")
 
         # print(f'[*] {self.__class__.__name__}: Installing {bin_name}: {self.INSTALLER_BIN_ABSPATH} {install_args}')
 
@@ -594,11 +599,13 @@ class BinProvider(BaseModel):
     # @validate_call
     @remap_kwargs({'packages': 'install_args'})
     def default_update_handler(self, bin_name: BinName, install_args: Optional[InstallArgs]=None, **context) -> 'ActionFuncReturnValue':
+        self._require_installer_bin("update")
         return f'{self.name} BinProvider does not implement any update method'
 
     # @validate_call
     @remap_kwargs({'packages': 'install_args'})
     def default_uninstall_handler(self, bin_name: BinName, install_args: Optional[InstallArgs]=None, **context) -> 'ActionFuncReturnValue':
+        self._require_installer_bin("uninstall")
         return False
 
     @log_method_call()
@@ -614,6 +621,26 @@ class BinProvider(BaseModel):
         for path in reversed(self.PATH.split(':')):
             if path not in sys.path:
                 sys.path.insert(0, path)   # e.g. /opt/archivebox/bin:/bin:/usr/local/bin:...
+
+    def _require_installer_bin(self, action: str) -> HostBinPath:
+        installer_bin = self.INSTALLER_BIN_ABSPATH
+        if installer_bin:
+            return installer_bin
+        raise BinProviderUnavailableError(self.__class__.__name__, action, self.INSTALLER_BIN)
+
+    def _proc_output(self, proc: subprocess.CompletedProcess) -> str:
+        return format_subprocess_output(proc.stdout, proc.stderr)
+
+    def _raise_proc_error(self, action: Literal["install", "update", "uninstall"], target: object, proc: subprocess.CompletedProcess) -> None:
+        exc_cls = {
+            "install": BinProviderInstallError,
+            "update": BinProviderUpdateError,
+            "uninstall": BinProviderUninstallError,
+        }[action]
+        raise exc_cls(self.__class__.__name__, target, returncode=proc.returncode, output=self._proc_output(proc))
+
+    def _result_output(self, proc: subprocess.CompletedProcess) -> str:
+        return self._proc_output(proc)
 
     # @validate_call
     @log_method_call(include_result=True)
@@ -777,7 +804,8 @@ class BinProvider(BaseModel):
                 binprovider=self,
                 abspath=Path(shutil.which(bin_name) or UNKNOWN_ABSPATH),
                 version=cast(SemVer, UNKNOWN_VERSION),
-                sha256=UNKNOWN_SHA256, binproviders=[self],
+                sha256=UNKNOWN_SHA256,
+                binproviders=[self],
             )
 
         installed_abspath = self.get_abspath(bin_name, quiet=True, nocache=nocache)
