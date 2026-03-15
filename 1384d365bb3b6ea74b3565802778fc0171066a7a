@@ -1,0 +1,25 @@
+abx_pkg/logging.py
+  cd7a6c73ba1961b4 1-125
+abx_pkg/__init__.py
+  cd7a6c73ba1961b4 18,72-74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.11",
+  "base_commit_sha": "1384d365bb3b6ea74b3565802778fc0171066a7a",
+  "prompts": {
+    "cd7a6c73ba1961b4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019cf0da-ca50-7e53-94d9-1e08b04b284b",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>",
+      "messages": [],
+      "total_additions": 129,
+      "total_deletions": 0,
+      "accepted_lines": 129,
+      "overriden_lines": 0
+    }
+  }
+}
