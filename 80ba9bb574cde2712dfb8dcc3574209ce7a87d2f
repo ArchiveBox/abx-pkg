@@ -1,0 +1,25 @@
+abx_pkg/binprovider_ansible.py
+  ff99bc04b1bec027 6-7,10,31,35,40-61,70-78,82,85,88,100-101,104-106,116-119,121-129,150-155,168,183,198
+tests.py
+  ff99bc04b1bec027 23,546-675
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.11",
+  "base_commit_sha": "80ba9bb574cde2712dfb8dcc3574209ce7a87d2f",
+  "prompts": {
+    "ff99bc04b1bec027": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019cf052-6a50-74f3-a2b1-80b5cfa316c7",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>",
+      "messages": [],
+      "total_additions": 221,
+      "total_deletions": 32,
+      "accepted_lines": 198,
+      "overriden_lines": 0
+    }
+  }
+}
