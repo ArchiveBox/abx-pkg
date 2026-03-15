@@ -11,20 +11,40 @@ class BinProviderError(ABXPkgError):
     pass
 
 
-class BinProviderInstallError(BinProviderError):
-    pass
+class BinProviderOperationError(BinProviderError):
+    action: str = "operate on"
+
+    def __init__(self, provider_name: str, target: object, returncode: int | None = None, output: str | None = None):
+        self.provider_name = provider_name
+        self.target = target
+        self.returncode = returncode
+        self.output = (output or "").strip()
+        message = f"{self.provider_name} {self.action} failed for {self.target!r}"
+        if self.returncode is not None:
+            message += f" with returncode {self.returncode}"
+        if self.output:
+            message += f"\n{self.output}"
+        super().__init__(message)
 
 
-class BinProviderUpdateError(BinProviderError):
-    pass
+class BinProviderInstallError(BinProviderOperationError):
+    action = "install"
 
 
-class BinProviderUninstallError(BinProviderError):
-    pass
+class BinProviderUpdateError(BinProviderOperationError):
+    action = "update"
+
+
+class BinProviderUninstallError(BinProviderOperationError):
+    action = "uninstall"
 
 
 class BinProviderUnavailableError(BinProviderError):
-    pass
+    def __init__(self, provider_name: str, action: str, installer_bin: str):
+        self.provider_name = provider_name
+        self.action = action
+        self.installer_bin = installer_bin
+        super().__init__(f"{self.provider_name} cannot {self.action} because {self.installer_bin} is not available on this host")
 
 
 class BinaryOperationError(ABXPkgError):
