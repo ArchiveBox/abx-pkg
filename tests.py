@@ -1085,12 +1085,8 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = CargoProvider(cargo_root=Path(temp_dir) / 'cargo', cargo_home=Path(temp_dir) / 'cargo-home')
-            binary = Binary(name='just', binproviders=[provider])
-            override_binary = Binary(
-                name='rg',
-                binproviders=[provider],
-                overrides={'cargo': {'install_args': ['ripgrep']}},
-            )
+            binary = Binary(name='choose', binproviders=[provider])
+            override_binary = self.make_override_binary(binary, ['choose'])
             self.assert_binary_lifecycle(binary, override_binary=override_binary)
 
     def test_gem_provider_live_update_and_uninstall(self):
