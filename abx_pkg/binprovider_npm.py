@@ -17,7 +17,7 @@ from platformdirs import user_cache_path
 
 from .base_types import BinProviderName, PATHStr, BinName, InstallArgs, HostBinPath, bin_abspath
 from .semver import SemVer
-from .binprovider import BinProvider
+from .binprovider import BinProvider, remap_kwargs
 
 # Cache these values globally because they never change at runtime
 _CACHED_GLOBAL_NPM_PREFIX: Path | None = None
@@ -125,38 +125,40 @@ class NpmProvider(BinProvider):
         if self.npm_prefix:
             (self.npm_prefix / 'node_modules/.bin').mkdir(parents=True, exist_ok=True)
 
-    def default_install_handler(self, bin_name: str, packages: Optional[InstallArgs]=None, **context) -> str:
+    @remap_kwargs({'packages': 'install_args'})
+    def default_install_handler(self, bin_name: str, install_args: Optional[InstallArgs]=None, **context) -> str:
         self.setup()
         
-        packages = packages or self.get_packages(bin_name)
+        install_args = install_args or self.get_install_args(bin_name)
         if not self.INSTALLER_BIN_ABSPATH:
             raise Exception(f'{self.__class__.__name__} install method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)')
         
-        # print(f'[*] {self.__class__.__name__}: Installing {bin_name}: {self.INSTALLER_BIN_ABSPATH} install {packages}')
+        # print(f'[*] {self.__class__.__name__}: Installing {bin_name}: {self.INSTALLER_BIN_ABSPATH} install {install_args}')
         
-        install_args = [*self.npm_install_args, self.cache_arg]
+        npm_cmd_args = [*self.npm_install_args, self.cache_arg]
         if self.npm_prefix:
-            install_args.append(f'--prefix={self.npm_prefix}')
+            npm_cmd_args.append(f'--prefix={self.npm_prefix}')
         else:
-            install_args.append('--global')
+            npm_cmd_args.append('--global')
         
         proc = self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=[
             "install",
+            *npm_cmd_args,
             *install_args,
-            *packages,
         ])
         
         if proc.returncode != 0:
             print(proc.stdout.strip())
             print(proc.stderr.strip())
-            raise Exception(f'{self.__class__.__name__}: install got returncode {proc.returncode} while installing {packages}: {packages}')
+            raise Exception(f'{self.__class__.__name__}: install got returncode {proc.returncode} while installing {install_args}: {install_args}')
         
         return (proc.stderr.strip() + '\n' + proc.stdout.strip()).strip()
 
-    def default_update_handler(self, bin_name: str, packages: Optional[InstallArgs]=None, **context) -> str:
+    @remap_kwargs({'packages': 'install_args'})
+    def default_update_handler(self, bin_name: str, install_args: Optional[InstallArgs]=None, **context) -> str:
         self.setup()
 
-        packages = packages or self.get_packages(bin_name)
+        install_args = install_args or self.get_install_args(bin_name)
         if not self.INSTALLER_BIN_ABSPATH:
             raise Exception(f'{self.__class__.__name__} update method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)')
 
@@ -169,18 +171,19 @@ class NpmProvider(BinProvider):
         proc = self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=[
             'update',
             *update_args,
-            *packages,
+            *install_args,
         ])
 
         if proc.returncode != 0:
             print(proc.stdout.strip())
             print(proc.stderr.strip())
-            raise Exception(f'{self.__class__.__name__}: update got returncode {proc.returncode} while updating {packages}: {packages}')
+            raise Exception(f'{self.__class__.__name__}: update got returncode {proc.returncode} while updating {install_args}: {install_args}')
 
         return (proc.stderr.strip() + '\n' + proc.stdout.strip()).strip()
 
-    def default_uninstall_handler(self, bin_name: str, packages: Optional[InstallArgs]=None, **context) -> bool:
-        packages = packages or self.get_packages(bin_name)
+    @remap_kwargs({'packages': 'install_args'})
+    def default_uninstall_handler(self, bin_name: str, install_args: Optional[InstallArgs]=None, **context) -> bool:
+        install_args = install_args or self.get_install_args(bin_name)
         if not self.INSTALLER_BIN_ABSPATH:
             raise Exception(f'{self.__class__.__name__} uninstall method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)')
 
@@ -193,13 +196,13 @@ class NpmProvider(BinProvider):
         proc = self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=[
             'uninstall',
             *uninstall_args,
-            *packages,
+            *install_args,
         ])
 
         if proc.returncode != 0:
             print(proc.stdout.strip())
             print(proc.stderr.strip())
-            raise Exception(f'{self.__class__.__name__}: uninstall got returncode {proc.returncode} while uninstalling {packages}: {packages}')
+            raise Exception(f'{self.__class__.__name__}: uninstall got returncode {proc.returncode} while uninstalling {install_args}: {install_args}')
 
         return True
     
@@ -219,8 +222,8 @@ class NpmProvider(BinProvider):
         
         # fallback to using npm show to get alternate binary names based on the package, then try to find those in BinProvider.PATH
         try:
-            packages = self.get_packages(str(bin_name)) or [str(bin_name)]
-            main_package = packages[0]   # assume first package in list is the main one
+            install_args = self.get_install_args(str(bin_name)) or [str(bin_name)]
+            main_package = install_args[0]   # assume first package in list is the main one
             output_lines = self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=[
                 'show',
                 '--json',
@@ -257,8 +260,8 @@ class NpmProvider(BinProvider):
         
         # fallback to using npm list to get the installed package version
         try:
-            packages = self.get_packages(str(bin_name), **context) or [str(bin_name)]
-            main_package = packages[0]  # assume first package in list is the main one
+            install_args = self.get_install_args(str(bin_name), **context) or [str(bin_name)]
+            main_package = install_args[0]  # assume first package in list is the main one
             
             # remove the package version if it exists "@postslight/parser@^1.2.3" -> "@postlight/parser"
             if main_package[0] == '@':

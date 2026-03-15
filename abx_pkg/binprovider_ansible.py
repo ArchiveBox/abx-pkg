@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional, Any
 
 from .base_types import BinProviderName, PATHStr, BinName, InstallArgs
-from .binprovider import BinProvider, OPERATING_SYSTEM, DEFAULT_PATH
+from .binprovider import BinProvider, OPERATING_SYSTEM, DEFAULT_PATH, remap_kwargs
 
 
 ANSIBLE_INSTALLED = False
@@ -154,28 +154,30 @@ class AnsibleProvider(BinProvider):
                 return {'path': homebrew_path}
         return {}
 
-    def default_install_handler(self, bin_name: str, packages: Optional[InstallArgs] = None, **context) -> str:
-        packages = packages or self.get_packages(bin_name)
+    @remap_kwargs({'packages': 'install_args'})
+    def default_install_handler(self, bin_name: str, install_args: Optional[InstallArgs] = None, **context) -> str:
+        install_args = install_args or self.get_install_args(bin_name)
 
         if not self.INSTALLER_BIN_ABSPATH:
             raise Exception(f"{self.__class__.__name__}.INSTALLER_BIN is not available on this host: {self.INSTALLER_BIN}")
 
         return ansible_package_install(
-            pkg_names=packages,
+            pkg_names=install_args,
             quiet=True,
             playbook_template=self.ansible_playbook_template,
             installer_module=self.ansible_installer_module,
             **({'module_extra_kwargs': self.get_ansible_module_extra_kwargs()} if self.get_ansible_module_extra_kwargs() else {}),
         )
 
-    def default_update_handler(self, bin_name: str, packages: Optional[InstallArgs] = None, **context) -> str:
-        packages = packages or self.get_packages(bin_name)
+    @remap_kwargs({'packages': 'install_args'})
+    def default_update_handler(self, bin_name: str, install_args: Optional[InstallArgs] = None, **context) -> str:
+        install_args = install_args or self.get_install_args(bin_name)
 
         if not self.INSTALLER_BIN_ABSPATH:
             raise Exception(f"{self.__class__.__name__}.INSTALLER_BIN is not available on this host: {self.INSTALLER_BIN}")
 
         return ansible_package_install(
-            pkg_names=packages,
+            pkg_names=install_args,
             quiet=True,
             playbook_template=self.ansible_playbook_template,
             installer_module=self.ansible_installer_module,
@@ -183,14 +185,15 @@ class AnsibleProvider(BinProvider):
             **({'module_extra_kwargs': self.get_ansible_module_extra_kwargs()} if self.get_ansible_module_extra_kwargs() else {}),
         )
 
-    def default_uninstall_handler(self, bin_name: str, packages: Optional[InstallArgs] = None, **context) -> bool:
-        packages = packages or self.get_packages(bin_name)
+    @remap_kwargs({'packages': 'install_args'})
+    def default_uninstall_handler(self, bin_name: str, install_args: Optional[InstallArgs] = None, **context) -> bool:
+        install_args = install_args or self.get_install_args(bin_name)
 
         if not self.INSTALLER_BIN_ABSPATH:
             raise Exception(f"{self.__class__.__name__}.INSTALLER_BIN is not available on this host: {self.INSTALLER_BIN}")
 
         ansible_package_install(
-            pkg_names=packages,
+            pkg_names=install_args,
             quiet=True,
             playbook_template=self.ansible_playbook_template,
             installer_module=self.ansible_installer_module,

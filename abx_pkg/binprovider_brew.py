@@ -13,7 +13,7 @@ from pydantic import model_validator, TypeAdapter
 
 from .base_types import BinProviderName, PATHStr, BinName, InstallArgs, HostBinPath, bin_abspath
 from .semver import SemVer
-from .binprovider import BinProvider
+from .binprovider import BinProvider, remap_kwargs
 
 OS = platform.system().lower()
 
@@ -59,15 +59,16 @@ class BrewProvider(BinProvider):
         self.PATH = TypeAdapter(PATHStr).validate_python(':'.join(PATHs))
         return self
 
-    def default_install_handler(self, bin_name: str, packages: Optional[InstallArgs] = None, **context) -> str:
+    @remap_kwargs({'packages': 'install_args'})
+    def default_install_handler(self, bin_name: str, install_args: Optional[InstallArgs] = None, **context) -> str:
         global _LAST_UPDATE_CHECK
 
-        packages = packages or self.get_packages(bin_name)
+        install_args = install_args or self.get_install_args(bin_name)
 
         if not self.INSTALLER_BIN_ABSPATH:
             raise Exception(f"{self.__class__.__name__}.INSTALLER_BIN is not available on this host: {self.INSTALLER_BIN}")
 
-        # print(f'[*] {self.__class__.__name__}: Installing {bin_name}: {self.INSTALLER_BIN_ABSPATH} install {packages}')
+        # print(f'[*] {self.__class__.__name__}: Installing {bin_name}: {self.INSTALLER_BIN_ABSPATH} install {install_args}')
 
         # Attempt 1: Try installing with Pyinfra
         from .binprovider_pyinfra import PYINFRA_INSTALLED, pyinfra_package_install
@@ -88,18 +89,19 @@ class BrewProvider(BinProvider):
             self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=["update"])
             _LAST_UPDATE_CHECK = time.time()
             
-        proc = self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=["install", *packages])
+        proc = self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=["install", *install_args])
         if proc.returncode != 0:
             print(proc.stdout.strip())
             print(proc.stderr.strip())
-            raise Exception(f"{self.__class__.__name__} install got returncode {proc.returncode} while installing {packages}: {packages}")
+            raise Exception(f"{self.__class__.__name__} install got returncode {proc.returncode} while installing {install_args}: {install_args}")
 
         return proc.stderr.strip() + "\n" + proc.stdout.strip()
 
-    def default_update_handler(self, bin_name: str, packages: Optional[InstallArgs] = None, **context) -> str:
+    @remap_kwargs({'packages': 'install_args'})
+    def default_update_handler(self, bin_name: str, install_args: Optional[InstallArgs] = None, **context) -> str:
         global _LAST_UPDATE_CHECK
 
-        packages = packages or self.get_packages(bin_name)
+        install_args = install_args or self.get_install_args(bin_name)
 
         if not self.INSTALLER_BIN_ABSPATH:
             raise Exception(f"{self.__class__.__name__}.INSTALLER_BIN is not available on this host: {self.INSTALLER_BIN}")
@@ -107,27 +109,28 @@ class BrewProvider(BinProvider):
         from .binprovider_pyinfra import PYINFRA_INSTALLED, pyinfra_package_install
 
         if PYINFRA_INSTALLED:
-            return pyinfra_package_install(packages, installer_module="operations.brew.packages", installer_extra_kwargs={"latest": True})
+            return pyinfra_package_install(install_args, installer_module="operations.brew.packages", installer_extra_kwargs={"latest": True})
 
         from .binprovider_ansible import ANSIBLE_INSTALLED, ansible_package_install
 
         if ANSIBLE_INSTALLED:
-            return ansible_package_install(packages, installer_module="community.general.homebrew", state="latest")
+            return ansible_package_install(install_args, installer_module="community.general.homebrew", state="latest")
 
         if not _LAST_UPDATE_CHECK or (time.time() - _LAST_UPDATE_CHECK) > UPDATE_CHECK_INTERVAL:
             self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=["update"])
             _LAST_UPDATE_CHECK = time.time()
 
-        proc = self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=["upgrade", *packages])
+        proc = self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=["upgrade", *install_args])
         if proc.returncode != 0:
             print(proc.stdout.strip())
             print(proc.stderr.strip())
-            raise Exception(f"{self.__class__.__name__} update got returncode {proc.returncode} while updating {packages}: {packages}")
+            raise Exception(f"{self.__class__.__name__} update got returncode {proc.returncode} while updating {install_args}: {install_args}")
 
         return proc.stderr.strip() + "\n" + proc.stdout.strip()
 
-    def default_uninstall_handler(self, bin_name: str, packages: Optional[InstallArgs] = None, **context) -> bool:
-        packages = packages or self.get_packages(bin_name)
+    @remap_kwargs({'packages': 'install_args'})
+    def default_uninstall_handler(self, bin_name: str, install_args: Optional[InstallArgs] = None, **context) -> bool:
+        install_args = install_args or self.get_install_args(bin_name)
 
         if not self.INSTALLER_BIN_ABSPATH:
             raise Exception(f"{self.__class__.__name__}.INSTALLER_BIN is not available on this host: {self.INSTALLER_BIN}")
@@ -135,20 +138,20 @@ class BrewProvider(BinProvider):
         from .binprovider_pyinfra import PYINFRA_INSTALLED, pyinfra_package_install
 
         if PYINFRA_INSTALLED:
-            pyinfra_package_install(packages, installer_module="operations.brew.packages", installer_extra_kwargs={"present": False})
+            pyinfra_package_install(install_args, installer_module="operations.brew.packages", installer_extra_kwargs={"present": False})
             return True
 
         from .binprovider_ansible import ANSIBLE_INSTALLED, ansible_package_install
 
         if ANSIBLE_INSTALLED:
-            ansible_package_install(packages, installer_module="community.general.homebrew", state="absent")
+            ansible_package_install(install_args, installer_module="community.general.homebrew", state="absent")
             return True
 
-        proc = self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=["uninstall", *packages])
+        proc = self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=["uninstall", *install_args])
         if proc.returncode != 0:
             print(proc.stdout.strip())
             print(proc.stderr.strip())
-            raise Exception(f"{self.__class__.__name__} uninstall got returncode {proc.returncode} while uninstalling {packages}: {packages}")
+            raise Exception(f"{self.__class__.__name__} uninstall got returncode {proc.returncode} while uninstalling {install_args}: {install_args}")
 
         return True
 
@@ -179,7 +182,7 @@ class BrewProvider(BinProvider):
         # This code works but theres no need, the method above is much faster:
         
         # # try checking filesystem or using brew list to get the Cellar bin path (faster than brew info)
-        # for package in (self.get_packages(str(bin_name)) or [str(bin_name)]):
+        # for package in (self.get_install_args(str(bin_name)) or [str(bin_name)]):
         #     try:
         #         paths = self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=[
         #             'list',
@@ -194,7 +197,7 @@ class BrewProvider(BinProvider):
         #         pass
         
         # # fallback to using brew info to get the Cellar bin path
-        # for package in (self.get_packages(str(bin_name)) or [str(bin_name)]):
+        # for package in (self.get_install_args(str(bin_name)) or [str(bin_name)]):
         #     try:
         #         info_lines = self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=[
         #             'info',
@@ -236,7 +239,7 @@ class BrewProvider(BinProvider):
             return None
         
         # fallback to using brew list to get the package version (faster than brew info)
-        for package in (self.get_packages(str(bin_name)) or [str(bin_name)]):
+        for package in (self.get_install_args(str(bin_name)) or [str(bin_name)]):
             try:
                 paths = self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=[
                     'list',
@@ -253,8 +256,8 @@ class BrewProvider(BinProvider):
                 pass
         
         # fallback to using brew info to get the version (slowest method of all)
-        packages = self.get_packages(str(bin_name)) or [str(bin_name)]
-        main_package = packages[0]   # assume first package in list is the main one
+        install_args = self.get_install_args(str(bin_name)) or [str(bin_name)]
+        main_package = install_args[0]   # assume first package in list is the main one
         try:
             version_str = self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=[
                 'info',

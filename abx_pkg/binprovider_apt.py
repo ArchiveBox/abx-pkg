@@ -10,7 +10,7 @@ from typing import Optional
 from pydantic import model_validator, TypeAdapter
 
 from .base_types import BinProviderName, PATHStr, BinName, InstallArgs
-from .binprovider import BinProvider
+from .binprovider import BinProvider, remap_kwargs
 
 _LAST_UPDATE_CHECK = None
 UPDATE_CHECK_INTERVAL = 60 * 60 * 24  # 1 day
@@ -42,15 +42,16 @@ class AptProvider(BinProvider):
         self.PATH = TypeAdapter(PATHStr).validate_python(PATH)
         return self
 
-    def default_install_handler(self, bin_name: BinName, packages: Optional[InstallArgs] = None, **context) -> str:
+    @remap_kwargs({'packages': 'install_args'})
+    def default_install_handler(self, bin_name: BinName, install_args: Optional[InstallArgs] = None, **context) -> str:
         global _LAST_UPDATE_CHECK
 
-        packages = packages or self.get_packages(bin_name)
+        install_args = install_args or self.get_install_args(bin_name)
 
         if not (self.INSTALLER_BIN_ABSPATH and shutil.which("dpkg")):
             raise Exception(f"{self.__class__.__name__}.INSTALLER_BIN is not available on this host: {self.INSTALLER_BIN}")
 
-        # print(f'[*] {self.__class__.__name__}: Installing {bin_name}: {self.INSTALLER_BIN} install {packages}')
+        # print(f'[*] {self.__class__.__name__}: Installing {bin_name}: {self.INSTALLER_BIN} install {install_args}')
 
         # Attempt 1: Try installing with Pyinfra
         from .binprovider_pyinfra import PYINFRA_INSTALLED, pyinfra_package_install
@@ -70,19 +71,20 @@ class AptProvider(BinProvider):
             self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=["update", "-qq"])
             _LAST_UPDATE_CHECK = time.time()
 
-        proc = self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=["install", "-y", "-qq", "--no-install-recommends", *packages])
+        proc = self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=["install", "-y", "-qq", "--no-install-recommends", *install_args])
         if proc.returncode != 0:
             print(proc.stdout.strip())
             print(proc.stderr.strip())
-            raise Exception(f"{self.__class__.__name__} install got returncode {proc.returncode} while installing {packages}: {packages}")
+            raise Exception(f"{self.__class__.__name__} install got returncode {proc.returncode} while installing {install_args}: {install_args}")
 
             return proc.stderr.strip() + "\n" + proc.stdout.strip()
-        return f"Installed {packages} succesfully."
+        return f"Installed {install_args} succesfully."
 
-    def default_update_handler(self, bin_name: BinName, packages: Optional[InstallArgs] = None, **context) -> str:
+    @remap_kwargs({'packages': 'install_args'})
+    def default_update_handler(self, bin_name: BinName, install_args: Optional[InstallArgs] = None, **context) -> str:
         global _LAST_UPDATE_CHECK
 
-        packages = packages or self.get_packages(bin_name)
+        install_args = install_args or self.get_install_args(bin_name)
 
         if not (self.INSTALLER_BIN_ABSPATH and shutil.which("dpkg")):
             raise Exception(f"{self.__class__.__name__}.INSTALLER_BIN is not available on this host: {self.INSTALLER_BIN}")
@@ -90,27 +92,28 @@ class AptProvider(BinProvider):
         from .binprovider_pyinfra import PYINFRA_INSTALLED, pyinfra_package_install
 
         if PYINFRA_INSTALLED:
-            return pyinfra_package_install(packages, installer_module="operations.apt.packages", installer_extra_kwargs={"latest": True})
+            return pyinfra_package_install(install_args, installer_module="operations.apt.packages", installer_extra_kwargs={"latest": True})
 
         from .binprovider_ansible import ANSIBLE_INSTALLED, ansible_package_install
 
         if ANSIBLE_INSTALLED:
-            return ansible_package_install(packages, installer_module="ansible.builtin.apt", state="latest")
+            return ansible_package_install(install_args, installer_module="ansible.builtin.apt", state="latest")
 
         if not _LAST_UPDATE_CHECK or (time.time() - _LAST_UPDATE_CHECK) > UPDATE_CHECK_INTERVAL:
             self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=["update", "-qq"])
             _LAST_UPDATE_CHECK = time.time()
 
-        proc = self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=["install", "--only-upgrade", "-y", "-qq", "--no-install-recommends", *packages])
+        proc = self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=["install", "--only-upgrade", "-y", "-qq", "--no-install-recommends", *install_args])
         if proc.returncode != 0:
             print(proc.stdout.strip())
             print(proc.stderr.strip())
-            raise Exception(f"{self.__class__.__name__} update got returncode {proc.returncode} while updating {packages}: {packages}")
+            raise Exception(f"{self.__class__.__name__} update got returncode {proc.returncode} while updating {install_args}: {install_args}")
 
-        return f"Updated {packages} succesfully."
+        return f"Updated {install_args} succesfully."
 
-    def default_uninstall_handler(self, bin_name: BinName, packages: Optional[InstallArgs] = None, **context) -> bool:
-        packages = packages or self.get_packages(bin_name)
+    @remap_kwargs({'packages': 'install_args'})
+    def default_uninstall_handler(self, bin_name: BinName, install_args: Optional[InstallArgs] = None, **context) -> bool:
+        install_args = install_args or self.get_install_args(bin_name)
 
         if not (self.INSTALLER_BIN_ABSPATH and shutil.which("dpkg")):
             raise Exception(f"{self.__class__.__name__}.INSTALLER_BIN is not available on this host: {self.INSTALLER_BIN}")
@@ -118,20 +121,20 @@ class AptProvider(BinProvider):
         from .binprovider_pyinfra import PYINFRA_INSTALLED, pyinfra_package_install
 
         if PYINFRA_INSTALLED:
-            pyinfra_package_install(packages, installer_module="operations.apt.packages", installer_extra_kwargs={"present": False})
+            pyinfra_package_install(install_args, installer_module="operations.apt.packages", installer_extra_kwargs={"present": False})
             return True
 
         from .binprovider_ansible import ANSIBLE_INSTALLED, ansible_package_install
 
         if ANSIBLE_INSTALLED:
-            ansible_package_install(packages, installer_module="ansible.builtin.apt", state="absent")
+            ansible_package_install(install_args, installer_module="ansible.builtin.apt", state="absent")
             return True
 
-        proc = self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=["remove", "-y", "-qq", *packages])
+        proc = self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=["remove", "-y", "-qq", *install_args])
         if proc.returncode != 0:
             print(proc.stdout.strip())
             print(proc.stderr.strip())
-            raise Exception(f"{self.__class__.__name__} uninstall got returncode {proc.returncode} while removing {packages}: {packages}")
+            raise Exception(f"{self.__class__.__name__} uninstall got returncode {proc.returncode} while removing {install_args}: {install_args}")
 
         return True
 

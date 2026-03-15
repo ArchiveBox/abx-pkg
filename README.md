@@ -1,4 +1,4 @@
-<h1><a href="https://github.com/ArchiveBox/abx-pkg"><code>abx-pkg</code></a> &nbsp; &nbsp; &nbsp; &nbsp; 📦  <small><code>apt</code>&nbsp; <code>brew</code>&nbsp; <code>pip</code>&nbsp; <code>npm</code> &nbsp;₊₊₊</small><br/><sub>Simple Python interfaces for package managers + installed binaries.</sub></h1>
+<h1><a href="https://github.com/ArchiveBox/abx-pkg"><code>abx-pkg</code></a> &nbsp; &nbsp; &nbsp; &nbsp; 📦  <small><code>apt</code>&nbsp; <code>brew</code>&nbsp; <code>pip</code>&nbsp; <code>npm</code>&nbsp; <code>cargo</code>&nbsp; <code>gem</code>&nbsp; <code>go_get</code>&nbsp; <code>nix</code>&nbsp; <code>docker</code> &nbsp;₊₊₊</small><br/><sub>Simple Python interfaces for package managers + installed binaries.</sub></h1>
 <br/>
 
 [![PyPI][pypi-badge]][pypi]
@@ -47,7 +47,18 @@ python
 ```python
 from abx_pkg import *
 
-apt, brew, pip, npm, env = AptProvider(), BrewProvider(), PipProvider(), NpmProvider(), EnvProvider()
+apt, brew, pip, npm, cargo, gem, go_get, nix, docker, env = (
+    AptProvider(),
+    BrewProvider(),
+    PipProvider(),
+    NpmProvider(),
+    CargoProvider(),
+    GemProvider(),
+    GoGetProvider(),
+    NixProvider(),
+    DockerProvider(),
+    EnvProvider(),
+)
 
 dependencies = [
     Binary(name='curl',       binproviders=[env, apt, brew]),
@@ -108,10 +119,17 @@ print(ffmpeg.model_json_schema())   # ... OpenAPI-ready JSON schema showing all 
 - `brew` (macOS/Linux)
 - `pip` (Linux/macOS/Windows)
 - `npm` (Linux/macOS/Windows)
+- `cargo` (Linux/macOS)
+- `gem` (Linux/macOS)
+- `go get` / `go install` (`GoGetProvider`) (Linux/macOS)
+- `nix` (Linux/macOS)
+- `docker` (Linux/macOS, using local wrapper scripts that run `docker run`)
 - `env` (looks for existing version of binary in user's `$PATH` at runtime)
 - `vendor` (you can bundle vendored copies of packages you depend on within your source)
 
-*Planned:* `docker`, `cargo`, `nix`, `apk`, `go get`, `gem`, `pkg`, *and more using `ansible`/[`pyinfra`](https://github.com/pyinfra-dev/pyinfra)...*
+*Planned:* `apk`, `pkg`, *and more using `ansible`/[`pyinfra`](https://github.com/pyinfra-dev/pyinfra)...*
+
+`DockerProvider` expects image refs as install args, typically via overrides on a `Binary`. It writes a local wrapper script for the binary and executes it via `docker run ...`; the binary version is parsed from the image tag, so semver-like tags work best.
 
 ---
 
@@ -131,7 +149,7 @@ This type represents a "provider of binaries", e.g. a package manager like `apt`
 `BinProvider`s implement the following interface:
 * `.INSTALLER_BIN -> /opt/homebrew/bin/brew`  provider's pkg manager location
 * `.PATH -> PATHStr('/opt/homebrew/bin:/usr/local/bin:...')`  where provider stores bins
-* `get_packages(bin_name: str) -> InstallArgs(['curl', 'libcurl4', '...])` find pkg dependencies for a bin
+* `get_install_args(bin_name: str) -> InstallArgs(['curl', 'libcurl4', '...])` find installer args for a bin
 - `install(bin_name: str)` install a bin using binprovider to install needed packages
 - `update(bin_name: str)` update a bin using the binprovider's package manager
 - `uninstall(bin_name: str)` remove a bin using the binprovider's package manager
@@ -216,9 +234,9 @@ class YtdlpBinary(Binary):
     
     # customize installed package names for specific package managers
     overrides: dict[BinProviderName, ProviderLookupDict] = {
-        'pip': {'packages': ['yt-dlp[default,curl-cffi]']}, # can use literal values (packages -> list[str], version -> SemVer, abspath -> Path, install -> str log)
-        'apt': {'packages': lambda: ['yt-dlp', 'ffmpeg']},  # also accepts any pure Callable that returns a list of packages
-        'brew': {'packages': 'self.get_macos_packages'},    # also accepts string reference to function on self (where self is the BinProvider)
+        'pip': {'install_args': ['yt-dlp[default,curl-cffi]']}, # can use literal values (install_args -> list[str], version -> SemVer, abspath -> Path, install -> str log)
+        'apt': {'install_args': lambda: ['yt-dlp', 'ffmpeg']},  # also accepts any pure Callable that returns a list of packages
+        'brew': {'install_args': 'self.get_macos_packages'},    # also accepts string reference to function on self (where self is the BinProvider)
     }
 
 
@@ -253,7 +271,7 @@ class DockerBinary(Binary):
         },
         'apt': {
             # example: vary installed package name based on your CPU architecture
-            'packages': {
+            'install_args': {
                 'amd64': ['docker'],
                 'armv7l': ['docker-ce'],
                 'arm64': ['docker-ce'],
@@ -486,11 +504,11 @@ class CargoProvider(BinProvider):
             sys.path.append('~/.cargo/bin')
 
     def on_install(self, bin_name: BinName, **context):
-        packages = self.on_get_packages(bin_name)
-        installer_process = run(['cargo', 'install', *packages.split(' ')], capture_output = True, text=True)
+        install_args = self.on_get_install_args(bin_name)
+        installer_process = run(['cargo', 'install', *install_args.split(' ')], capture_output = True, text=True)
         assert installer_process.returncode == 0
 
-    def on_get_packages(self, bin_name: BinName, **context) -> InstallArgs:
+    def on_get_install_args(self, bin_name: BinName, **context) -> InstallArgs:
         # optionally remap bin_names to strings passed to installer 
         # e.g. 'yt-dlp' -> ['yt-dlp, 'ffmpeg', 'libcffi', 'libaac']
         return [bin_name]
@@ -523,7 +541,7 @@ print(rg.version)                       # SemVer(14, 1, 0)
 - [x] Implement initial basic support for `apt`, `brew`, and `pip`
 - [x] Provide editability and actions via Django Admin UI using [`django-pydantic-field`](https://github.com/surenkov/django-pydantic-field) and [`django-jsonform`](https://django-jsonform.readthedocs.io/en/latest/)
 - [ ] Add `preinstall` and `postinstall` hooks for things like adding `apt` sources and running cleanup scripts
-- [ ] Implement more package managers (`cargo`, `gem`, `go get`, `ppm`, `nix`, `docker`, etc.)
+- [ ] Implement more package managers (`apk`, `ppm`, `pkg`, etc.)
 
 
 ### Other Packages We Like

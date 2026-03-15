@@ -2,20 +2,25 @@
 
 import os
 import sys
+import inspect
 import shutil
 import tempfile
 import unittest
 import subprocess
+import contextlib
 from io import StringIO
 from unittest import mock
 from pathlib import Path
+from typing import Optional
 
 # from rich import print
 
 from abx_pkg import (
-    BinProvider, EnvProvider, Binary, SemVer, BinProviderOverrides,
-    PipProvider, NpmProvider, AptProvider, BrewProvider,
+    BinProvider, EnvProvider, Binary, SemVer, BinProviderOverrides, InstallArgs,
+    PipProvider, NpmProvider, AptProvider, BrewProvider, CargoProvider,
+    GemProvider, GoGetProvider, NixProvider, DockerProvider,
 )
+from abx_pkg.binprovider import remap_kwargs
 from abx_pkg.binprovider_ansible import AnsibleProvider
 from abx_pkg.binprovider_pyinfra import PyinfraProvider
 
@@ -105,6 +110,8 @@ class TestBinProvider(unittest.TestCase):
             called_default_version_getter = False
             called_default_packages_getter = False
             called_custom_install_handler = False
+            received_legacy_install_packages = None
+            received_new_install_args = None
 
         def custom_version_getter():
             return '1.2.3'
@@ -113,13 +120,22 @@ class TestBinProvider(unittest.TestCase):
             assert self.__class__.__name__ == 'CustomProvider'
             return '/usr/bin/true'
 
+        def legacy_install_handler(self, bin_name, packages):
+            TestRecord.called_custom_install_handler = True
+            TestRecord.received_legacy_install_packages = packages
+            return 'legacy install ok'
+
+        def new_install_handler(self, bin_name, install_args):
+            TestRecord.received_new_install_args = install_args
+            return 'new install ok'
+
         class CustomProvider(BinProvider):
             name: str = 'custom'
 
             overrides: BinProviderOverrides = {
                 '*': {
                     'abspath': 'self.default_abspath_getter',     # test staticmethod referenced via dotted notation on self.
-                    'packages': 'self.default_packages_getter',   # test classmethod referenced via dotted notation on self.
+                    'install_args': 'self.default_packages_getter',   # test classmethod referenced via dotted notation on self.
                     'version': 'self.default_version_getter',     # test normal method referenced via dotted notation on self.
                     'install': None,                              # test intentionally nulled handler
                 },
@@ -129,7 +145,15 @@ class TestBinProvider(unittest.TestCase):
                     'packages': ['literal', 'return', 'value'],   # test literal return value
                 },
                 'abc': {
-                    'packages': 'self.alternate_packages_getter', # test classmethod that overrules default handler
+                    'install_args': 'self.alternate_packages_getter', # test classmethod that overrules default handler
+                },
+                'legacyinstall': {
+                    'packages': ['legacy-pkg'],
+                    'install': legacy_install_handler,
+                },
+                'newinstall': {
+                    'install_args': ['new-pkg'],
+                    'install': new_install_handler,
                 },
             }
 
@@ -178,13 +202,15 @@ class TestBinProvider(unittest.TestCase):
         # test custom version getter
         self.assertEqual(provider.get_version('somebin'), SemVer('1.2.3'))         # test that remote Callable func getter that takes no args works and str result is auto-cast to SemVer
         
-        # test default packages getter
-        self.assertEqual(provider.get_packages('doesnotexist'), ('doesnotexist',))  # test that it fallsback to [bin_name] by default if getter returns None
+        # test default install_args getter
+        self.assertEqual(provider.get_install_args('doesnotexist'), ('doesnotexist',))  # test that it fallsback to [bin_name] by default if getter returns None
         self.assertTrue(TestRecord.called_default_packages_getter)
-        self.assertEqual(provider.get_packages('abc'), ('abc', 'def'))             # test that classmethod getter funcs work
+        self.assertEqual(provider.get_install_args('abc'), ('abc', 'def'))             # test that classmethod getter funcs work
+        self.assertEqual(provider.get_packages('abc'), ('abc', 'def'))                 # legacy getter remains as an alias
         
-        # test custom packages getter
-        self.assertEqual(provider.get_packages('somebin'), ('literal', 'return', 'value'))  # test that literal return values in overrides work     
+        # test custom install_args getter
+        self.assertEqual(provider.get_install_args('somebin'), ('literal', 'return', 'value'))  # test that literal return values in overrides work
+        self.assertEqual(provider.get_packages('somebin'), ('literal', 'return', 'value'))      # legacy getter still resolves legacy override keys
         
         # test install handler
         exc = None
@@ -194,6 +220,29 @@ class TestBinProvider(unittest.TestCase):
             exc = err
         self.assertIsInstance(exc, AssertionError)
         self.assertTrue('BinProvider(name=custom) has no install handler implemented for Binary(name=doesnotexist)' in str(exc))
+
+        provider.install('legacyinstall')
+        provider.install('newinstall')
+        self.assertTrue(TestRecord.called_custom_install_handler)
+        self.assertEqual(TestRecord.received_legacy_install_packages, ('legacy-pkg',))
+        self.assertEqual(TestRecord.received_new_install_args, ('new-pkg',))
+
+    def test_remap_kwargs_supports_old_and_new_names_without_changing_signature(self):
+        class Example:
+            @remap_kwargs({'packages': 'install_args'})
+            def handler(self, install_args: Optional[InstallArgs] = None) -> InstallArgs | None:
+                return install_args
+
+        example = Example()
+
+        self.assertEqual(example.handler(install_args=('new-style',)), ('new-style',))
+        self.assertEqual(example.handler(packages=('old-style',)), ('old-style',))
+
+        signature = inspect.signature(Example.handler)
+        self.assertIn('install_args', signature.parameters)
+        self.assertNotIn('packages', signature.parameters)
+        self.assertEqual(signature.parameters['install_args'].annotation, Optional[InstallArgs])
+        self.assertEqual(signature.return_annotation, InstallArgs | None)
 
     @mock.patch.object(BinProvider, "INSTALLER_BIN_ABSPATH", new_callable=mock.PropertyMock, return_value=Path(sys.executable))
     @mock.patch("abx_pkg.binprovider.os.stat")
@@ -350,6 +399,141 @@ class TestBinary(unittest.TestCase):
         self.assertEqual(result.binproviders_supported, [provider])
         self.assertFalse(result.is_valid)
 
+    def _assert_binary_override_lifecycle(self, binary: Binary, provider: BinProvider, expected_commands: list[list[str]], extra_patches=()):
+        provider_cls = type(provider)
+        proc = subprocess.CompletedProcess(args=[], returncode=0, stdout='', stderr='')
+
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(mock.patch.object(BinProvider, 'INSTALLER_BIN_ABSPATH', new_callable=mock.PropertyMock, return_value=Path('/usr/local/bin/provider')))
+            mock_exec = stack.enter_context(mock.patch.object(provider_cls, 'exec', return_value=proc))
+            stack.enter_context(mock.patch.object(provider_cls, 'get_abspath', return_value=Path(sys.executable)))
+            stack.enter_context(mock.patch.object(provider_cls, 'get_version', return_value=SemVer('3.11.0')))
+            stack.enter_context(mock.patch.object(provider_cls, 'get_sha256', return_value='unknown'))
+            for patcher in extra_patches:
+                stack.enter_context(patcher)
+
+            provider_with_overrides = binary.get_binprovider(provider.name)
+            self.assertEqual(provider_with_overrides.get_install_args(binary.name), tuple(binary.overrides[provider.name]['install_args']))
+
+            installed = binary.install()
+            self.assertTrue(installed.is_valid)
+
+            updated = binary.update()
+            self.assertTrue(updated.is_valid)
+
+            removed = updated.uninstall()
+            self.assertFalse(removed.is_valid)
+
+        self.assertEqual([call.kwargs['cmd'] for call in mock_exec.call_args_list], expected_commands)
+
+    @mock.patch('abx_pkg.binprovider_cargo.CargoProvider.load_PATH_from_cargo_root', lambda self: self)
+    def test_binary_cargo_override_install_args_used_for_install_update_uninstall(self):
+        provider = CargoProvider(cargo_root=Path('/tmp/cargo-root'), cargo_home=Path('/tmp/cargo-home'), euid=os.geteuid())
+        binary = Binary(
+            name='rg',
+            binproviders=[provider],
+            overrides={'cargo': {'install_args': ['ripgrep']}},
+        )
+
+        self._assert_binary_override_lifecycle(
+            binary=binary,
+            provider=provider,
+            expected_commands=[
+                ['install', '--locked', '--root', '/tmp/cargo-root', 'ripgrep'],
+                ['install', '--force', '--locked', '--root', '/tmp/cargo-root', 'ripgrep'],
+                ['uninstall', '--locked', '--root', '/tmp/cargo-root', 'ripgrep'],
+            ],
+        )
+
+    @mock.patch('abx_pkg.binprovider_gem.GemProvider.load_PATH_from_gem_home', lambda self: self)
+    def test_binary_gem_override_install_args_used_for_install_update_uninstall(self):
+        provider = GemProvider(gem_home=Path('/tmp/gem-home'), gem_bindir=Path('/tmp/gem-home/bin'), euid=os.geteuid())
+        binary = Binary(
+            name='rails-bin',
+            binproviders=[provider],
+            overrides={'gem': {'install_args': ['rake']}},
+        )
+
+        self._assert_binary_override_lifecycle(
+            binary=binary,
+            provider=provider,
+            expected_commands=[
+                ['install', '--install-dir', '/tmp/gem-home', '--bindir', '/tmp/gem-home/bin', '--no-document', 'rake'],
+                ['update', '--install-dir', '/tmp/gem-home', '--bindir', '/tmp/gem-home/bin', '--no-document', 'rake'],
+                ['uninstall', '--all', '--executables', '--ignore-dependencies', '--force', '--install-dir', '/tmp/gem-home', '--bindir', '/tmp/gem-home/bin', 'rake'],
+            ],
+        )
+
+    @mock.patch('abx_pkg.binprovider_go_get.GoGetProvider.load_PATH_from_go_env', lambda self: self)
+    def test_binary_go_get_override_install_args_used_for_install_and_update(self):
+        provider = GoGetProvider(gobin=Path('/tmp/go/bin'), gopath=Path('/tmp/go'), euid=os.geteuid())
+        binary = Binary(
+            name='shfmt',
+            binproviders=[provider],
+            overrides={'go_get': {'install_args': ['mvdan.cc/sh/v3/cmd/shfmt@v3.11.0']}},
+        )
+
+        self._assert_binary_override_lifecycle(
+            binary=binary,
+            provider=provider,
+            expected_commands=[
+                ['install', 'mvdan.cc/sh/v3/cmd/shfmt@v3.11.0'],
+                ['install', 'mvdan.cc/sh/v3/cmd/shfmt@v3.11.0'],
+            ],
+            extra_patches=(
+                mock.patch.object(GoGetProvider, 'uninstall', return_value=True),
+            ),
+        )
+
+    @mock.patch('abx_pkg.binprovider_nix.NixProvider.load_PATH_from_nix_profile', lambda self: self)
+    def test_binary_nix_override_install_args_used_for_install_update_uninstall(self):
+        provider = NixProvider(nix_profile=Path('/tmp/nix/profile'), nix_state_dir=Path('/tmp/nix/state'), euid=os.geteuid())
+        binary = Binary(
+            name='jq-bin',
+            binproviders=[provider],
+            overrides={'nix': {'install_args': ['nixpkgs#jq']}},
+        )
+
+        self._assert_binary_override_lifecycle(
+            binary=binary,
+            provider=provider,
+            expected_commands=[
+                ['profile', 'install', '--extra-experimental-features', 'nix-command', '--extra-experimental-features', 'flakes', '--profile', '/tmp/nix/profile', 'nixpkgs#jq'],
+                ['profile', 'upgrade', '--extra-experimental-features', 'nix-command', '--extra-experimental-features', 'flakes', '--profile', '/tmp/nix/profile', 'jq'],
+                ['profile', 'remove', '--extra-experimental-features', 'nix-command', '--extra-experimental-features', 'flakes', '--profile', '/tmp/nix/profile', 'jq'],
+            ],
+            extra_patches=(
+                mock.patch.object(Path, 'mkdir'),
+                mock.patch.object(Path, 'exists', return_value=False),
+                mock.patch.object(Path, 'is_symlink', return_value=False),
+                mock.patch.object(Path, 'unlink'),
+            ),
+        )
+
+    @mock.patch('abx_pkg.binprovider_docker.DockerProvider.load_PATH_from_docker_shims', lambda self: self)
+    def test_binary_docker_override_install_args_used_for_install_update_uninstall(self):
+        provider = DockerProvider(docker_shim_dir=Path('/tmp/docker-bin'), euid=os.geteuid())
+        binary = Binary(
+            name='shellcheck',
+            binproviders=[provider],
+            overrides={'docker': {'install_args': ['koalaman/shellcheck:v0.10.0']}},
+        )
+
+        self._assert_binary_override_lifecycle(
+            binary=binary,
+            provider=provider,
+            expected_commands=[
+                ['pull', 'koalaman/shellcheck:v0.10.0'],
+                ['pull', 'koalaman/shellcheck:v0.10.0'],
+                ['image', 'rm', '--force', 'koalaman/shellcheck:v0.10.0'],
+            ],
+            extra_patches=(
+                mock.patch.object(DockerProvider, '_write_shim'),
+                mock.patch.object(DockerProvider, '_write_metadata'),
+                mock.patch.object(DockerProvider, 'metadata_path', return_value=Path('/tmp/docker-meta.json')),
+            ),
+        )
+
 
 class TestUpdateAndUninstall(unittest.TestCase):
 
@@ -442,6 +626,209 @@ class TestUpdateAndUninstall(unittest.TestCase):
 
         self.assertTrue(result)
         self.assertEqual(mock_exec.call_args.kwargs['cmd'], ['uninstall', '--yes', 'python'])
+
+    @mock.patch.object(BinProvider, 'INSTALLER_BIN_ABSPATH', new_callable=mock.PropertyMock, return_value=Path('/usr/local/bin/cargo'))
+    @mock.patch('abx_pkg.binprovider_cargo.CargoProvider.load_PATH_from_cargo_root', lambda self: self)
+    def test_cargo_provider_update_uses_install_force(self, _mock_installer_bin_abspath):
+        provider = CargoProvider(cargo_root=Path('/tmp/cargo-root'), euid=os.geteuid())
+        proc = subprocess.CompletedProcess(args=[], returncode=0, stdout='', stderr='')
+
+        with (
+            mock.patch.object(CargoProvider, 'exec', return_value=proc) as mock_exec,
+            mock.patch.object(CargoProvider, 'get_abspath', return_value=Path(sys.executable)),
+            mock.patch.object(CargoProvider, 'get_version', return_value=SemVer('3.11.0')),
+            mock.patch.object(CargoProvider, 'get_sha256', return_value='unknown'),
+        ):
+            provider.update('just')
+
+        self.assertEqual(
+            mock_exec.call_args.kwargs['cmd'],
+            ['install', '--force', '--locked', '--root', '/tmp/cargo-root', 'just'],
+        )
+
+    @mock.patch.object(BinProvider, 'INSTALLER_BIN_ABSPATH', new_callable=mock.PropertyMock, return_value=Path('/usr/local/bin/cargo'))
+    @mock.patch('abx_pkg.binprovider_cargo.CargoProvider.load_PATH_from_cargo_root', lambda self: self)
+    def test_cargo_provider_uninstall_uses_cargo_uninstall(self, _mock_installer_bin_abspath):
+        provider = CargoProvider(cargo_root=Path('/tmp/cargo-root'), euid=os.geteuid())
+        proc = subprocess.CompletedProcess(args=[], returncode=0, stdout='', stderr='')
+
+        with mock.patch.object(CargoProvider, 'exec', return_value=proc) as mock_exec:
+            result = provider.uninstall('just')
+
+        self.assertTrue(result)
+        self.assertEqual(
+            mock_exec.call_args.kwargs['cmd'],
+            ['uninstall', '--locked', '--root', '/tmp/cargo-root', 'just'],
+        )
+
+    @mock.patch.object(BinProvider, 'INSTALLER_BIN_ABSPATH', new_callable=mock.PropertyMock, return_value=Path('/usr/local/bin/gem'))
+    @mock.patch('abx_pkg.binprovider_gem.GemProvider.load_PATH_from_gem_home', lambda self: self)
+    def test_gem_provider_update_uses_gem_update(self, _mock_installer_bin_abspath):
+        provider = GemProvider(gem_home=Path('/tmp/gem-home'), gem_bindir=Path('/tmp/gem-home/bin'), euid=os.geteuid())
+        proc = subprocess.CompletedProcess(args=[], returncode=0, stdout='', stderr='')
+
+        with (
+            mock.patch.object(GemProvider, 'exec', return_value=proc) as mock_exec,
+            mock.patch.object(GemProvider, 'get_abspath', return_value=Path(sys.executable)),
+            mock.patch.object(GemProvider, 'get_version', return_value=SemVer('3.11.0')),
+            mock.patch.object(GemProvider, 'get_sha256', return_value='unknown'),
+        ):
+            provider.update('lolcat')
+
+        self.assertEqual(
+            mock_exec.call_args.kwargs['cmd'],
+            [
+                'update',
+                '--install-dir',
+                '/tmp/gem-home',
+                '--bindir',
+                '/tmp/gem-home/bin',
+                '--no-document',
+                'lolcat',
+            ],
+        )
+
+    @mock.patch.object(BinProvider, 'INSTALLER_BIN_ABSPATH', new_callable=mock.PropertyMock, return_value=Path('/usr/local/bin/gem'))
+    @mock.patch('abx_pkg.binprovider_gem.GemProvider.load_PATH_from_gem_home', lambda self: self)
+    def test_gem_provider_uninstall_uses_gem_uninstall(self, _mock_installer_bin_abspath):
+        provider = GemProvider(gem_home=Path('/tmp/gem-home'), gem_bindir=Path('/tmp/gem-home/bin'), euid=os.geteuid())
+        proc = subprocess.CompletedProcess(args=[], returncode=0, stdout='', stderr='')
+
+        with mock.patch.object(GemProvider, 'exec', return_value=proc) as mock_exec:
+            result = provider.uninstall('lolcat')
+
+        self.assertTrue(result)
+        self.assertEqual(
+            mock_exec.call_args.kwargs['cmd'],
+            [
+                'uninstall',
+                '--all',
+                '--executables',
+                '--ignore-dependencies',
+                '--force',
+                '--install-dir',
+                '/tmp/gem-home',
+                '--bindir',
+                '/tmp/gem-home/bin',
+                'lolcat',
+            ],
+        )
+
+    @mock.patch.object(BinProvider, 'INSTALLER_BIN_ABSPATH', new_callable=mock.PropertyMock, return_value=Path('/usr/local/bin/go'))
+    @mock.patch('abx_pkg.binprovider_go_get.GoGetProvider.load_PATH_from_go_env', lambda self: self)
+    def test_go_get_provider_update_uses_go_install(self, _mock_installer_bin_abspath):
+        provider = GoGetProvider(gobin=Path('/tmp/go/bin'), gopath=Path('/tmp/go'), euid=os.geteuid())
+        proc = subprocess.CompletedProcess(args=[], returncode=0, stdout='', stderr='')
+
+        with (
+            mock.patch.object(GoGetProvider, 'exec', return_value=proc) as mock_exec,
+            mock.patch.object(GoGetProvider, 'get_abspath', return_value=Path(sys.executable)),
+            mock.patch.object(GoGetProvider, 'get_version', return_value=SemVer('3.11.0')),
+            mock.patch.object(GoGetProvider, 'get_sha256', return_value='unknown'),
+        ):
+            provider.update('shfmt')
+
+        self.assertEqual(mock_exec.call_args.kwargs['cmd'], ['install', 'shfmt@latest'])
+
+    @mock.patch('abx_pkg.binprovider_go_get.GoGetProvider.load_PATH_from_go_env', lambda self: self)
+    def test_go_get_provider_uninstall_removes_binary(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            gobin = Path(temp_dir) / 'bin'
+            gobin.mkdir(parents=True)
+            bin_path = gobin / 'shfmt'
+            bin_path.write_text('#!/bin/sh\n', encoding='utf-8')
+            provider = GoGetProvider(gobin=gobin, gopath=Path(temp_dir), euid=os.geteuid())
+
+            result = provider.uninstall('shfmt')
+
+        self.assertTrue(result)
+        self.assertFalse(bin_path.exists())
+
+    @mock.patch.object(BinProvider, 'INSTALLER_BIN_ABSPATH', new_callable=mock.PropertyMock, return_value=Path('/usr/local/bin/nix'))
+    @mock.patch('abx_pkg.binprovider_nix.NixProvider.load_PATH_from_nix_profile', lambda self: self)
+    def test_nix_provider_update_uses_profile_upgrade(self, _mock_installer_bin_abspath):
+        provider = NixProvider(nix_profile=Path('/tmp/nix/profile'), nix_state_dir=Path('/tmp/nix/state'), euid=os.geteuid())
+        proc = subprocess.CompletedProcess(args=[], returncode=0, stdout='', stderr='')
+
+        with (
+            mock.patch.object(NixProvider, 'exec', return_value=proc) as mock_exec,
+            mock.patch.object(NixProvider, 'get_abspath', return_value=Path(sys.executable)),
+            mock.patch.object(NixProvider, 'get_version', return_value=SemVer('3.11.0')),
+            mock.patch.object(NixProvider, 'get_sha256', return_value='unknown'),
+        ):
+            provider.update('hello')
+
+        self.assertEqual(
+            mock_exec.call_args.kwargs['cmd'],
+            [
+                'profile',
+                'upgrade',
+                '--extra-experimental-features',
+                'nix-command',
+                '--extra-experimental-features',
+                'flakes',
+                '--profile',
+                '/tmp/nix/profile',
+                'hello',
+            ],
+        )
+
+    @mock.patch.object(BinProvider, 'INSTALLER_BIN_ABSPATH', new_callable=mock.PropertyMock, return_value=Path('/usr/local/bin/nix'))
+    @mock.patch('abx_pkg.binprovider_nix.NixProvider.load_PATH_from_nix_profile', lambda self: self)
+    def test_nix_provider_uninstall_uses_profile_remove(self, _mock_installer_bin_abspath):
+        provider = NixProvider(nix_profile=Path('/tmp/nix/profile'), nix_state_dir=Path('/tmp/nix/state'), euid=os.geteuid())
+        proc = subprocess.CompletedProcess(args=[], returncode=0, stdout='', stderr='')
+
+        with mock.patch.object(NixProvider, 'exec', return_value=proc) as mock_exec:
+            result = provider.uninstall('hello')
+
+        self.assertTrue(result)
+        self.assertEqual(
+            mock_exec.call_args.kwargs['cmd'],
+            [
+                'profile',
+                'remove',
+                '--extra-experimental-features',
+                'nix-command',
+                '--extra-experimental-features',
+                'flakes',
+                '--profile',
+                '/tmp/nix/profile',
+                'hello',
+            ],
+        )
+
+    @mock.patch.object(BinProvider, 'INSTALLER_BIN_ABSPATH', new_callable=mock.PropertyMock, return_value=Path('/usr/local/bin/docker'))
+    @mock.patch('abx_pkg.binprovider_docker.DockerProvider.load_PATH_from_docker_shims', lambda self: self)
+    def test_docker_provider_update_uses_docker_pull(self, _mock_installer_bin_abspath):
+        provider = DockerProvider(docker_shim_dir=Path('/tmp/docker-bin'), euid=os.geteuid())
+        proc = subprocess.CompletedProcess(args=[], returncode=0, stdout='', stderr='')
+
+        with (
+            mock.patch.object(DockerProvider, 'exec', return_value=proc) as mock_exec,
+            mock.patch.object(DockerProvider, 'get_abspath', return_value=Path(sys.executable)),
+            mock.patch.object(DockerProvider, 'get_version', return_value=SemVer('0.10.0')),
+            mock.patch.object(DockerProvider, 'get_sha256', return_value='unknown'),
+            mock.patch.object(DockerProvider, '_write_shim'),
+        ):
+            provider.update('shellcheck')
+
+        self.assertEqual(mock_exec.call_args.kwargs['cmd'], ['pull', 'shellcheck:latest'])
+
+    @mock.patch.object(BinProvider, 'INSTALLER_BIN_ABSPATH', new_callable=mock.PropertyMock, return_value=Path('/usr/local/bin/docker'))
+    @mock.patch('abx_pkg.binprovider_docker.DockerProvider.load_PATH_from_docker_shims', lambda self: self)
+    def test_docker_provider_uninstall_uses_docker_image_rm(self, _mock_installer_bin_abspath):
+        provider = DockerProvider(docker_shim_dir=Path('/tmp/docker-bin'), euid=os.geteuid())
+        proc = subprocess.CompletedProcess(args=[], returncode=0, stdout='', stderr='')
+
+        with (
+            mock.patch.object(DockerProvider, 'exec', return_value=proc) as mock_exec,
+            mock.patch.object(Path, 'exists', return_value=False),
+        ):
+            result = provider.uninstall('shellcheck')
+
+        self.assertTrue(result)
+        self.assertEqual(mock_exec.call_args.kwargs['cmd'], ['image', 'rm', '--force', 'shellcheck:latest'])
 
     @mock.patch.object(BinProvider, 'INSTALLER_BIN_ABSPATH', new_callable=mock.PropertyMock, return_value=Path('/usr/bin/apt-get'))
     @mock.patch('abx_pkg.binprovider_apt.shutil.which', side_effect=lambda name: '/usr/bin/dpkg' if name == 'dpkg' else '/usr/bin/apt-get')
@@ -558,6 +945,13 @@ def apt_package_is_installed(package: str) -> bool:
     return subprocess.run([dpkg, '-s', package], capture_output=True, text=True).returncode == 0
 
 
+def docker_daemon_is_available() -> bool:
+    docker = shutil.which('docker')
+    if not docker:
+        return False
+    return subprocess.run([docker, 'info'], capture_output=True, text=True).returncode == 0
+
+
 class LiveUpdateAndUninstallTest(unittest.TestCase):
 
     @classmethod
@@ -565,37 +959,97 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
         if not LIVE_PKG_TESTS:
             raise unittest.SkipTest('Set ABX_PKG_LIVE_PKG_TESTS=1 to run destructive live package-manager tests')
 
-    def assert_binary_lifecycle(self, binary: Binary):
+    def assert_binary_loaded_state(self, binary: Binary, version_args=('--version',)):
+        self.assertTrue(binary.is_valid)
+        self.assertIsNotNone(binary.loaded_binprovider)
+        self.assertIsNotNone(binary.loaded_abspath)
+        self.assertIsNotNone(binary.loaded_version)
+
+        provider = binary.loaded_binprovider
+        assert provider is not None
+        self.assertEqual(provider.get_abspath(binary.name, quiet=True, nocache=True), binary.loaded_abspath)
+        self.assertEqual(provider.get_version(binary.name, quiet=True, nocache=True), binary.loaded_version)
+        self.assertEqual(binary.exec(cmd=version_args, quiet=True).returncode, 0)
+
+    def assert_binary_unloaded_state(self, binary: Binary):
+        self.assertFalse(binary.is_valid)
+        self.assertIsNone(binary.loaded_binprovider)
+        self.assertIsNone(binary.loaded_abspath)
+        self.assertIsNone(binary.loaded_version)
+        self.assertIsNone(binary.loaded_sha256)
+
+    def assert_binary_missing(self, binary: Binary):
         provider = binary.binproviders_supported[0]
         self.assertIsNone(provider.load(binary.name, quiet=True, nocache=True))
+        with self.assertRaises(Exception):
+            binary.load(nocache=True)
+
+    def assert_binary_lifecycle(self, binary: Binary, version_args=('--version',), override_binary: Binary | None = None, override_version_args=('--version',)):
+        base_provider = binary.binproviders_supported[0]
+        binaries_to_cleanup = [binary, *( [override_binary] if override_binary else [] )]
 
         try:
-            binary = binary.install()
-            self.assertTrue(binary.is_valid)
-            self.assertEqual(binary.loaded_binprovider, provider)
-            self.assertIsNotNone(binary.loaded_abspath)
-            self.assertIsNotNone(binary.loaded_version)
+            self.assert_binary_missing(binary)
+            self.assertTrue(binary.get_binprovider(base_provider.name).get_install_args(binary.name))
 
-            updated_binary = binary.update()
-            self.assertTrue(updated_binary.is_valid)
-            self.assertEqual(updated_binary.loaded_binprovider, provider)
-            self.assertIsNotNone(updated_binary.loaded_abspath)
-            self.assertIsNotNone(updated_binary.loaded_version)
+            loaded_or_installed = binary.load_or_install(nocache=True)
+            self.assert_binary_loaded_state(loaded_or_installed, version_args=version_args)
 
-            removed_binary = updated_binary.uninstall()
-            self.assertFalse(removed_binary.is_valid)
-            self.assertIsNone(removed_binary.loaded_binprovider)
-            self.assertIsNone(removed_binary.loaded_abspath)
-            self.assertIsNone(removed_binary.loaded_version)
-            self.assertIsNone(removed_binary.loaded_sha256)
+            loaded = binary.load(nocache=True)
+            self.assert_binary_loaded_state(loaded, version_args=version_args)
+
+            updated = loaded_or_installed.update()
+            self.assert_binary_loaded_state(updated, version_args=version_args)
+
+            removed = updated.uninstall()
+            self.assert_binary_unloaded_state(removed)
+            self.assert_binary_missing(binary)
+
+            installed = binary.install()
+            self.assert_binary_loaded_state(installed, version_args=version_args)
+            removed_after_install = installed.uninstall()
+            self.assert_binary_unloaded_state(removed_after_install)
+            self.assert_binary_missing(binary)
+
+            if override_binary:
+                self.assert_binary_missing(override_binary)
+                override_provider = override_binary.get_binprovider(base_provider.name)
+                self.assertEqual(
+                    override_provider.get_install_args(override_binary.name),
+                    tuple(override_binary.overrides[base_provider.name]['install_args']),
+                )
+
+                override_installed = override_binary.install()
+                self.assert_binary_loaded_state(override_installed, version_args=override_version_args)
+
+                override_updated = override_installed.update()
+                self.assert_binary_loaded_state(override_updated, version_args=override_version_args)
+
+                override_removed = override_updated.uninstall()
+                self.assert_binary_unloaded_state(override_removed)
+                self.assert_binary_missing(override_binary)
         finally:
-            provider.uninstall(binary.name, quiet=True, nocache=True)
+            for candidate in binaries_to_cleanup:
+                provider = candidate.get_binprovider(candidate.binproviders_supported[0].name)
+                provider.uninstall(candidate.name, quiet=True, nocache=True)
 
-        self.assertIsNone(provider.load(binary.name, quiet=True, nocache=True))
+    def make_override_binary(self, binary: Binary, install_args: list[str]) -> Binary:
+        provider_name = binary.binproviders_supported[0].name
+        return Binary(
+            name=binary.name,
+            binproviders=binary.binproviders_supported,
+            overrides={
+                **binary.overrides,
+                provider_name: {
+                    **binary.overrides.get(provider_name, {}),
+                    'install_args': install_args,
+                },
+            },
+        )
 
     def pick_missing_brew_formula(self) -> str:
         provider = BrewProvider()
-        for formula in ('fzy', 'entr', 'renameutils', 'watch', 'hello'):
+        for formula in ('hello', 'jq', 'watch', 'fzy'):
             if brew_formula_is_installed(formula):
                 continue
             if provider.load(formula, quiet=True, nocache=True) is not None:
@@ -605,7 +1059,7 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
 
     def pick_missing_apt_package(self) -> str:
         provider = AptProvider()
-        for package in ('tree', 'jq', 'whois', 'rename', 'mlocate'):
+        for package in ('jq', 'tree', 'rename'):
             if apt_package_is_installed(package):
                 continue
             if provider.load(package, quiet=True, nocache=True) is not None:
@@ -623,6 +1077,64 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = NpmProvider(npm_prefix=Path(temp_dir) / 'npm')
             binary = Binary(name='esbuild', binproviders=[provider])
+            self.assert_binary_lifecycle(binary)
+
+    def test_cargo_provider_live_update_and_uninstall(self):
+        if not shutil.which('cargo'):
+            raise unittest.SkipTest('cargo is not available on this host')
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            provider = CargoProvider(cargo_root=Path(temp_dir) / 'cargo', cargo_home=Path(temp_dir) / 'cargo-home')
+            binary = Binary(name='just', binproviders=[provider])
+            override_binary = Binary(
+                name='rg',
+                binproviders=[provider],
+                overrides={'cargo': {'install_args': ['ripgrep']}},
+            )
+            self.assert_binary_lifecycle(binary, override_binary=override_binary)
+
+    def test_gem_provider_live_update_and_uninstall(self):
+        if not shutil.which('gem'):
+            raise unittest.SkipTest('gem is not available on this host')
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            provider = GemProvider(gem_home=Path(temp_dir) / 'gem-home', gem_bindir=Path(temp_dir) / 'gem-home/bin')
+            binary = Binary(name='rake', binproviders=[provider])
+            self.assert_binary_lifecycle(binary, override_binary=self.make_override_binary(binary, ['rake']))
+
+    def test_go_get_provider_live_update_and_uninstall(self):
+        if not shutil.which('go'):
+            raise unittest.SkipTest('go is not available on this host')
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            provider = GoGetProvider(gobin=Path(temp_dir) / 'go/bin', gopath=Path(temp_dir) / 'go')
+            binary = Binary(
+                name='shfmt',
+                binproviders=[provider],
+                overrides={'go_get': {'install_args': ['mvdan.cc/sh/v3/cmd/shfmt@latest']}},
+            )
+            self.assert_binary_lifecycle(binary)
+
+    def test_nix_provider_live_update_and_uninstall(self):
+        if not NixProvider().INSTALLER_BIN_ABSPATH:
+            raise unittest.SkipTest('nix is not available on this host')
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            provider = NixProvider(nix_profile=Path(temp_dir) / 'nix-profile', nix_state_dir=Path(temp_dir) / 'nix-state')
+            binary = Binary(name='jq', binproviders=[provider])
+            self.assert_binary_lifecycle(binary, override_binary=self.make_override_binary(binary, ['nixpkgs#jq']))
+
+    def test_docker_provider_live_update_and_uninstall(self):
+        if not docker_daemon_is_available():
+            raise unittest.SkipTest('docker daemon is not available on this host')
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            provider = DockerProvider(docker_shim_dir=Path(temp_dir) / 'docker/bin')
+            binary = Binary(
+                name='shellcheck',
+                binproviders=[provider],
+                overrides={'docker': {'install_args': ['koalaman/shellcheck:v0.10.0']}},
+            )
             self.assert_binary_lifecycle(binary)
 
     def test_brew_provider_live_update_and_uninstall(self):

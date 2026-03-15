@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 
 from .base_types import BinProviderName, PATHStr, BinName, InstallArgs
-from .binprovider import BinProvider, OPERATING_SYSTEM, DEFAULT_PATH
+from .binprovider import BinProvider, OPERATING_SYSTEM, DEFAULT_PATH, remap_kwargs
 
 PYINFRA_INSTALLED = False
 PYINFRA_IMPORT_ERROR = None
@@ -102,20 +102,22 @@ class PyinfraProvider(BinProvider):
     pyinfra_installer_kwargs: Dict[str, Any] = {}
 
 
-    def default_install_handler(self, bin_name: str, packages: Optional[InstallArgs] = None, **context) -> str:
-        packages = packages or self.get_packages(bin_name)
+    @remap_kwargs({'packages': 'install_args'})
+    def default_install_handler(self, bin_name: str, install_args: Optional[InstallArgs] = None, **context) -> str:
+        install_args = install_args or self.get_install_args(bin_name)
 
         return pyinfra_package_install(
-            pkg_names=packages,
+            pkg_names=install_args,
             installer_module=self.pyinfra_installer_module,
             installer_extra_kwargs=self.pyinfra_installer_kwargs,
         )
 
-    def default_update_handler(self, bin_name: str, packages: Optional[InstallArgs] = None, **context) -> str:
-        packages = packages or self.get_packages(bin_name)
+    @remap_kwargs({'packages': 'install_args'})
+    def default_update_handler(self, bin_name: str, install_args: Optional[InstallArgs] = None, **context) -> str:
+        install_args = install_args or self.get_install_args(bin_name)
 
         return pyinfra_package_install(
-            pkg_names=packages,
+            pkg_names=install_args,
             installer_module=self.pyinfra_installer_module,
             installer_extra_kwargs={
                 **self.pyinfra_installer_kwargs,
@@ -123,11 +125,12 @@ class PyinfraProvider(BinProvider):
             },
         )
 
-    def default_uninstall_handler(self, bin_name: str, packages: Optional[InstallArgs] = None, **context) -> bool:
-        packages = packages or self.get_packages(bin_name)
+    @remap_kwargs({'packages': 'install_args'})
+    def default_uninstall_handler(self, bin_name: str, install_args: Optional[InstallArgs] = None, **context) -> bool:
+        install_args = install_args or self.get_install_args(bin_name)
 
         pyinfra_package_install(
-            pkg_names=packages,
+            pkg_names=install_args,
             installer_module=self.pyinfra_installer_module,
             installer_extra_kwargs={
                 **self.pyinfra_installer_kwargs,

@@ -3,6 +3,7 @@ __package__ = "abx_pkg"
 import os
 import sys
 import pwd
+import inspect
 import shutil
 import hashlib
 import platform
@@ -10,7 +11,7 @@ import subprocess
 import functools
 from types import SimpleNamespace
 
-from typing import Callable, Optional, Iterable, List, cast, final, Dict, Any, Tuple, Literal, Protocol, runtime_checkable
+from typing import Callable, Optional, Iterable, List, cast, final, Dict, Any, Tuple, Literal, Protocol, runtime_checkable, ParamSpec, TypeVar, Mapping
 
 from typing_extensions import Self, TypedDict
 from pathlib import Path
@@ -83,6 +84,25 @@ def binprovider_cache(binprovider_method):
     cached_function.__name__ = f'{method_name}_cached'
     
     return cached_function
+
+
+P = ParamSpec("P")
+R = TypeVar("R")
+
+def remap_kwargs(renamed_kwargs: Mapping[str, str]) -> Callable[[Callable[P, R]], Callable[P, R]]:
+    def decorator(func: Callable[P, R]) -> Callable[P, R]:
+        @functools.wraps(func)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+            mapped_kwargs = dict(kwargs)
+            for old_name, new_name in renamed_kwargs.items():
+                if old_name in mapped_kwargs:
+                    mapped_kwargs.setdefault(new_name, mapped_kwargs[old_name])
+                    mapped_kwargs.pop(old_name, None)
+            return func(*args, **cast(Any, mapped_kwargs))
+
+        return cast(Callable[P, R], wrapper)
+
+    return decorator
 
 
 
@@ -185,7 +205,7 @@ DEFAULT_OVERRIDES = {
     '*': {
         'version': 'self.default_version_handler',
         'abspath': 'self.default_abspath_handler',
-        'packages': 'self.default_packages_handler',
+        'install_args': 'self.default_install_args_handler',
         'install': 'self.default_install_handler',
         'update': 'self.default_update_handler',
         'uninstall': 'self.default_uninstall_handler',
@@ -356,7 +376,7 @@ class BinProvider(BaseModel):
         
         updated_binprovider: Self = self.model_copy()
         
-        # main binary-specific overrides for [abspath, version, packages, install, update, uninstall]
+        # main binary-specific overrides for [abspath, version, install_args, install, update, uninstall]
         overrides = overrides or {}
         
         # extra overrides that are also configurable, can add more in the future as-needed for tunable options
@@ -366,7 +386,7 @@ class BinProvider(BaseModel):
         
         # overrides = {
         #     'wget': {
-        #         'packages': lambda: ['wget'],
+        #         'install_args': lambda: ['wget'],
         #         'abspath': lambda: shutil.which('wget'),
         #         'version': lambda: SemVer.parse(os.system('wget --version')),
         #         'install': lambda: os.system('brew install wget'),
@@ -382,17 +402,25 @@ class BinProvider(BaseModel):
 
 
     # @validate_call
+    def _get_handler_keys(self, handler_type: 'HandlerType') -> Tuple['HandlerType', ...]:
+        if handler_type in ('install_args', 'packages'):
+            return ('install_args', 'packages')
+        return (handler_type,)
+
     def _get_handler_for_action(self, bin_name: BinName, handler_type: 'HandlerType') -> Callable[..., 'HandlerReturnValue']:
         """
         Get the handler func for a given key + Dict of handler callbacks + fallback default handler.
         e.g. _get_handler_for_action(bin_name='yt-dlp', 'install', default_handler=self.default_install_handler, ...) -> Callable
         """
 
-        # e.g. {'yt-dlp': {'install': 'self.default_install_handler'}} -> 'self.default_install_handler'
-        handler: HandlerValue = (
-            self.overrides.get(bin_name, {}).get(handler_type)
-            or self.overrides.get('*', {}).get(handler_type)
-        )
+        handler: HandlerValue | None = None
+        for overrides_for_bin in (self.overrides.get(bin_name, {}), self.overrides.get('*', {})):
+            for handler_key in self._get_handler_keys(handler_type):
+                handler = overrides_for_bin.get(handler_key)
+                if handler:
+                    break
+            if handler:
+                break
         # print('getting handler for action', bin_name, handler_type, handler_func)
         assert handler, f'BinProvider(name={self.name}) has no {handler_type} handler implemented for Binary(name={bin_name})'
 
@@ -413,10 +441,25 @@ class BinProvider(BaseModel):
         return handler_func
 
     # @validate_call
+    def _get_compatible_kwargs(self, handler_func: Callable[..., 'HandlerReturnValue'], kwargs: Dict[str, Any]) -> Dict[str, Any]:
+        if not kwargs:
+            return kwargs
+
+        signature = inspect.signature(handler_func)
+        if any(param.kind == inspect.Parameter.VAR_KEYWORD for param in signature.parameters.values()):
+            return kwargs
+
+        accepted_kwargs = set(signature.parameters)
+        return {
+            key: value
+            for key, value in kwargs.items()
+            if key in accepted_kwargs
+        }
+
     def _call_handler_for_action(self, bin_name: BinName, handler_type: 'HandlerType', **kwargs) -> 'HandlerReturnValue':
         handler_func: Callable[..., HandlerReturnValue] = self._get_handler_for_action(
             bin_name=bin_name,           # e.g. 'yt-dlp', or 'wget', etc.
-            handler_type=handler_type,   # e.g. abspath, version, packages, install
+            handler_type=handler_type,   # e.g. abspath, version, install_args, install
         )
 
         # def timeout_handler(signum, frame):
@@ -432,12 +475,13 @@ class BinProvider(BaseModel):
                 return handler_func_without_args()
 
             handler_func = cast(Callable[..., HandlerReturnValue], handler_func)
+            compatible_kwargs = self._get_compatible_kwargs(handler_func, kwargs)
             if hasattr(handler_func, '__self__'):
                 # func is already a method bound to self, just call it directly
-                return handler_func(bin_name, **kwargs)
+                return handler_func(bin_name, **compatible_kwargs)
             else:
                 # func is not bound to anything, pass BinProvider as first arg
-                return handler_func(self, bin_name, **kwargs)
+                return handler_func(self, bin_name, **compatible_kwargs)
         except TimeoutError:
             raise
         # finally:
@@ -499,23 +543,27 @@ class BinProvider(BaseModel):
         ) from validation_err
 
     # @validate_call
-    def default_packages_handler(self, bin_name: BinName, **context) -> 'PackagesFuncReturnValue':     # aka List[str] aka InstallArgs
+    def default_install_args_handler(self, bin_name: BinName, **context) -> 'InstallArgsFuncReturnValue':     # aka List[str] aka InstallArgs
         # print(f'[*] {self.__class__.__name__}: Getting install command for {bin_name}')
         # ... install command calculation logic here
         return [bin_name]
 
+    def default_packages_handler(self, bin_name: BinName, **context) -> 'InstallArgsFuncReturnValue':
+        return self.default_install_args_handler(bin_name, **context)
+
     # @validate_call
-    def default_install_handler(self, bin_name: BinName, packages: Optional[InstallArgs]=None, **context) -> 'InstallFuncReturnValue':      # aka str
+    @remap_kwargs({'packages': 'install_args'})
+    def default_install_handler(self, bin_name: BinName, install_args: Optional[InstallArgs]=None, **context) -> 'InstallFuncReturnValue':      # aka str
         self.setup()
-        packages = packages or self.get_packages(bin_name)
+        install_args = install_args or self.get_install_args(bin_name)
         if not self.INSTALLER_BIN_ABSPATH:
             raise Exception(f'{self.name} install method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)')
 
-        # print(f'[*] {self.__class__.__name__}: Installing {bin_name}: {self.INSTALLER_BIN_ABSPATH} {packages}')
+        # print(f'[*] {self.__class__.__name__}: Installing {bin_name}: {self.INSTALLER_BIN_ABSPATH} {install_args}')
 
         # ... override the default install logic here ...
         
-        # proc = self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=['install', *packages], timeout=self._install_timeout)
+        # proc = self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=['install', *install_args], timeout=self._install_timeout)
         # if not proc.returncode == 0:
         #     print(proc.stdout.strip())
         #     print(proc.stderr.strip())
@@ -524,11 +572,13 @@ class BinProvider(BaseModel):
         return f'{self.name} BinProvider does not implement any install method'
 
     # @validate_call
-    def default_update_handler(self, bin_name: BinName, packages: Optional[InstallArgs]=None, **context) -> 'ActionFuncReturnValue':
+    @remap_kwargs({'packages': 'install_args'})
+    def default_update_handler(self, bin_name: BinName, install_args: Optional[InstallArgs]=None, **context) -> 'ActionFuncReturnValue':
         return f'{self.name} BinProvider does not implement any update method'
 
     # @validate_call
-    def default_uninstall_handler(self, bin_name: BinName, packages: Optional[InstallArgs]=None, **context) -> 'ActionFuncReturnValue':
+    @remap_kwargs({'packages': 'install_args'})
+    def default_uninstall_handler(self, bin_name: BinName, install_args: Optional[InstallArgs]=None, **context) -> 'ActionFuncReturnValue':
         return False
 
     def invalidate_cache(self, bin_name: BinName) -> None:
@@ -558,7 +608,7 @@ class BinProvider(BaseModel):
             
         # https://stackoverflow.com/a/6037494/2156113
         # copy env and modify it to run the subprocess as the the designated user
-        env = kwargs.get('env', {}) or os.environ.copy()
+        env = kwargs.pop('env', {}) or os.environ.copy()
         pw_record = self.get_pw_record(self.EUID)
         run_as_uid     = pw_record.pw_uid
         run_as_gid     = pw_record.pw_gid
@@ -648,18 +698,21 @@ class BinProvider(BaseModel):
     @final
     @binprovider_cache
     # @validate_call
-    def get_packages(self, bin_name: BinName, quiet: bool=False, nocache: bool=False) -> InstallArgs:
-        packages = None
+    def get_install_args(self, bin_name: BinName, quiet: bool=False, nocache: bool=False) -> InstallArgs:
+        install_args = None
         try:
-            packages = cast(PackagesFuncReturnValue, self._call_handler_for_action(bin_name=bin_name, handler_type='packages'))
+            install_args = cast(InstallArgsFuncReturnValue, self._call_handler_for_action(bin_name=bin_name, handler_type='install_args'))
         except Exception:
             if not quiet:
                 raise
 
-        if not packages:
-            packages = [bin_name]
-        result = TypeAdapter(InstallArgs).validate_python(packages)
+        if not install_args:
+            install_args = [bin_name]
+        result = TypeAdapter(InstallArgs).validate_python(install_args)
         return result
+
+    def get_packages(self, bin_name: BinName, quiet: bool=False, nocache: bool=False) -> InstallArgs:
+        return self.get_install_args(bin_name, quiet=quiet, nocache=nocache)
 
     def setup(self) -> None:
         """Override this to do any setup steps needed before installing packaged (e.g. create a venv, init an npm prefix, etc.)"""
@@ -671,12 +724,12 @@ class BinProvider(BaseModel):
     def install(self, bin_name: BinName, quiet: bool=False, nocache: bool=False) -> ShallowBinary | None:
         self.setup()
         
-        packages = self.get_packages(bin_name, quiet=quiet, nocache=nocache)
+        install_args = self.get_install_args(bin_name, quiet=quiet, nocache=nocache)
         
         self.setup_PATH()
         install_log = None
         try:
-            install_log = cast(InstallFuncReturnValue, self._call_handler_for_action(bin_name=bin_name, handler_type='install', packages=packages))
+            install_log = cast(InstallFuncReturnValue, self._call_handler_for_action(bin_name=bin_name, handler_type='install', install_args=install_args, packages=install_args))
         except Exception as err:
             install_log = f'{self.__class__.__name__} Failed to install {bin_name}, got {err.__class__.__name__}: {err}'
             if not quiet:
@@ -723,12 +776,12 @@ class BinProvider(BaseModel):
     def update(self, bin_name: BinName, quiet: bool=False, nocache: bool=False) -> ShallowBinary | None:
         self.setup()
 
-        packages = self.get_packages(bin_name, quiet=quiet, nocache=nocache)
+        install_args = self.get_install_args(bin_name, quiet=quiet, nocache=nocache)
 
         self.setup_PATH()
         update_log = None
         try:
-            update_log = cast(ActionFuncReturnValue, self._call_handler_for_action(bin_name=bin_name, handler_type='update', packages=packages))
+            update_log = cast(ActionFuncReturnValue, self._call_handler_for_action(bin_name=bin_name, handler_type='update', install_args=install_args, packages=install_args))
         except Exception as err:
             update_log = f'{self.__class__.__name__} Failed to update {bin_name}, got {err.__class__.__name__}: {err}'
             if not quiet:
@@ -771,12 +824,12 @@ class BinProvider(BaseModel):
     @final
     @validate_call
     def uninstall(self, bin_name: BinName, quiet: bool=False, nocache: bool=False) -> bool:
-        packages = self.get_packages(bin_name, quiet=quiet, nocache=nocache)
+        install_args = self.get_install_args(bin_name, quiet=quiet, nocache=nocache)
 
         self.setup_PATH()
         uninstall_result = None
         try:
-            uninstall_result = cast(ActionFuncReturnValue, self._call_handler_for_action(bin_name=bin_name, handler_type='uninstall', packages=packages))
+            uninstall_result = cast(ActionFuncReturnValue, self._call_handler_for_action(bin_name=bin_name, handler_type='uninstall', install_args=install_args, packages=install_args))
         except Exception:
             if not quiet:
                 raise
@@ -839,14 +892,17 @@ class EnvProvider(BinProvider):
         },
     }
 
-    def install_noop(self, bin_name: BinName, packages: Optional[InstallArgs]=None, **context) -> str:
+    @remap_kwargs({'packages': 'install_args'})
+    def install_noop(self, bin_name: BinName, install_args: Optional[InstallArgs]=None, **context) -> str:
         """The env BinProvider is ready-only and does not install any packages, so this is a no-op"""
         return 'env is ready-only and just checks for existing binaries in $PATH'
 
-    def update_noop(self, bin_name: BinName, packages: Optional[InstallArgs]=None, **context) -> str:
+    @remap_kwargs({'packages': 'install_args'})
+    def update_noop(self, bin_name: BinName, install_args: Optional[InstallArgs]=None, **context) -> str:
         return 'env is read-only and just checks for existing binaries in $PATH'
 
-    def uninstall_noop(self, bin_name: BinName, packages: Optional[InstallArgs]=None, **context) -> bool:
+    @remap_kwargs({'packages': 'install_args'})
+    def uninstall_noop(self, bin_name: BinName, install_args: Optional[InstallArgs]=None, **context) -> bool:
         return False
 
 ############################################################################################################
@@ -855,10 +911,11 @@ class EnvProvider(BinProvider):
 
 AbspathFuncReturnValue = str | HostBinPath | None
 VersionFuncReturnValue = str | Tuple[int, ...] | Tuple[str, ...] | SemVer | None     # SemVer is a subclass of NamedTuple
-PackagesFuncReturnValue = List[str] | Tuple[str, ...] | str | InstallArgs | None
+InstallArgsFuncReturnValue = List[str] | Tuple[str, ...] | str | InstallArgs | None
+PackagesFuncReturnValue = InstallArgsFuncReturnValue
 InstallFuncReturnValue = str | None
 ActionFuncReturnValue = str | bool | None
-ProviderFuncReturnValue = AbspathFuncReturnValue | VersionFuncReturnValue | PackagesFuncReturnValue | InstallFuncReturnValue | ActionFuncReturnValue
+ProviderFuncReturnValue = AbspathFuncReturnValue | VersionFuncReturnValue | InstallArgsFuncReturnValue | InstallFuncReturnValue | ActionFuncReturnValue
 
 @runtime_checkable
 class AbspathFuncWithArgs(Protocol):
@@ -871,9 +928,11 @@ class VersionFuncWithArgs(Protocol):
         ...
         
 @runtime_checkable
-class PackagesFuncWithArgs(Protocol):
-    def __call__(_self, binprovider: 'BinProvider', bin_name: BinName, **context) -> 'PackagesFuncReturnValue':
+class InstallArgsFuncWithArgs(Protocol):
+    def __call__(_self, binprovider: 'BinProvider', bin_name: BinName, **context) -> 'InstallArgsFuncReturnValue':
         ...
+
+PackagesFuncWithArgs = InstallArgsFuncWithArgs
 
 @runtime_checkable
 class InstallFuncWithArgs(Protocol):
@@ -887,32 +946,35 @@ class ActionFuncWithArgs(Protocol):
 
 AbspathFuncWithNoArgs = Callable[[], AbspathFuncReturnValue]
 VersionFuncWithNoArgs = Callable[[], VersionFuncReturnValue]
-PackagesFuncWithNoArgs = Callable[[], PackagesFuncReturnValue]
+InstallArgsFuncWithNoArgs = Callable[[], InstallArgsFuncReturnValue]
+PackagesFuncWithNoArgs = InstallArgsFuncWithNoArgs
 InstallFuncWithNoArgs = Callable[[], InstallFuncReturnValue]
 ActionFuncWithNoArgs = Callable[[], ActionFuncReturnValue]
 
 AbspathHandlerValue = SelfMethodName | AbspathFuncWithNoArgs | AbspathFuncWithArgs | AbspathFuncReturnValue
 VersionHandlerValue = SelfMethodName | VersionFuncWithNoArgs | VersionFuncWithArgs | VersionFuncReturnValue
-PackagesHandlerValue = SelfMethodName | PackagesFuncWithNoArgs | PackagesFuncWithArgs | PackagesFuncReturnValue
+InstallArgsHandlerValue = SelfMethodName | InstallArgsFuncWithNoArgs | InstallArgsFuncWithArgs | InstallArgsFuncReturnValue
+PackagesHandlerValue = InstallArgsHandlerValue
 InstallHandlerValue = SelfMethodName | InstallFuncWithNoArgs | InstallFuncWithArgs | InstallFuncReturnValue
 ActionHandlerValue = SelfMethodName | ActionFuncWithNoArgs | ActionFuncWithArgs | ActionFuncReturnValue
 
-HandlerType = Literal['abspath', 'version', 'packages', 'install', 'update', 'uninstall']
-HandlerValue = AbspathHandlerValue | VersionHandlerValue | PackagesHandlerValue | InstallHandlerValue | ActionHandlerValue
-HandlerReturnValue = AbspathFuncReturnValue | VersionFuncReturnValue | PackagesFuncReturnValue | InstallFuncReturnValue | ActionFuncReturnValue
+HandlerType = Literal['abspath', 'version', 'install_args', 'packages', 'install', 'update', 'uninstall']
+HandlerValue = AbspathHandlerValue | VersionHandlerValue | InstallArgsHandlerValue | InstallHandlerValue | ActionHandlerValue
+HandlerReturnValue = AbspathFuncReturnValue | VersionFuncReturnValue | InstallArgsFuncReturnValue | InstallFuncReturnValue | ActionFuncReturnValue
 
 class HandlerDict(TypedDict, total=False):
     abspath: AbspathHandlerValue
     version: VersionHandlerValue
-    packages: PackagesHandlerValue
+    install_args: InstallArgsHandlerValue
+    packages: InstallArgsHandlerValue
     install: InstallHandlerValue
     update: ActionHandlerValue
     uninstall: ActionHandlerValue
 
-# Binary.overrides map BinProviderName:HandlerType:Handler    {'brew': {'packages': [...]}}
+# Binary.overrides map BinProviderName:HandlerType:Handler    {'brew': {'install_args': [...]}}
 BinaryOverrides = Dict[BinProviderName, HandlerDict]
 
-# BinProvider.overrides map BinName:HandlerType:Handler       {'wget': {'packages': [...]}}
+# BinProvider.overrides map BinName:HandlerType:Handler       {'wget': {'install_args': [...]}}
 BinProviderOverrides = Dict[BinName | Literal['*'], HandlerDict]
 
 # Resolve forward refs at import time so downstream subclasses don't need to call model_rebuild().

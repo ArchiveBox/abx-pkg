@@ -18,7 +18,7 @@ from pydantic import model_validator, TypeAdapter, computed_field
 
 from .base_types import BinProviderName, PATHStr, BinName, InstallArgs, HostBinPath, bin_abspath, bin_abspaths
 from .semver import SemVer
-from .binprovider import BinProvider, DEFAULT_ENV_PATH
+from .binprovider import BinProvider, DEFAULT_ENV_PATH, remap_kwargs
 
 ACTIVE_VENV = os.getenv('VIRTUAL_ENV', None)
 _CACHED_GLOBAL_PIP_BIN_DIRS: Set[str] | None = None
@@ -186,15 +186,16 @@ class PipProvider(BinProvider):
             assert os.path.isfile(venv_pip_path) and os.access(venv_pip_path, os.X_OK), f'could not find pip inside venv after creating it: {pip_venv}'
             self.exec(bin_name=venv_pip_path, cmd=["install", self.cache_arg, "--upgrade", "pip", "setuptools"])   # setuptools is not installed by default after python >= 3.12
 
-    def _pip_show(self, bin_name: BinName, packages: Optional[InstallArgs] = None) -> List[str]:
+    @remap_kwargs({'packages': 'install_args'})
+    def _pip_show(self, bin_name: BinName, install_args: Optional[InstallArgs] = None) -> List[str]:
         pip_abspath = self.INSTALLER_BIN_ABSPATH
         if not pip_abspath:
             raise Exception(
                 f"{self.__class__.__name__} install method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)"
             )
         
-        packages = packages or self.get_packages(str(bin_name)) or [str(bin_name)]
-        main_package = packages[0]  # assume first package in list is the main one
+        install_args = install_args or self.get_install_args(str(bin_name)) or [str(bin_name)]
+        main_package = install_args[0]  # assume first package in list is the main one
         output_lines = self.exec(bin_name=pip_abspath, cmd=[
             'show',
             '--no-input',
@@ -202,7 +203,7 @@ class PipProvider(BinProvider):
         ], timeout=self._version_timeout, quiet=True).stdout.strip().split('\n')
         return output_lines
     
-    def _pip_install(self, packages: InstallArgs) -> subprocess.CompletedProcess:
+    def _pip_install(self, install_args: InstallArgs) -> subprocess.CompletedProcess:
         pip_abspath = self.INSTALLER_BIN_ABSPATH
         if not pip_abspath:
             raise Exception(
@@ -214,10 +215,10 @@ class PipProvider(BinProvider):
             '--no-input',
             self.cache_arg,
             *self.pip_install_args,
-            *packages,
+            *install_args,
         ])
 
-    def _pip_update(self, packages: InstallArgs) -> subprocess.CompletedProcess:
+    def _pip_update(self, install_args: InstallArgs) -> subprocess.CompletedProcess:
         pip_abspath = self.INSTALLER_BIN_ABSPATH
         if not pip_abspath:
             raise Exception(
@@ -230,10 +231,10 @@ class PipProvider(BinProvider):
             self.cache_arg,
             *self.pip_install_args,
             '--upgrade',
-            *packages,
+            *install_args,
         ])
 
-    def _pip_uninstall(self, packages: InstallArgs) -> subprocess.CompletedProcess:
+    def _pip_uninstall(self, install_args: InstallArgs) -> subprocess.CompletedProcess:
         pip_abspath = self.INSTALLER_BIN_ABSPATH
         if not pip_abspath:
             raise Exception(
@@ -243,52 +244,55 @@ class PipProvider(BinProvider):
         return self.exec(bin_name=pip_abspath, cmd=[
             'uninstall',
             '--yes',
-            *packages,
+            *install_args,
         ])
         
     
-    def default_install_handler(self, bin_name: str, packages: Optional[InstallArgs] = None, **context) -> str:
+    @remap_kwargs({'packages': 'install_args'})
+    def default_install_handler(self, bin_name: str, install_args: Optional[InstallArgs] = None, **context) -> str:
         if self.pip_venv:
             self.setup()
         
-        packages = packages or self.get_packages(bin_name)
+        install_args = install_args or self.get_install_args(bin_name)
         
-        # print(f'[*] {self.__class__.__name__}: Installing {bin_name}: {self.INSTALLER_BIN_ABSPATH} install {packages}')
+        # print(f'[*] {self.__class__.__name__}: Installing {bin_name}: {self.INSTALLER_BIN_ABSPATH} install {install_args}')
 
-        # pip install --no-input --cache-dir=<cache_dir> <extra_pip_args> <packages>
-        proc = self._pip_install(packages)
+        # pip install --no-input --cache-dir=<cache_dir> <extra_pip_args> <install_args>
+        proc = self._pip_install(install_args)
 
         if proc.returncode != 0:
             print(proc.stdout.strip())
             print(proc.stderr.strip())
-            raise Exception(f"{self.__class__.__name__}: install got returncode {proc.returncode} while installing {packages}: {packages}")
+            raise Exception(f"{self.__class__.__name__}: install got returncode {proc.returncode} while installing {install_args}: {install_args}")
 
         return proc.stderr.strip() + "\n" + proc.stdout.strip()
 
-    def default_update_handler(self, bin_name: str, packages: Optional[InstallArgs] = None, **context) -> str:
+    @remap_kwargs({'packages': 'install_args'})
+    def default_update_handler(self, bin_name: str, install_args: Optional[InstallArgs] = None, **context) -> str:
         if self.pip_venv:
             self.setup()
 
-        packages = packages or self.get_packages(bin_name)
+        install_args = install_args or self.get_install_args(bin_name)
 
-        proc = self._pip_update(packages)
+        proc = self._pip_update(install_args)
 
         if proc.returncode != 0:
             print(proc.stdout.strip())
             print(proc.stderr.strip())
-            raise Exception(f"{self.__class__.__name__}: update got returncode {proc.returncode} while updating {packages}: {packages}")
+            raise Exception(f"{self.__class__.__name__}: update got returncode {proc.returncode} while updating {install_args}: {install_args}")
 
         return proc.stderr.strip() + "\n" + proc.stdout.strip()
 
-    def default_uninstall_handler(self, bin_name: str, packages: Optional[InstallArgs] = None, **context) -> bool:
-        packages = packages or self.get_packages(bin_name)
+    @remap_kwargs({'packages': 'install_args'})
+    def default_uninstall_handler(self, bin_name: str, install_args: Optional[InstallArgs] = None, **context) -> bool:
+        install_args = install_args or self.get_install_args(bin_name)
 
-        proc = self._pip_uninstall(packages)
+        proc = self._pip_uninstall(install_args)
 
         if proc.returncode != 0:
             print(proc.stdout.strip())
             print(proc.stderr.strip())
-            raise Exception(f"{self.__class__.__name__}: uninstall got returncode {proc.returncode} while uninstalling {packages}: {packages}")
+            raise Exception(f"{self.__class__.__name__}: uninstall got returncode {proc.returncode} while uninstalling {install_args}: {install_args}")
 
         return True
 
