@@ -33,12 +33,17 @@ jobs:
         enable-cache: true
         cache-dependency-glob: "uv.lock"
 
+    - name: Install Nix on macOS
+      if: runner.os == 'macOS'
+      uses: DeterminateSystems/nix-installer-action@v16
+
     - name: Setup venv and install pip dependencies
       run: |
         uv venv --python "${{ matrix.python_version }}" \
         && uv sync --all-extras \
         && uv pip install pip \
-        && echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
+        && echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH" \
+        && if [ -d /nix/var/nix/profiles/default/bin ]; then echo "/nix/var/nix/profiles/default/bin" >> "$GITHUB_PATH"; fi
 
     - name: Run standard test suite
       run: |

@@ -404,7 +404,7 @@ class TestBinary(unittest.TestCase):
         proc = subprocess.CompletedProcess(args=[], returncode=0, stdout='', stderr='')
 
         with contextlib.ExitStack() as stack:
-            stack.enter_context(mock.patch.object(BinProvider, 'INSTALLER_BIN_ABSPATH', new_callable=mock.PropertyMock, return_value=Path('/usr/local/bin/provider')))
+            stack.enter_context(mock.patch.object(provider_cls, 'INSTALLER_BIN_ABSPATH', new_callable=mock.PropertyMock, return_value=Path('/usr/local/bin/provider')))
             mock_exec = stack.enter_context(mock.patch.object(provider_cls, 'exec', return_value=proc))
             stack.enter_context(mock.patch.object(provider_cls, 'get_abspath', return_value=Path(sys.executable)))
             stack.enter_context(mock.patch.object(provider_cls, 'get_version', return_value=SemVer('3.11.0')))
@@ -744,7 +744,7 @@ class TestUpdateAndUninstall(unittest.TestCase):
         self.assertTrue(result)
         self.assertFalse(bin_path.exists())
 
-    @mock.patch.object(BinProvider, 'INSTALLER_BIN_ABSPATH', new_callable=mock.PropertyMock, return_value=Path('/usr/local/bin/nix'))
+    @mock.patch.object(NixProvider, 'INSTALLER_BIN_ABSPATH', new_callable=mock.PropertyMock, return_value=Path('/usr/local/bin/nix'))
     @mock.patch('abx_pkg.binprovider_nix.NixProvider.load_PATH_from_nix_profile', lambda self: self)
     def test_nix_provider_update_uses_profile_upgrade(self, _mock_installer_bin_abspath):
         provider = NixProvider(nix_profile=Path('/tmp/nix/profile'), nix_state_dir=Path('/tmp/nix/state'), euid=os.geteuid())
@@ -773,7 +773,7 @@ class TestUpdateAndUninstall(unittest.TestCase):
             ],
         )
 
-    @mock.patch.object(BinProvider, 'INSTALLER_BIN_ABSPATH', new_callable=mock.PropertyMock, return_value=Path('/usr/local/bin/nix'))
+    @mock.patch.object(NixProvider, 'INSTALLER_BIN_ABSPATH', new_callable=mock.PropertyMock, return_value=Path('/usr/local/bin/nix'))
     @mock.patch('abx_pkg.binprovider_nix.NixProvider.load_PATH_from_nix_profile', lambda self: self)
     def test_nix_provider_uninstall_uses_profile_remove(self, _mock_installer_bin_abspath):
         provider = NixProvider(nix_profile=Path('/tmp/nix/profile'), nix_state_dir=Path('/tmp/nix/state'), euid=os.geteuid())
