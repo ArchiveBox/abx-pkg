@@ -176,6 +176,7 @@ def log_method_call(level: int = py_logging.DEBUG, include_result: bool = False)
             method_logger = get_logger(func.__module__)
             should_trace = not (
                 func.__name__.startswith("_")
+                or func.__name__ == "get_binprovider"
                 or func.__name__ == "get_provider_with_overrides"
             )
             rendered_call = _format_method_call(args, kwargs)

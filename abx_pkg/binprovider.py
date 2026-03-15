@@ -944,7 +944,10 @@ class BinProvider(BaseModel):
     @validate_call
     def load_or_install(self, bin_name: BinName, quiet: bool=False, nocache: bool=False) -> ShallowBinary | None:
         logger.info("Loading or installing %s via provider %s", bin_name, self.name)
-        installed = self.load(bin_name=bin_name, quiet=True, nocache=nocache)
+        try:
+            installed = self.load(bin_name=bin_name, quiet=True, nocache=nocache)
+        except Exception:
+            installed = None
         if not installed:
             installed = self.install(bin_name=bin_name, quiet=quiet, nocache=nocache)
         return installed

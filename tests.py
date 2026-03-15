@@ -182,6 +182,31 @@ class TestLogging(unittest.TestCase):
         self.assertIn("ERRORS=", messages[0])
         self.assertFalse(any(record.levelno == logging.WARNING for record in records))
 
+    def test_load_or_install_does_not_log_error_for_expected_load_fallback(self):
+        class FallbackProvider(BinProvider):
+            name: str = 'fallback'
+
+            def load(self, bin_name: str, **context):
+                raise RuntimeError('simulated load miss')
+
+            def install(self, bin_name: str, **context):
+                return BinProvider.load(
+                    EnvProvider(),
+                    'python',
+                    quiet=True,
+                    nocache=True,
+                )
+
+        provider = FallbackProvider()
+
+        with capture_abx_logs(logging.DEBUG) as records:
+            result = provider.load_or_install('missing-bin')
+
+        self.assertIsNotNone(result)
+        messages = [record.getMessage() for record in records]
+        self.assertFalse(any(record.levelno >= logging.ERROR for record in records))
+        self.assertFalse(any('raised RuntimeError' in message for message in messages))
+
     @unittest.skipUnless(RICH_INSTALLED, "rich not installed")
     def test_configure_rich_logging_if_available(self):
         stream = StringIO()
