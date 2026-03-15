@@ -22,6 +22,7 @@ from abx_pkg import (
     PipProvider, NpmProvider, AptProvider, BrewProvider, CargoProvider,
     GemProvider, GoGetProvider, NixProvider, DockerProvider,
     configure_logging, configure_rich_logging, get_logger, RICH_INSTALLED,
+    BinaryInstallError,
 )
 from abx_pkg.binprovider import remap_kwargs
 from abx_pkg.binprovider_ansible import AnsibleProvider
@@ -136,7 +137,8 @@ class TestLogging(unittest.TestCase):
 
         messages = [record.getMessage() for record in records]
         self.assertTrue(any('Loading python binary' in message for message in messages))
-        self.assertTrue(any('Loaded ' in message and ' via EnvProvider()' in message for message in messages))
+        loaded_messages = [message for message in messages if message.startswith('Loaded ') and ' via EnvProvider()' in message]
+        self.assertEqual(len(loaded_messages), 1)
         self.assertFalse(any(message.startswith('Calling ') for message in messages))
 
     def test_warning_logging_emits_failures(self):
@@ -153,8 +155,32 @@ class TestLogging(unittest.TestCase):
                 binary.install()
 
         messages = [record.getMessage() for record in records]
-        self.assertTrue(any('Install failed for missing-bin via provider broken: boom' in message for message in messages))
+        self.assertTrue(any(message.startswith("Binary.install(") and " raised BinaryInstallError(" in message for message in messages))
         self.assertFalse(any(record.levelno < logging.WARNING for record in records))
+
+    def test_error_logging_omits_redundant_binary_wrapper_warning(self):
+        class BrokenProvider(BinProvider):
+            name: str = 'broken'
+
+            def install(self, bin_name: str, **context):
+                raise RuntimeError('simulated install failure for trace output')
+
+        binary = Binary(
+            name='definitely-missing-abx-pkg-bin',
+            binproviders=[EnvProvider(), BrokenProvider()],
+        )
+
+        with capture_abx_logs(logging.ERROR) as records:
+            with self.assertRaises(BinaryInstallError):
+                binary.install()
+
+        messages = [record.getMessage() for record in records]
+        self.assertEqual(len(messages), 1)
+        self.assertTrue(messages[0].startswith("Binary.install("))
+        self.assertIn(" raised BinaryInstallError(", messages[0])
+        self.assertIn("definitely-missing-abx-pkg-bin", messages[0])
+        self.assertIn("ERRORS=", messages[0])
+        self.assertFalse(any(record.levelno == logging.WARNING for record in records))
 
     @unittest.skipUnless(RICH_INSTALLED, "rich not installed")
     def test_configure_rich_logging_if_available(self):
@@ -460,6 +486,30 @@ class TestBinary(unittest.TestCase):
         self.assertTrue(python_bin.is_executable)
         self.assertFalse(python_bin.is_script)
         self.assertTrue(bool(str(python_bin)))  # easy way to make sure serializing doesnt throw an error
+
+    def test_repr_includes_abspath_version_and_short_sha256(self):
+        envprovider = EnvProvider()
+
+        shallow_bin = envprovider.load_or_install('python')
+        assert shallow_bin is not None
+        short_sha256 = f"...{str(shallow_bin.loaded_sha256)[-6:]}"
+
+        shallow_repr = repr(shallow_bin)
+        self.assertIn("ShallowBinary(", shallow_repr)
+        self.assertIn(f"name={shallow_bin.name!r}", shallow_repr)
+        self.assertIn(f"abspath={shallow_bin.loaded_abspath!r}", shallow_repr)
+        self.assertIn(f"version={shallow_bin.loaded_version!r}", shallow_repr)
+        self.assertIn(f"sha256={short_sha256!r}", shallow_repr)
+        self.assertEqual(str(shallow_bin), shallow_repr)
+
+        binary = Binary(name='python', binproviders=[envprovider]).load()
+        binary_repr = repr(binary)
+        self.assertIn("Binary(", binary_repr)
+        self.assertIn(f"name={binary.name!r}", binary_repr)
+        self.assertIn(f"abspath={binary.loaded_abspath!r}", binary_repr)
+        self.assertIn(f"version={binary.loaded_version!r}", binary_repr)
+        self.assertIn(f"sha256={short_sha256!r}", binary_repr)
+        self.assertEqual(str(binary), binary_repr)
 
     def test_min_version_accepts_string(self):
         binary = Binary(name='python', abspath=sys.executable, version='1.2.3', min_version='1.2.0')

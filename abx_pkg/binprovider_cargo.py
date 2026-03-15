@@ -11,7 +11,7 @@ from typing_extensions import Self
 
 from .base_types import BinProviderName, PATHStr, BinName, InstallArgs
 from .binprovider import BinProvider, remap_kwargs
-from .logging import get_logger, log_subprocess_error
+from .logging import format_subprocess_output, get_logger, log_subprocess_error
 
 logger = get_logger(__name__)
 
@@ -101,7 +101,7 @@ class CargoProvider(BinProvider):
         )
         if proc.returncode != 0:
             log_subprocess_error(logger, f"{self.__class__.__name__} install", proc.stdout, proc.stderr)
-            raise Exception(f"{self.__class__.__name__}: install got returncode {proc.returncode} while installing {install_args}: {install_args}")
+            raise Exception(f"{self.__class__.__name__}: install got returncode {proc.returncode} while installing {install_args}: {install_args}\n{format_subprocess_output(proc.stdout, proc.stderr)}".strip())
 
         return (proc.stderr.strip() + "\n" + proc.stdout.strip()).strip()
 
@@ -120,7 +120,7 @@ class CargoProvider(BinProvider):
         )
         if proc.returncode != 0:
             log_subprocess_error(logger, f"{self.__class__.__name__} update", proc.stdout, proc.stderr)
-            raise Exception(f"{self.__class__.__name__}: update got returncode {proc.returncode} while updating {install_args}: {install_args}")
+            raise Exception(f"{self.__class__.__name__}: update got returncode {proc.returncode} while updating {install_args}: {install_args}\n{format_subprocess_output(proc.stdout, proc.stderr)}".strip())
 
         return (proc.stderr.strip() + "\n" + proc.stdout.strip()).strip()
 
@@ -137,6 +137,6 @@ class CargoProvider(BinProvider):
         )
         if proc.returncode != 0 and "did not match any packages" not in proc.stderr:
             log_subprocess_error(logger, f"{self.__class__.__name__} uninstall", proc.stdout, proc.stderr)
-            raise Exception(f"{self.__class__.__name__}: uninstall got returncode {proc.returncode} while uninstalling {install_args}: {install_args}")
+            raise Exception(f"{self.__class__.__name__}: uninstall got returncode {proc.returncode} while uninstalling {install_args}: {install_args}\n{format_subprocess_output(proc.stdout, proc.stderr)}".strip())
 
         return True

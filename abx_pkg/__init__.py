@@ -16,6 +16,15 @@ from .base_types import (
 from .semver import SemVer, bin_version
 from .shallowbinary import ShallowBinary
 from .logging import logger, get_logger, configure_logging, configure_rich_logging, RICH_INSTALLED
+from .exceptions import (
+    ABXPkgError,
+    BinaryOperationError,
+    BinaryInstallError,
+    BinaryLoadError,
+    BinaryLoadOrInstallError,
+    BinaryUpdateError,
+    BinaryUninstallError,
+)
 from .binprovider import (
     BinProvider,
     EnvProvider,

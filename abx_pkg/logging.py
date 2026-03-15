@@ -3,6 +3,7 @@ __package__ = "abx_pkg"
 import functools
 import logging as py_logging
 import shlex
+from contextvars import ContextVar
 
 from pathlib import Path
 from typing import Any, Callable
@@ -15,11 +16,13 @@ RICH_INSTALLED = False
 
 try:
     from rich.console import Console
+    from rich.highlighter import ReprHighlighter
     from rich.logging import RichHandler
 
     RICH_INSTALLED = True
 except ImportError:
     Console = Any  # type: ignore[assignment]
+    ReprHighlighter = None
     RichHandler = None
 
 logger = py_logging.getLogger(LOGGER_NAME)
@@ -28,6 +31,7 @@ if not any(isinstance(handler, py_logging.NullHandler) for handler in logger.han
 
 P = ParamSpec("P")
 R = TypeVar("R")
+TRACE_DEPTH: ContextVar[int] = ContextVar("abx_pkg_trace_depth", default=0)
 
 
 def get_logger(name: str | None = None) -> py_logging.Logger:
@@ -86,6 +90,7 @@ def configure_rich_logging(
     show_path: bool = False,
     omit_repeated_times: bool = False,
     keywords: list[str] | None = None,
+    highlighter: Any | None = None,
 ) -> py_logging.Logger:
     if RichHandler is None:
         raise RuntimeError('rich is not installed, install "abx-pkg[rich]" to enable rich logging')
@@ -99,6 +104,7 @@ def configure_rich_logging(
         show_path=show_path,
         omit_repeated_times=omit_repeated_times,
         keywords=keywords,
+        highlighter=highlighter if highlighter is not None else (ReprHighlighter() if ReprHighlighter is not None else None),
     )
     return configure_logging(
         level=level,
@@ -122,6 +128,20 @@ def format_loaded_binary(action: str, abspath: Path | str, version: Any, provide
     return f"{action} {abspath} v{version} via {format_provider(provider)}"
 
 
+def format_named_value(value: Any) -> str:
+    name = getattr(value, "name", None)
+    if hasattr(value, "loaded_abspath") and hasattr(value, "loaded_version"):
+        return (
+            f"{value.__class__.__name__}("
+            f"name={name!r}, "
+            f"abspath={getattr(value, 'loaded_abspath', None)!r}, "
+            f"version={getattr(value, 'loaded_version', None)!r}, "
+            f"sha256={('...' + str(getattr(value, 'loaded_sha256', None))[-6:]) if getattr(value, 'loaded_sha256', None) else None!r}"
+            f")"
+        )
+    return f"{value.__class__.__name__}(name={name!r})"
+
+
 def summarize_value(value: Any, max_length: int = 200) -> str:
     if isinstance(value, Path):
         rendered = str(value)
@@ -134,8 +154,7 @@ def summarize_value(value: Any, max_length: int = 200) -> str:
         rendered_items = ", ".join(summarize_value(item, 40) for item in list(value)[:4])
         rendered = f"{type(value).__name__}([{rendered_items}])"
     elif hasattr(value, "name"):
-        name = getattr(value, "name", None)
-        rendered = f"{value.__class__.__name__}(name={name!r})"
+        rendered = format_named_value(value)
     else:
         rendered = repr(value)
 
@@ -155,17 +174,26 @@ def log_method_call(level: int = py_logging.DEBUG, include_result: bool = False)
         @functools.wraps(func)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             method_logger = get_logger(func.__module__)
-            should_trace = not func.__name__.startswith("_")
+            should_trace = not (
+                func.__name__.startswith("_")
+                or func.__name__ == "get_provider_with_overrides"
+            )
+            rendered_call = _format_method_call(args, kwargs)
+            trace_depth = TRACE_DEPTH.get()
+            token = TRACE_DEPTH.set(trace_depth + 1) if should_trace else None
             if should_trace and method_logger.isEnabledFor(level):
-                method_logger.log(level, "%s(%s)", func.__qualname__, _format_method_call(args, kwargs))
+                method_logger.log(level, "%s(%s)", func.__qualname__, rendered_call)
             try:
                 result = func(*args, **kwargs)
-            except Exception:
-                if should_trace and method_logger.isEnabledFor(py_logging.WARNING):
-                    method_logger.exception("%s raised an exception", func.__qualname__)
+            except Exception as err:
+                if should_trace and trace_depth == 0 and method_logger.isEnabledFor(py_logging.ERROR):
+                    method_logger.error("%s(%s) raised %s", func.__qualname__, rendered_call, summarize_value(err))
                 raise
+            finally:
+                if token is not None:
+                    TRACE_DEPTH.reset(token)
             if should_trace and include_result and method_logger.isEnabledFor(level):
-                method_logger.log(level, "%s returned %s", func.__qualname__, summarize_value(result))
+                method_logger.log(level, "%s(%s) returned %s", func.__qualname__, rendered_call, summarize_value(result))
             return result
 
         return wrapper
@@ -180,3 +208,18 @@ def log_subprocess_error(command_logger: py_logging.Logger, action: str, stdout:
         command_logger.error("%s stdout: %s", action, trimmed_stdout)
     if trimmed_stderr:
         command_logger.error("%s stderr: %s", action, trimmed_stderr)
+
+
+def format_subprocess_output(stdout: str | None, stderr: str | None) -> str:
+    return "\n".join(part for part in ((stdout or "").strip(), (stderr or "").strip()) if part)
+
+
+def format_exception_with_output(err: Exception) -> str:
+    message = str(err).strip()
+    output = format_subprocess_output(
+        getattr(err, "stdout", None),
+        getattr(err, "stderr", None),
+    )
+    if output and output not in message:
+        return f"{message}\n{output}".strip()
+    return message

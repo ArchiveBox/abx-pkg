@@ -135,6 +135,18 @@ class ShallowBinary(BaseModel):
                 return getattr(self, field)
         return super().__getattr__(item)
 
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}("
+            f"name={self.name!r}, "
+            f"abspath={self.loaded_abspath!r}, "
+            f"version={self.loaded_version!r}, "
+            f"sha256={f'...{str(self.loaded_sha256)[-6:]}' if self.loaded_sha256 else None!r}"
+            f")"
+        )
+
+    __str__ = __repr__
+
     @model_validator(mode="after")
     def validate(self) -> Self:
         self.description = self.description or self.name
@@ -615,8 +627,6 @@ class BinProvider(BaseModel):
         cmd = [str(bin_abspath), *(str(arg) for arg in cmd)]
         if self._dry_run:
             logger.info("DRY RUN (%s): %s", self.__class__.__name__, format_command(cmd))
-        else:
-            logger.debug("Executing provider command via %s: %s", self.name, format_command(cmd))
             
         # https://stackoverflow.com/a/6037494/2156113
         # copy env and modify it to run the subprocess as the the designated user
@@ -756,7 +766,6 @@ class BinProvider(BaseModel):
             install_log = cast(InstallFuncReturnValue, self._call_handler_for_action(bin_name=bin_name, handler_type='install', install_args=install_args, packages=install_args))
         except Exception as err:
             install_log = f'{self.__class__.__name__} Failed to install {bin_name}, got {err.__class__.__name__}: {err}'
-            logger.warning("Install failed for %s via provider %s: %s", bin_name, self.name, err)
             if not quiet:
                 raise
             
@@ -813,7 +822,6 @@ class BinProvider(BaseModel):
             update_log = cast(ActionFuncReturnValue, self._call_handler_for_action(bin_name=bin_name, handler_type='update', install_args=install_args, packages=install_args))
         except Exception as err:
             update_log = f'{self.__class__.__name__} Failed to update {bin_name}, got {err.__class__.__name__}: {err}'
-            logger.warning("Update failed for %s via provider %s: %s", bin_name, self.name, err)
             if not quiet:
                 raise
 
@@ -864,7 +872,6 @@ class BinProvider(BaseModel):
         try:
             uninstall_result = cast(ActionFuncReturnValue, self._call_handler_for_action(bin_name=bin_name, handler_type='uninstall', install_args=install_args, packages=install_args))
         except Exception as err:
-            logger.warning("Uninstall failed for %s via provider %s: %s", bin_name, self.name, err)
             if not quiet:
                 raise
             return False
