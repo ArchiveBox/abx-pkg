@@ -188,7 +188,7 @@ def log_method_call(level: int = py_logging.DEBUG, include_result: bool = False)
                 result = func(*args, **kwargs)
             except Exception as err:
                 if should_trace and trace_depth == 0 and method_logger.isEnabledFor(py_logging.ERROR):
-                    method_logger.error("%s(%s) raised %s", func.__qualname__, rendered_call, summarize_value(err))
+                    method_logger.error("%s(%s) raised %r", func.__qualname__, rendered_call, err)
                 raise
             finally:
                 if token is not None:

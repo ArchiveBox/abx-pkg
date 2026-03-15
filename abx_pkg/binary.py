@@ -146,6 +146,16 @@ class Binary(ShallowBinary):
 
         raise KeyError(f'{binprovider_name} is not a supported BinProvider for Binary(name={self.name})')
 
+    def _debug_provider_failure(self, operation: str, provider: BinProvider, err: Exception) -> None:
+        logger.debug(
+            "%s.%s(%r, %r) raised %r",
+            provider.__class__.__name__,
+            operation,
+            provider,
+            self.name,
+            err,
+        )
+
     @validate_call
     @log_method_call(include_result=True)
     def install(self, binproviders: Optional[List[BinProviderName]]=None, **extra_overrides) -> Self:
@@ -162,6 +172,7 @@ class Binary(ShallowBinary):
             if binproviders and (binprovider.name not in binproviders):
                 continue
 
+            provider = binprovider
             try:
                 provider = self.get_binprovider(binprovider_name=binprovider.name, **extra_overrides)
                 installed_bin = provider.install(self.name)
@@ -177,6 +188,7 @@ class Binary(ShallowBinary):
             except Exception as err:
                 inner_exc = err
                 errors[binprovider.name] = format_exception_with_output(err)
+                self._debug_provider_failure("install", provider, err)
 
         provider_names = ', '.join(binproviders or [p.name for p in self.binproviders_supported])
         raise BinaryInstallError(self.name, provider_names, errors) from inner_exc
@@ -203,6 +215,7 @@ class Binary(ShallowBinary):
             if binproviders and binprovider.name not in binproviders:
                 continue
             
+            provider = binprovider
             try:
                 provider = self.get_binprovider(binprovider_name=binprovider.name, **extra_overrides)
                 installed_bin = provider.load(self.name, nocache=nocache)
@@ -220,6 +233,7 @@ class Binary(ShallowBinary):
             except Exception as err:
                 inner_exc = err
                 errors[binprovider.name] = format_exception_with_output(err)
+                self._debug_provider_failure("load", provider, err)
 
         provider_names = ', '.join(binproviders or [p.name for p in self.binproviders_supported])
         raise BinaryLoadError(self.name, provider_names, errors) from inner_exc
@@ -244,6 +258,7 @@ class Binary(ShallowBinary):
             if binproviders and binprovider.name not in binproviders:
                 continue
             
+            provider = binprovider
             try:
                 provider = self.get_binprovider(binprovider_name=binprovider.name, **extra_overrides)
                 installed_bin = provider.load_or_install(self.name, nocache=nocache)
@@ -261,6 +276,7 @@ class Binary(ShallowBinary):
             except Exception as err:
                 inner_exc = err
                 errors[binprovider.name] = format_exception_with_output(err)
+                self._debug_provider_failure("load_or_install", provider, err)
                 continue
 
         provider_names = ', '.join(binproviders or [p.name for p in self.binproviders_supported])
@@ -282,6 +298,7 @@ class Binary(ShallowBinary):
             if binproviders and binprovider.name not in binproviders:
                 continue
 
+            provider = binprovider
             try:
                 provider = self.get_binprovider(binprovider_name=binprovider.name, **extra_overrides)
                 updated_bin = provider.update(self.name)
@@ -296,6 +313,7 @@ class Binary(ShallowBinary):
             except Exception as err:
                 inner_exc = err
                 errors[binprovider.name] = format_exception_with_output(err)
+                self._debug_provider_failure("update", provider, err)
 
         provider_names = ', '.join(binproviders or [p.name for p in self.binproviders_supported])
         raise BinaryUpdateError(self.name, provider_names, errors) from inner_exc
@@ -316,6 +334,7 @@ class Binary(ShallowBinary):
             if binproviders and binprovider.name not in binproviders:
                 continue
 
+            provider = binprovider
             try:
                 provider = self.get_binprovider(binprovider_name=binprovider.name, **extra_overrides)
                 uninstalled = provider.uninstall(self.name)
@@ -332,6 +351,7 @@ class Binary(ShallowBinary):
             except Exception as err:
                 inner_exc = err
                 errors[binprovider.name] = format_exception_with_output(err)
+                self._debug_provider_failure("uninstall", provider, err)
 
         provider_names = ', '.join(binproviders or [p.name for p in self.binproviders_supported])
         raise BinaryUninstallError(self.name, provider_names, errors) from inner_exc

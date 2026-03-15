@@ -207,6 +207,61 @@ class TestLogging(unittest.TestCase):
         self.assertFalse(any(record.levelno >= logging.ERROR for record in records))
         self.assertFalse(any('raised RuntimeError' in message for message in messages))
 
+    def test_multi_provider_load_or_install_logs_intermediate_failures_at_debug_only(self):
+        class FirstFailsProvider(BinProvider):
+            name: str = 'first_fail'
+
+            def load_or_install(self, bin_name: str, **context):
+                raise RuntimeError('simulated first provider failure')
+
+        class SecondSucceedsProvider(BinProvider):
+            name: str = 'second_ok'
+
+            def load_or_install(self, bin_name: str, **context):
+                return BinProvider.load(EnvProvider(), 'python', quiet=True, nocache=True)
+
+        binary = Binary(
+            name='demo-multi-provider-ok',
+            binproviders=[FirstFailsProvider(), SecondSucceedsProvider()],
+        )
+
+        with capture_abx_logs(logging.DEBUG) as records:
+            result = binary.load_or_install()
+
+        self.assertIsNotNone(result)
+        messages = [record.getMessage() for record in records]
+        self.assertTrue(any('FirstFailsProvider.load_or_install(' in message and 'raised RuntimeError(' in message for message in messages))
+        self.assertFalse(any(record.levelno >= logging.ERROR for record in records))
+
+    def test_multi_provider_load_or_install_failure_error_is_not_truncated(self):
+        class FirstFailsProvider(BinProvider):
+            name: str = 'first_fail'
+
+            def load_or_install(self, bin_name: str, **context):
+                raise RuntimeError('simulated first provider failure')
+
+        class ThirdFailsProvider(BinProvider):
+            name: str = 'third_fail'
+
+            def load_or_install(self, bin_name: str, **context):
+                raise RuntimeError('simulated third provider failure with enough text to catch truncation')
+
+        binary = Binary(
+            name='demo-multi-provider-bad',
+            binproviders=[FirstFailsProvider(), ThirdFailsProvider()],
+        )
+
+        with capture_abx_logs(logging.ERROR) as records:
+            with self.assertRaises(Exception):
+                binary.load_or_install()
+
+        message = records[0].getMessage()
+        self.assertIn('BinaryLoadOrInstallError(', message)
+        self.assertIn('first_fail', message)
+        self.assertIn('third_fail', message)
+        self.assertIn('simulated third provider failure with enough text to catch truncation', message)
+        self.assertNotIn('...', message.split('raised ', 1)[-1])
+
     @unittest.skipUnless(RICH_INSTALLED, "rich not installed")
     def test_configure_rich_logging_if_available(self):
         stream = StringIO()
