@@ -93,20 +93,10 @@ class PipProvider(BinProvider):
 
     @model_validator(mode='after')
     def detect_euid_to_use(self) -> Self:
-        """Detect the user (UID) to run as when executing pip (should be same as the user that owns the pip_venv dir)"""
+        """Detect the user (UID) to run as when executing pip."""
         
         if self.euid is None:
-            # try dropping to the owner of the npm prefix dir if it exists
-            if self.pip_venv and os.path.isdir(self.pip_venv):
-                self.euid = os.stat(self.pip_venv).st_uid
-
-            # try dropping to the owner of the npm binary if it's not root
-            installer_bin = self.INSTALLER_BIN_ABSPATH
-            if installer_bin:
-                self.euid = self.euid or os.stat(installer_bin).st_uid
-                
-            # fallback to the currently running user
-            self.euid = self.euid or os.geteuid()
+            self.euid = self.detect_euid(owner_paths=(self.pip_venv,), preserve_root=True)
                     
         return self
 

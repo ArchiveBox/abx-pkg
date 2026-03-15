@@ -8,6 +8,7 @@ import hashlib
 import platform
 import subprocess
 import functools
+from types import SimpleNamespace
 
 from typing import Callable, Optional, Iterable, List, cast, final, Dict, Any, Tuple, Literal, Protocol, runtime_checkable
 
@@ -214,6 +215,55 @@ class BinProvider(BaseModel):
         except Exception:
             return False
 
+    @staticmethod
+    def uid_has_passwd_entry(uid: int) -> bool:
+        try:
+            pwd.getpwuid(uid)
+        except KeyError:
+            return False
+        return True
+
+    def detect_euid(self, owner_paths: Iterable[str | Path | None]=(), preserve_root: bool=False) -> int:
+        current_euid = os.geteuid()
+        candidate_euid = None
+
+        for path in owner_paths:
+            if path and os.path.isdir(path):
+                candidate_euid = os.stat(path).st_uid
+                break
+
+        if candidate_euid is None:
+            if preserve_root and current_euid == 0:
+                candidate_euid = 0
+            else:
+                try:
+                    installer_bin = self.INSTALLER_BIN_ABSPATH
+                    if installer_bin:
+                        installer_owner = os.stat(installer_bin).st_uid
+                        if installer_owner != 0:
+                            candidate_euid = installer_owner
+                except Exception:
+                    # INSTALLER_BIN_ABSPATH is not always available (e.g. at import time, or if it dynamically changes)
+                    pass
+
+        if candidate_euid is not None and not self.uid_has_passwd_entry(candidate_euid):
+            candidate_euid = current_euid
+
+        return candidate_euid if candidate_euid is not None else current_euid
+
+    def get_pw_record(self, uid: int) -> Any:
+        try:
+            return pwd.getpwuid(uid)
+        except KeyError:
+            if uid != os.geteuid():
+                raise
+            return SimpleNamespace(
+                pw_uid=uid,
+                pw_gid=os.getegid(),
+                pw_dir=os.environ.get('HOME', '/tmp'),
+                pw_name=os.environ.get('USER') or os.environ.get('LOGNAME') or str(uid),
+            )
+
     @property
     def EUID(self) -> int:
         """
@@ -226,17 +276,7 @@ class BinProvider(BaseModel):
         if self.euid is not None:
             return self.euid
 
-        # fallback to owner of installer binary
-        try:
-            installer_bin = self.INSTALLER_BIN_ABSPATH
-            if installer_bin:
-                return os.stat(installer_bin).st_uid
-        except Exception:
-            # INSTALLER_BIN_ABSPATH is not always availabe (e.g. at import time, or if it dynamically changes)
-            pass
-
-        # fallback to current user
-        return os.geteuid()
+        return self.detect_euid()
 
     
     @computed_field
@@ -503,7 +543,7 @@ class BinProvider(BaseModel):
         # https://stackoverflow.com/a/6037494/2156113
         # copy env and modify it to run the subprocess as the the designated user
         env = kwargs.get('env', {}) or os.environ.copy()
-        pw_record = pwd.getpwuid(self.EUID)
+        pw_record = self.get_pw_record(self.EUID)
         run_as_uid     = pw_record.pw_uid
         run_as_gid     = pw_record.pw_gid
         # update environment variables so that subprocesses dont try to write to /root home directory

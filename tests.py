@@ -3,6 +3,7 @@
 import os
 import sys
 import shutil
+import tempfile
 import unittest
 import subprocess
 from io import StringIO
@@ -15,6 +16,24 @@ from abx_pkg import (
     BinProvider, EnvProvider, Binary, SemVer, BinProviderOverrides,
     PipProvider, NpmProvider, AptProvider, BrewProvider,
 )
+
+REAL_OS_STAT = os.stat
+
+
+def stat_with_uid(path, uid):
+    result = REAL_OS_STAT(path)
+    return os.stat_result((
+        result.st_mode,
+        result.st_ino,
+        result.st_dev,
+        result.st_nlink,
+        uid,
+        result.st_gid,
+        result.st_size,
+        int(result.st_atime),
+        int(result.st_mtime),
+        int(result.st_ctime),
+    ))
 
 
 class TestSemVer(unittest.TestCase):
@@ -172,6 +191,68 @@ class TestBinProvider(unittest.TestCase):
             exc = err
         self.assertIsInstance(exc, AssertionError)
         self.assertTrue('BinProvider(name=custom) has no install handler implemented for Binary(name=doesnotexist)' in str(exc))
+
+    @mock.patch.object(BinProvider, "INSTALLER_BIN_ABSPATH", new_callable=mock.PropertyMock, return_value=Path(sys.executable))
+    @mock.patch("abx_pkg.binprovider.os.stat")
+    @mock.patch("abx_pkg.binprovider.os.geteuid", return_value=0)
+    @mock.patch.object(BinProvider, "uid_has_passwd_entry", side_effect=lambda uid: uid == 0)
+    def test_binprovider_euid_falls_back_from_unmapped_installer_owner(self, _mock_uid_has_passwd_entry, _mock_geteuid, mock_stat, _mock_installer_bin_abspath):
+        class CustomProvider(BinProvider):
+            name: str = 'custom'
+
+        def fake_stat(path, *args, **kwargs):
+            if Path(path) == Path(sys.executable):
+                return stat_with_uid(path, 1001)
+            return REAL_OS_STAT(path, *args, **kwargs)
+
+        mock_stat.side_effect = fake_stat
+        provider = CustomProvider()
+        self.assertEqual(provider.EUID, 0)
+
+    @mock.patch("abx_pkg.binprovider.subprocess.run", return_value=subprocess.CompletedProcess(args=[], returncode=0, stdout='', stderr=''))
+    @mock.patch("abx_pkg.binprovider.pwd.getpwuid", side_effect=KeyError)
+    @mock.patch("abx_pkg.binprovider.os.getegid", return_value=54321)
+    @mock.patch("abx_pkg.binprovider.os.geteuid", return_value=12345)
+    def test_exec_handles_current_uid_without_passwd_entry(self, _mock_geteuid, _mock_getegid, _mock_getpwuid, mock_run):
+        provider = EnvProvider(euid=12345)
+
+        with mock.patch.dict(os.environ, {'HOME': '/tmp/container-home', 'USER': 'container', 'LOGNAME': 'container'}, clear=False):
+            proc = provider.exec(bin_name=sys.executable, cmd=['--version'], quiet=True)
+
+        self.assertEqual(proc.returncode, 0)
+        env = mock_run.call_args.kwargs['env']
+        self.assertEqual(env['HOME'], '/tmp/container-home')
+        self.assertEqual(env['USER'], 'container')
+        self.assertEqual(env['LOGNAME'], 'container')
+
+    @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
+    @mock.patch("abx_pkg.binprovider.os.geteuid", return_value=0)
+    def test_npm_provider_keeps_root_euid_for_global_installs(self, _mock_geteuid, _mock_load_path):
+        provider = NpmProvider()
+        self.assertEqual(provider.euid, 0)
+        self.assertEqual(provider.EUID, 0)
+
+    @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
+    @mock.patch("abx_pkg.binprovider.os.geteuid", return_value=0)
+    @mock.patch("abx_pkg.binprovider.os.stat")
+    @mock.patch.object(BinProvider, "uid_has_passwd_entry", return_value=True)
+    def test_npm_provider_prefers_prefix_owner_over_root(self, _mock_uid_has_passwd_entry, _mock_stat, _mock_geteuid, _mock_load_path):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            prefix = Path(temp_dir)
+            _mock_stat.side_effect = lambda path, *args, **kwargs: stat_with_uid(path, 1001) if Path(path) == prefix else REAL_OS_STAT(path, *args, **kwargs)
+            provider = NpmProvider(npm_prefix=prefix)
+            self.assertEqual(provider.euid, 1001)
+
+    @mock.patch("abx_pkg.binprovider.os.geteuid", return_value=0)
+    def test_pip_provider_keeps_root_euid_for_global_installs(self, _mock_geteuid):
+        provider = PipProvider()
+        self.assertEqual(provider.euid, 0)
+        self.assertEqual(provider.EUID, 0)
+
+    def test_npm_provider_respects_explicit_euid(self):
+        provider = NpmProvider(euid=0)
+        self.assertEqual(provider.euid, 0)
+        self.assertEqual(provider.EUID, 0)
 
 
 class TestForwardRefs(unittest.TestCase):
