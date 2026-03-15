@@ -551,7 +551,7 @@ class CargoProvider(BinProvider):
         self.on_setup_paths()
         return SemVer(run([bin_name, '--version'], stdout=PIPE).stdout.decode())
 
-from abx_pkg import cargo
+cargo = CargoProvider()
 rg = cargo.install(bin_name='ripgrep')
 print(rg.binprovider)                   # CargoProvider()
 print(rg.version)                       # SemVer(14, 1, 0)
