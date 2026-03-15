@@ -1,0 +1,23 @@
+tests.py
+  ff99bc04b1bec027 298-313,540
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.11",
+  "base_commit_sha": "377f2f41b4456bb69ac0c93ee6c0e0a2768bb6c1",
+  "prompts": {
+    "ff99bc04b1bec027": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019cf052-6a50-74f3-a2b1-80b5cfa316c7",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>",
+      "messages": [],
+      "total_additions": 32,
+      "total_deletions": 1,
+      "accepted_lines": 32,
+      "overriden_lines": 0
+    }
+  }
+}
