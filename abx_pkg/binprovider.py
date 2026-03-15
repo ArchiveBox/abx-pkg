@@ -37,7 +37,7 @@ from .base_types import (
     bin_abspaths,
     func_takes_args_or_kwargs,
 )
-from .logging import format_command, get_logger, log_method_call
+from .logging import format_command, format_loaded_binary, get_logger, log_method_call
 
 logger = get_logger(__name__)
 
@@ -372,7 +372,7 @@ class BinProvider(BaseModel):
 
     @final
     # @validate_call(config={'arbitrary_types_allowed': True})
-    @log_method_call(include_result=True)
+    @log_method_call()
     def get_provider_with_overrides(self, overrides: Optional['BinProviderOverrides']=None, dry_run: bool=False, install_timeout: int | None=None, version_timeout: int | None=None) -> Self:
         # created an updated copy of the BinProvider with the overrides applied, then get the handlers on it.
         # important to do this so that any subsequent calls to handler functions down the call chain
@@ -499,7 +499,6 @@ class BinProvider(BaseModel):
     # DEFAULT HANDLERS, override these in subclasses as needed:
 
     # @validate_call
-    @log_method_call(include_result=True)
     def default_abspath_handler(self, bin_name: BinName | HostBinPath, **context) -> 'AbspathFuncReturnValue':  # aka str | Path | None
         # print(f'[*] {self.__class__.__name__}: Getting abspath for {bin_name}...')
 
@@ -509,7 +508,6 @@ class BinProvider(BaseModel):
         return bin_abspath(bin_name, PATH=self.PATH)
     
     # @validate_call
-    @log_method_call(include_result=True)
     def default_version_handler(self, bin_name: BinName, abspath: Optional[HostBinPath]=None, **context) -> 'VersionFuncReturnValue':  # aka List[str] | Tuple[str, ...]
         
         abspath = abspath or self.get_abspath(bin_name, quiet=True)
@@ -553,19 +551,16 @@ class BinProvider(BaseModel):
         ) from validation_err
 
     # @validate_call
-    @log_method_call(include_result=True)
     def default_install_args_handler(self, bin_name: BinName, **context) -> 'InstallArgsFuncReturnValue':     # aka List[str] aka InstallArgs
         # print(f'[*] {self.__class__.__name__}: Getting install command for {bin_name}')
         # ... install command calculation logic here
         return [bin_name]
 
-    @log_method_call(include_result=True)
     def default_packages_handler(self, bin_name: BinName, **context) -> 'InstallArgsFuncReturnValue':
         return self.default_install_args_handler(bin_name, **context)
 
     # @validate_call
     @remap_kwargs({'packages': 'install_args'})
-    @log_method_call(include_result=True)
     def default_install_handler(self, bin_name: BinName, install_args: Optional[InstallArgs]=None, **context) -> 'InstallFuncReturnValue':      # aka str
         self.setup()
         install_args = install_args or self.get_install_args(bin_name)
@@ -586,13 +581,11 @@ class BinProvider(BaseModel):
 
     # @validate_call
     @remap_kwargs({'packages': 'install_args'})
-    @log_method_call(include_result=True)
     def default_update_handler(self, bin_name: BinName, install_args: Optional[InstallArgs]=None, **context) -> 'ActionFuncReturnValue':
         return f'{self.name} BinProvider does not implement any update method'
 
     # @validate_call
     @remap_kwargs({'packages': 'install_args'})
-    @log_method_call(include_result=True)
     def default_uninstall_handler(self, bin_name: BinName, install_args: Optional[InstallArgs]=None, **context) -> 'ActionFuncReturnValue':
         return False
 
@@ -621,8 +614,7 @@ class BinProvider(BaseModel):
         assert os.access(cwd, os.R_OK) and os.path.isdir(cwd), f'cwd must be a valid, accessible directory: {cwd}'
         cmd = [str(bin_abspath), *(str(arg) for arg in cmd)]
         if self._dry_run:
-            logger.info("Dry run command via provider %s: %s", self.name, format_command(cmd))
-            print(f"DRY RUN: {format_command(cmd)}", file=sys.stderr)
+            logger.info("DRY RUN (%s): %s", self.__class__.__name__, format_command(cmd))
         else:
             logger.debug("Executing provider command via %s: %s", self.name, format_command(cmd))
             
@@ -803,7 +795,7 @@ class BinProvider(BaseModel):
             result = None
 
         if result:
-            logger.info("Installed %s via provider %s at %s", bin_name, self.name, result.loaded_abspath)
+            logger.info(format_loaded_binary("Installed", result.loaded_abspath, result.loaded_version, self))
         return result
 
     @final
@@ -848,7 +840,7 @@ class BinProvider(BaseModel):
         sha256 = self.get_sha256(bin_name, abspath=updated_abspath, nocache=True) or UNKNOWN_SHA256
 
         if updated_abspath and updated_version:
-            logger.info("Updated %s via provider %s at %s", bin_name, self.name, updated_abspath)
+            logger.info(format_loaded_binary("Updated", updated_abspath, updated_version, self))
             return ShallowBinary(
                 name=bin_name,
                 binprovider=self,
@@ -909,7 +901,7 @@ class BinProvider(BaseModel):
             sha256=sha256,
             binproviders=[self],
         )
-        logger.info("Loaded %s via provider %s from %s", bin_name, self.name, installed_abspath)
+        logger.info(format_loaded_binary("Loaded", installed_abspath, installed_version, self))
         return result
 
     @final

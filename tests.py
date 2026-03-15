@@ -10,6 +10,7 @@ import subprocess
 import contextlib
 import time
 import logging
+from io import StringIO
 from unittest import mock
 from pathlib import Path
 from typing import Optional
@@ -20,7 +21,7 @@ from abx_pkg import (
     BinProvider, EnvProvider, Binary, SemVer, BinProviderOverrides, InstallArgs,
     PipProvider, NpmProvider, AptProvider, BrewProvider, CargoProvider,
     GemProvider, GoGetProvider, NixProvider, DockerProvider,
-    configure_logging, get_logger,
+    configure_logging, configure_rich_logging, get_logger, RICH_INSTALLED,
 )
 from abx_pkg.binprovider import remap_kwargs
 from abx_pkg.binprovider_ansible import AnsibleProvider
@@ -28,6 +29,9 @@ from abx_pkg.binprovider_pyinfra import PyinfraProvider
 
 REAL_OS_STAT = os.stat
 LIVE_PKG_TESTS = os.environ.get('ABX_PKG_LIVE_PKG_TESTS') == '1'
+
+if RICH_INSTALLED:
+    from rich.console import Console
 
 
 class ListHandler(logging.Handler):
@@ -119,8 +123,10 @@ class TestLogging(unittest.TestCase):
             binary.load()
 
         messages = [record.getMessage() for record in records]
-        self.assertTrue(any('Calling Binary.load(' in message for message in messages))
-        self.assertTrue(any('Calling BinProvider.load(' in message for message in messages))
+        self.assertTrue(any(message.startswith('Binary.load(') for message in messages))
+        self.assertTrue(any(message.startswith('BinProvider.load(') for message in messages))
+        self.assertFalse(any('._call_handler_for_action(' in message for message in messages))
+        self.assertFalse(any('._get_handler_for_action(' in message for message in messages))
 
     def test_info_logging_emits_lifecycle_messages_without_debug_calls(self):
         binary = Binary(name='python', binproviders=[EnvProvider()])
@@ -129,8 +135,8 @@ class TestLogging(unittest.TestCase):
             binary.load()
 
         messages = [record.getMessage() for record in records]
-        self.assertTrue(any('Loading binary python' in message for message in messages))
-        self.assertTrue(any('Loaded binary python via provider env' in message for message in messages))
+        self.assertTrue(any('Loading python binary' in message for message in messages))
+        self.assertTrue(any('Loaded ' in message and ' via EnvProvider()' in message for message in messages))
         self.assertFalse(any(message.startswith('Calling ') for message in messages))
 
     def test_warning_logging_emits_failures(self):
@@ -149,6 +155,36 @@ class TestLogging(unittest.TestCase):
         messages = [record.getMessage() for record in records]
         self.assertTrue(any('Install failed for missing-bin via provider broken: boom' in message for message in messages))
         self.assertFalse(any(record.levelno < logging.WARNING for record in records))
+
+    @unittest.skipUnless(RICH_INSTALLED, "rich not installed")
+    def test_configure_rich_logging_if_available(self):
+        stream = StringIO()
+        console = Console(file=stream, force_terminal=True, color_system="standard", width=120)
+
+        package_logger = get_logger()
+        original_handlers = list(package_logger.handlers)
+        original_level = package_logger.level
+        original_propagate = package_logger.propagate
+
+        try:
+            configure_rich_logging(
+                logging.INFO,
+                console=console,
+                replace_handlers=True,
+                show_path=False,
+                show_time=False,
+            )
+            self.assertEqual(package_logger.handlers[0].__class__.__name__, "RichHandler")
+            get_logger().info("hello rich")
+        finally:
+            package_logger.handlers.clear()
+            package_logger.handlers.extend(original_handlers)
+            package_logger.setLevel(original_level)
+            package_logger.propagate = original_propagate
+
+        output = stream.getvalue()
+        self.assertIn("hello rich", output)
+        self.assertIn("INFO", output)
 
 
 class TestBinProvider(unittest.TestCase):
@@ -1431,7 +1467,7 @@ class InstallTest(unittest.TestCase):
             binary.install(dry_run=True)
 
         messages = [record.getMessage() for record in records]
-        self.assertTrue(any('Dry run command via provider pip:' in message for message in messages))
+        self.assertTrue(any(message.startswith('DRY RUN (PipProvider): ') for message in messages))
 
     def test_brew_provider(self):
         # print(provider.PATH)

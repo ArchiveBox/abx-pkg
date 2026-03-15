@@ -97,7 +97,9 @@ curl.exec(cmd=['--version'])                                        # curl 8.4.0
 
 ### Logging
 
-`abx-pkg` now uses the standard Python `logging` module. By default it stays quiet unless your application configures logging or you opt in with `configure_logging(...)`.
+`abx-pkg` uses the standard Python `logging` module. By default it stays quiet unless your application configures logging explicitly.
+
+For plain stdlib logging:
 
 ```python
 import logging
@@ -111,6 +113,27 @@ python = Binary(name='python', binproviders=[env]).load()
 - `DEBUG`: traces most `abx-pkg` method calls and subprocess execution
 - `INFO`: logs binary load/install/update/uninstall lifecycle events
 - `WARNING`: only warnings and errors
+
+Rich support is available, but remains opt-in.
+
+Install it with:
+
+```bash
+pip install "abx-pkg[rich]"
+```
+
+Then enable Rich logging explicitly:
+
+```python
+import logging
+from abx_pkg import Binary, EnvProvider, configure_rich_logging
+
+configure_rich_logging(logging.DEBUG)
+
+python = Binary(name='python', binproviders=[EnvProvider()]).load()
+```
+
+`configure_rich_logging(...)` uses `rich.logging.RichHandler` under the hood, so log levels, paths, arguments, and command lines render with terminal colors when supported.
 
 You can also manage it with standard logging primitives:
 

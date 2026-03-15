@@ -42,6 +42,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+rich = [
+    "rich>=14.0.0",
+]
 pyinfra = [
     'pyinfra>=3.6.1',
 ]
@@ -51,7 +54,7 @@ ansible = [
     'ansible-runner>=2.4.2',
 ]
 all = [
-    "abx-pkg[pyinfra,ansible]",
+    "abx-pkg[rich,pyinfra,ansible]",
 ]
 
 [build-system]
@@ -68,6 +71,7 @@ dev-dependencies = [
     "django-pydantic-field>=0.3.9",
     "django-jsonform>=2.22.0",
     "pytest>=9.0.2",
+    "rich>=14.0.0",
 ]
 
 [tool.mypy]

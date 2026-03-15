@@ -11,6 +11,16 @@ from typing_extensions import ParamSpec, TypeVar
 
 LOGGER_NAME = "abx_pkg"
 DEFAULT_LOG_FORMAT = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
+RICH_INSTALLED = False
+
+try:
+    from rich.console import Console
+    from rich.logging import RichHandler
+
+    RICH_INSTALLED = True
+except ImportError:
+    Console = Any  # type: ignore[assignment]
+    RichHandler = None
 
 logger = py_logging.getLogger(LOGGER_NAME)
 if not any(isinstance(handler, py_logging.NullHandler) for handler in logger.handlers):
@@ -62,8 +72,54 @@ def configure_logging(
     return package_logger
 
 
+def configure_rich_logging(
+    level: int | str = py_logging.INFO,
+    console: Console | None = None,
+    fmt: str = "%(message)s",
+    datefmt: str | None = None,
+    propagate: bool = False,
+    replace_handlers: bool = False,
+    rich_tracebacks: bool = True,
+    markup: bool = False,
+    show_time: bool = True,
+    show_level: bool = True,
+    show_path: bool = False,
+    omit_repeated_times: bool = False,
+    keywords: list[str] | None = None,
+) -> py_logging.Logger:
+    if RichHandler is None:
+        raise RuntimeError('rich is not installed, install "abx-pkg[rich]" to enable rich logging')
+
+    handler = RichHandler(
+        console=console,
+        rich_tracebacks=rich_tracebacks,
+        markup=markup,
+        show_time=show_time,
+        show_level=show_level,
+        show_path=show_path,
+        omit_repeated_times=omit_repeated_times,
+        keywords=keywords,
+    )
+    return configure_logging(
+        level=level,
+        handler=handler,
+        fmt=fmt,
+        datefmt=datefmt,
+        propagate=propagate,
+        replace_handlers=replace_handlers,
+    )
+
+
 def format_command(cmd: list[str] | tuple[str, ...]) -> str:
     return shlex.join(str(part) for part in cmd)
+
+
+def format_provider(provider: Any) -> str:
+    return f"{provider.__class__.__name__}()"
+
+
+def format_loaded_binary(action: str, abspath: Path | str, version: Any, provider: Any) -> str:
+    return f"{action} {abspath} v{version} via {format_provider(provider)}"
 
 
 def summarize_value(value: Any, max_length: int = 200) -> str:
@@ -99,15 +155,16 @@ def log_method_call(level: int = py_logging.DEBUG, include_result: bool = False)
         @functools.wraps(func)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             method_logger = get_logger(func.__module__)
-            if method_logger.isEnabledFor(level):
-                method_logger.log(level, "Calling %s(%s)", func.__qualname__, _format_method_call(args, kwargs))
+            should_trace = not func.__name__.startswith("_")
+            if should_trace and method_logger.isEnabledFor(level):
+                method_logger.log(level, "%s(%s)", func.__qualname__, _format_method_call(args, kwargs))
             try:
                 result = func(*args, **kwargs)
             except Exception:
-                if method_logger.isEnabledFor(py_logging.WARNING):
+                if should_trace and method_logger.isEnabledFor(py_logging.WARNING):
                     method_logger.exception("%s raised an exception", func.__qualname__)
                 raise
-            if include_result and method_logger.isEnabledFor(level):
+            if should_trace and include_result and method_logger.isEnabledFor(level):
                 method_logger.log(level, "%s returned %s", func.__qualname__, summarize_value(result))
             return result
 
