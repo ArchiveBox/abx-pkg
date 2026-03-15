@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.12'",
@@ -8,7 +8,7 @@ resolution-markers = [
 
 [[package]]
 name = "abx-pkg"
-version = "0.6.3"
+version = "0.6.4"
 source = { editable = "." }
 dependencies = [
     { name = "pip" },
@@ -39,7 +39,8 @@ pyinfra = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "django" },
+    { name = "django", version = "5.2.12", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "django", version = "6.0.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "django-admin-data-views" },
     { name = "django-jsonform" },
     { name = "django-pydantic-field" },
@@ -409,10 +410,13 @@ wheels = [
 name = "django"
 version = "5.2.12"
 source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version < '3.12'",
+]
 dependencies = [
-    { name = "asgiref" },
-    { name = "sqlparse" },
-    { name = "tzdata", marker = "sys_platform == 'win32'" },
+    { name = "asgiref", marker = "python_full_version < '3.12'" },
+    { name = "sqlparse", marker = "python_full_version < '3.12'" },
+    { name = "tzdata", marker = "python_full_version < '3.12' and sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/bd/55/b9445fc0695b03746f355c05b2eecc54c34e05198c686f4fc4406b722b52/django-5.2.12.tar.gz", hash = "sha256:6b809af7165c73eff5ce1c87fdae75d4da6520d6667f86401ecf55b681eb1eeb", size = 10860574, upload-time = "2026-03-03T13:56:05.509Z" }
 wheels = [
@@ -420,11 +424,29 @@ wheels = [
 ]
 
 [[package]]
+name = "django"
+version = "6.0.3"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.12'",
+]
+dependencies = [
+    { name = "asgiref", marker = "python_full_version >= '3.12'" },
+    { name = "sqlparse", marker = "python_full_version >= '3.12'" },
+    { name = "tzdata", marker = "python_full_version >= '3.12' and sys_platform == 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/80/e1/894115c6bd70e2c8b66b0c40a3c367d83a5a48c034a4d904d31b62f7c53a/django-6.0.3.tar.gz", hash = "sha256:90be765ee756af8a6cbd6693e56452404b5ad15294f4d5e40c0a55a0f4870fe1", size = 10872701, upload-time = "2026-03-03T13:55:15.026Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/72/b1/23f2556967c45e34d3d3cf032eb1bd3ef925ee458667fb99052a0b3ea3a6/django-6.0.3-py3-none-any.whl", hash = "sha256:2e5974441491ddb34c3f13d5e7a9f97b07ba03bf70234c0a9c68b79bbb235bc3", size = 8358527, upload-time = "2026-03-03T13:55:10.552Z" },
+]
+
+[[package]]
 name = "django-admin-data-views"
 version = "0.4.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "django" },
+    { name = "django", version = "5.2.12", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "django", version = "6.0.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "django-settings-holder" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/2e/3f/2377a4088c0bf7ce677bb0a526cbf898a11e5528941d7cda303efef3bd73/django_admin_data_views-0.4.3.tar.gz", hash = "sha256:bd287a5d874febd8b544f83b47d0846fbf7b3e00a7f6633912630053c7ae4298", size = 12519, upload-time = "2024-11-24T14:18:00.406Z" }
@@ -437,7 +459,8 @@ name = "django-jsonform"
 version = "2.23.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "django" },
+    { name = "django", version = "5.2.12", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "django", version = "6.0.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/9b/a8/83c57acbc153b86615be279cee5a194ce1163b578f29a9f6d658f267785e/django_jsonform-2.23.2.tar.gz", hash = "sha256:6fa2ba7c082be51d738e6c66e35075a3cb9ebc2f941e3a477c988900a7fe3269", size = 108182, upload-time = "2025-01-29T22:31:34.093Z" }
 wheels = [
@@ -449,7 +472,8 @@ name = "django-pydantic-field"
 version = "0.5.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "django" },
+    { name = "django", version = "5.2.12", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "django", version = "6.0.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "pydantic" },
     { name = "typing-extensions" },
 ]
@@ -463,7 +487,8 @@ name = "django-settings-holder"
 version = "0.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "django" },
+    { name = "django", version = "5.2.12", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "django", version = "6.0.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/5f/1d/810c15a408987262bf70fc1892d4d5c3b2c1ae62e8715b73592c8f46ed37/django_settings_holder-0.3.0.tar.gz", hash = "sha256:d41eb6d6023d61c08e395f2406fd6f047d1edff2f0346d04323f3681f12372ef", size = 8580, upload-time = "2025-04-27T13:15:42.069Z" }
 wheels = [
@@ -475,7 +500,8 @@ name = "django-stubs"
 version = "5.2.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "django" },
+    { name = "django", version = "5.2.12", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "django", version = "6.0.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "django-stubs-ext" },
     { name = "types-pyyaml" },
     { name = "typing-extensions" },
@@ -490,7 +516,8 @@ name = "django-stubs-ext"
 version = "5.2.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "django" },
+    { name = "django", version = "5.2.12", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "django", version = "6.0.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/55/03/9c2be939490d2282328db4611bc5956899f5ff7eabc3e88bd4b964a87373/django_stubs_ext-5.2.9.tar.gz", hash = "sha256:6db4054d1580657b979b7d391474719f1a978773e66c7070a5e246cd445a25a9", size = 6497, upload-time = "2026-01-20T23:58:59.462Z" }
@@ -884,11 +911,11 @@ wheels = [
 
 [[package]]
 name = "platformdirs"
-version = "4.9.2"
+version = "4.9.4"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/1b/04/fea538adf7dbbd6d186f551d595961e564a3b6715bdf276b477460858672/platformdirs-4.9.2.tar.gz", hash = "sha256:9a33809944b9db043ad67ca0db94b14bf452cc6aeaac46a88ea55b26e2e9d291", size = 28394, upload-time = "2026-02-16T03:56:10.574Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/19/56/8d4c30c8a1d07013911a8fdbd8f89440ef9f08d07a1b50ab8ca8be5a20f9/platformdirs-4.9.4.tar.gz", hash = "sha256:1ec356301b7dc906d83f371c8f487070e99d3ccf9e501686456394622a01a934", size = 28737, upload-time = "2026-03-05T18:34:13.271Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/48/31/05e764397056194206169869b50cf2fee4dbbbc71b344705b9c0d878d4d8/platformdirs-4.9.2-py3-none-any.whl", hash = "sha256:9170634f126f8efdae22fb58ae8a0eaa86f38365bc57897a6c4f781d1f5875bd", size = 21168, upload-time = "2026-02-16T03:56:08.891Z" },
+    { url = "https://files.pythonhosted.org/packages/63/d7/97f7e3a6abb67d8080dd406fd4df842c2be0efaf712d1c899c32a075027c/platformdirs-4.9.4-py3-none-any.whl", hash = "sha256:68a9a4619a666ea6439f2ff250c12a853cd1cbd5158d258bd824a7df6be2f868", size = 21216, upload-time = "2026-03-05T18:34:12.172Z" },
 ]
 
 [[package]]
@@ -1041,7 +1068,7 @@ wheels = [
 
 [[package]]
 name = "pyinfra"
-version = "3.6.1"
+version = "3.7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
@@ -1054,9 +1081,9 @@ dependencies = [
     { name = "python-dateutil" },
     { name = "typeguard" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/dc/36/7a5d4663dca48be0db267c7755a5de863a9f06fa238e066d0ae35c823ad5/pyinfra-3.6.1.tar.gz", hash = "sha256:03b56633fcd80226f454e47de6b0dfa42314ee88d6b2c1c5c31e30b009e9bd31", size = 569142, upload-time = "2026-02-02T13:47:09.375Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fa/2b/49eeb9000a66157f7cda8b5b4871e1e496f1fb42fd1b94290ee5efb9a3cb/pyinfra-3.7.tar.gz", hash = "sha256:2f8eeee84d4d90c5ee57300ae6673b58237117605cca6b0cffde29f0b2517d4b", size = 599054, upload-time = "2026-03-12T10:55:35.972Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/fc/4a/204ec36f1f9ef924580e0dcef8968c53e5b43ba1c0d25a914b10f309ad6f/pyinfra-3.6.1-py3-none-any.whl", hash = "sha256:618c999cfc0db32b944077f76cb77f4696f01d3104e64d5c1719987f172582cc", size = 263493, upload-time = "2026-02-02T13:47:07.384Z" },
+    { url = "https://files.pythonhosted.org/packages/a4/6d/246168fe781009d32199fb7553a9a462e298d17f6e49accedf3b16c65346/pyinfra-3.7-py3-none-any.whl", hash = "sha256:9208de3f4479ad80509db51da874445017987818dba8a36c808f56ce1451b34c", size = 267074, upload-time = "2026-03-12T10:55:34.518Z" },
 ]
 
 [[package]]
