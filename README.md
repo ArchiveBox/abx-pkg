@@ -20,13 +20,13 @@ It's designed for when `requirements.txt` isn't enough, and you have to detect o
 pip install abx-pkg
 
 python
->>> from abx_pkg import Binary, NpmProvider
+>>> from abx_pkg import Binary, apt, pip, npm
 
 >>> curl = Binary('curl').load()
 >>> print(curl.abspath, curl.version, curl.exec(cmd=['--version']))
 /usr/bin/curl 7.81.0 curl 7.81.0 (x86_64-apple-darwin23.0) libcurl/7.81.0 ...
 
->>> NpmProvider().install('puppeteer')
+>>> npm.install('puppeteer')
 ```
 
 > 📦 Provides consistent interfaces for runtime dependency resolution & installation across multiple package managers & OSs
@@ -45,21 +45,9 @@ python
 <br/>
 
 ```python
-from abx_pkg import *
+from abx_pkg import Binary, apt, brew, pip, npm, env
 
-apt, brew, pip, npm, cargo, gem, go_get, nix, docker, env = (
-    AptProvider(),
-    BrewProvider(),
-    PipProvider(),
-    NpmProvider(),
-    CargoProvider(),
-    GemProvider(),
-    GoGetProvider(),
-    NixProvider(),
-    DockerProvider(),
-    EnvProvider(),
-)
-
+# Provider singletons are available as simple imports — no manual instantiation needed
 dependencies = [
     Binary(name='curl',       binproviders=[env, apt, brew]),
     Binary(name='wget',       binproviders=[env, apt, brew]),
@@ -77,10 +65,26 @@ for binary in dependencies:
 ```
 
 ```python
+from abx_pkg import Binary, apt, pip
+
+# Use providers directly for package manager operations
+apt.install('wget')
+print(apt.PATH, apt.get_abspaths('wget'), apt.get_version('wget'))
+
+# our Binary API provides a nice type-checkable, validated, serializable handle
+ffmpeg = Binary(name='ffmpeg').load()
+print(ffmpeg)                       # name=ffmpeg abspath=/usr/bin/ffmpeg version=3.3.0 is_valid=True binprovider=apt ...
+print(ffmpeg.abspaths)              # show all the ffmpeg binaries found in $PATH (in case theres more than one available)
+print(ffmpeg.model_dump())          # ... everything can also be dumped/loaded as json-ready dict
+print(ffmpeg.model_json_schema())   # ... OpenAPI-ready JSON schema showing all available fields
+```
+
+```python
 from pydantic import InstanceOf
 from abx_pkg import Binary, BinProvider, BrewProvider, EnvProvider
 
-# you can also define binaries as classes, making them usable for type checking
+# You can also instantiate provider classes manually for custom configuration,
+# or define binaries as classes for type checking
 class CurlBinary(Binary):
     name: str = 'curl'
     binproviders: list[InstanceOf[BinProvider]] = [BrewProvider(), EnvProvider()]
@@ -91,37 +95,17 @@ print(curl.abspath, curl.version, curl.binprovider, curl.is_valid)  # Path('/opt
 curl.exec(cmd=['--version'])                                        # curl 8.4.0 (x86_64-apple-darwin23.0) libcurl/8.4.0 ...
 ```
 
-```python
-from abx_pkg import Binary, EnvProvider, PipProvider
-
-# We also provide direct package manager (aka BinProvider) APIs
-apt = AptProvider()
-apt.install('wget')
-print(apt.PATH, apt.get_abspaths('wget'), apt.get_version('wget'))
-
-# even if packages are installed by tools we don't control (e.g. pyinfra/ansible/puppet/etc.)
-from pyinfra.operations import apt
-apt.packages(name="Install ffmpeg", packages=['ffmpeg'], _sudo=True)
-
-# our Binary API provides a nice type-checkable, validated, serializable handle
-ffmpeg = Binary(name='ffmpeg').load()
-print(ffmpeg)                       # name=ffmpeg abspath=/usr/bin/ffmpeg version=3.3.0 is_valid=True binprovider=apt ...
-print(ffmpeg.abspaths)              # show all the ffmpeg binaries found in $PATH (in case theres more than one available)
-print(ffmpeg.model_dump())          # ... everything can also be dumped/loaded as json-ready dict
-print(ffmpeg.model_json_schema())   # ... OpenAPI-ready JSON schema showing all available fields
-```
-
 ### Logging
 
 `abx-pkg` now uses the standard Python `logging` module. By default it stays quiet unless your application configures logging or you opt in with `configure_logging(...)`.
 
 ```python
 import logging
-from abx_pkg import Binary, EnvProvider, configure_logging
+from abx_pkg import Binary, env, configure_logging
 
 configure_logging(logging.INFO)
 
-python = Binary(name='python', binproviders=[EnvProvider()]).load()
+python = Binary(name='python', binproviders=[env]).load()
 ```
 
 - `DEBUG`: traces most `abx-pkg` method calls and subprocess execution
@@ -166,6 +150,25 @@ logging.getLogger("abx_pkg").setLevel(logging.DEBUG)
 pip install abx-pkg
 ```
 
+### Lazy Provider Singletons
+
+All built-in providers are available as lazy singletons — just import them by name:
+
+```python
+from abx_pkg import apt, brew, pip, npm, env
+
+apt.install('curl')
+env.load('wget')
+```
+
+These are instantiated on first access and cached for reuse. If you need custom configuration, you can still instantiate provider classes directly:
+
+```python
+from abx_pkg import PipProvider
+
+custom_pip = PipProvider(abspath_handler={...})
+```
+
 ### [`BinProvider`](https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/binprovider.py#:~:text=class%20BinProvider)
 
 **Implementations: `EnvProvider`, `AptProvider`, `BrewProvider`, `PipProvider`, `NpmProvider`**
@@ -191,19 +194,15 @@ This type represents a "provider of binaries", e.g. a package manager like `apt`
 
 
 ```python
-import platform
-from typing import List
-from abx_pkg import EnvProvider, PipProvider, AptProvider, BrewProvider
+from abx_pkg import env, apt, pip
 
 ### Example: Finding an existing install of bash using the system $PATH environment
-env = EnvProvider()
 bash = env.load(bin_name='bash')      # Binary('bash', provider=env)
 print(bash.abspath)                   # Path('/opt/homebrew/bin/bash')
 print(bash.version)                   # SemVer('5.2.26')
 bash.exec(['-c', 'echo hi'])          # hi
 
 ### Example: Installing curl using the apt package manager
-apt = AptProvider()
 curl = apt.install(bin_name='curl')   # Binary('curl', provider=apt)
 print(curl.abspath)                   # Path('/usr/bin/curl')
 print(curl.version)                   # SemVer('8.4.0')
@@ -216,10 +215,11 @@ assert curl.is_valid
 assert apt.uninstall(bin_name='curl') is True
 
 ### Example: Finding/Installing django with pip (w/ customized binpath resolution behavior)
-pip = PipProvider(
+from abx_pkg import PipProvider
+custom_pip = PipProvider(
     abspath_handler={'*': lambda self, bin_name, **context: inspect.getfile(bin_name)},  # use python inspect to get path instead of os.which
 )
-django_bin = pip.load_or_install('django') # Binary('django', provider=pip)
+django_bin = custom_pip.load_or_install('django') # Binary('django', provider=custom_pip)
 print(django_bin.abspath)             # Path('/usr/lib/python3.10/site-packages/django/__init__.py')
 print(django_bin.version)             # SemVer('5.0.2')
 ```
@@ -241,7 +241,8 @@ It can define one or more `BinProvider`s that it supports, along with overrides 
 `Binary.uninstall()` returns a `Binary` with `binprovider`, `abspath`, `version`, and `sha256` cleared after removal.
 
 ```python
-from abx_pkg import BinProvider, Binary, BinProviderName, BinName, ProviderLookupDict, SemVer
+from abx_pkg import BinProvider, Binary, BinProviderName, BinName, ProviderLookupDict, SemVer, BrewProvider
+from abx_pkg import env, pip, apt
 
 class CustomBrewProvider(BrewProvider):
     name: str = 'custom_brew'
@@ -256,7 +257,7 @@ class YtdlpBinary(Binary):
     name: BinName = 'ytdlp'
     description: str = 'YT-DLP (Replacement for YouTube-DL) Media Downloader'
 
-    binproviders_supported: list[BinProvider] = [EnvProvider(), PipProvider(), AptProvider(), CustomBrewProvider()]
+    binproviders_supported: list[BinProvider] = [env, pip, apt, CustomBrewProvider()]
     
     # customize installed package names for specific package managers
     overrides: dict[BinProviderName, ProviderLookupDict] = {
@@ -283,12 +284,13 @@ assert ytdlp.abspath is None and ytdlp.version is None
 
 ```python
 from abx_pkg import BinProvider, Binary, BinProviderName, BinName, ProviderLookupDict, SemVer
+from abx_pkg import env, apt
 
 #### Example: Create a binary that uses Podman if available, or Docker otherwise
 class DockerBinary(Binary):
     name: BinName = 'docker'
 
-    binproviders_supported: list[BinProvider] = [EnvProvider(), AptProvider()]
+    binproviders_supported: list[BinProvider] = [env, apt]
     
     overrides: dict[BinProviderName, ProviderLookupDict] = {
         'env': {
@@ -386,6 +388,8 @@ class InstalledBinary(models.Model):
 
 And here's how to save a `Binary` using the example model:
 ```python
+from abx_pkg import Binary, SemVer, env
+
 # find existing curl Binary in $PATH
 curl = Binary(name='curl').load()
 
@@ -396,7 +400,7 @@ obj = InstalledBinary(
     binproviders=[env],                           # no need for manual JSON serialization / schema checking
     min_version=SemVer('6.5.0'),
 )
-obj.save()                                      
+obj.save()
 ```
 
 When fetching it back from the DB, the `Binary` field is auto-deserialized / immediately usable:
