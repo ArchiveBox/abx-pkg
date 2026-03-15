@@ -95,55 +95,6 @@ print(curl.abspath, curl.version, curl.binprovider, curl.is_valid)  # Path('/opt
 curl.exec(cmd=['--version'])                                        # curl 8.4.0 (x86_64-apple-darwin23.0) libcurl/8.4.0 ...
 ```
 
-### Logging
-
-`abx-pkg` uses the standard Python `logging` module. By default it stays quiet unless your application configures logging explicitly.
-
-For plain stdlib logging:
-
-```python
-import logging
-from abx_pkg import Binary, env, configure_logging
-
-configure_logging(logging.INFO)
-
-python = Binary(name='python', binproviders=[env]).load()
-```
-
-- `DEBUG`: traces most `abx-pkg` method calls and subprocess execution
-- `INFO`: logs binary load/install/update/uninstall lifecycle events
-- `WARNING`: only warnings and errors
-
-Rich support is available, but remains opt-in.
-
-Install it with:
-
-```bash
-pip install "abx-pkg[rich]"
-```
-
-Then enable Rich logging explicitly:
-
-```python
-import logging
-from abx_pkg import Binary, EnvProvider, configure_rich_logging
-
-configure_rich_logging(logging.DEBUG)
-
-python = Binary(name='python', binproviders=[EnvProvider()]).load()
-```
-
-`configure_rich_logging(...)` uses `rich.logging.RichHandler` under the hood, so log levels, paths, arguments, and command lines render with terminal colors when supported.
-
-You can also manage it with standard logging primitives:
-
-```python
-import logging
-
-logging.basicConfig(level=logging.INFO)
-logging.getLogger("abx_pkg").setLevel(logging.DEBUG)
-```
-
 ### Supported Package Managers
 
 **So far it supports `installing`/`finding installed`/`updating`/`removing` packages on `Linux`/`macOS` with:**
@@ -539,6 +490,45 @@ admin.site.register(MyModel, MyModelAdmin)
 
 <br/>
 
+
+## Logging
+
+`abx-pkg` uses the standard Python `logging` module. By default it stays quiet unless your application configures logging explicitly.
+
+```python
+import logging
+from abx_pkg import Binary, env, configure_logging
+
+configure_logging(logging.INFO)
+
+python = Binary(name='python', binproviders=[env]).load()
+```
+
+To enable Rich logging:
+
+```bash
+pip install "abx-pkg[rich]"
+```
+
+```python
+import logging
+from abx_pkg import Binary, EnvProvider, configure_rich_logging
+
+configure_rich_logging(logging.DEBUG)
+
+python = Binary(name='python', binproviders=[EnvProvider()]).load()
+```
+
+`configure_rich_logging(...)` uses `rich.logging.RichHandler` under the hood, so log levels, paths, arguments, and command lines render with terminal colors when supported.
+
+You can also manage it with standard logging primitives:
+
+```python
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logging.getLogger("abx_pkg").setLevel(logging.DEBUG)
+```
 
 ## Examples
 
