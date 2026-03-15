@@ -152,6 +152,56 @@ class NpmProvider(BinProvider):
             raise Exception(f'{self.__class__.__name__}: install got returncode {proc.returncode} while installing {packages}: {packages}')
         
         return (proc.stderr.strip() + '\n' + proc.stdout.strip()).strip()
+
+    def default_update_handler(self, bin_name: str, packages: Optional[InstallArgs]=None, **context) -> str:
+        self.setup()
+
+        packages = packages or self.get_packages(bin_name)
+        if not self.INSTALLER_BIN_ABSPATH:
+            raise Exception(f'{self.__class__.__name__} update method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)')
+
+        update_args = [*self.npm_install_args, self.cache_arg]
+        if self.npm_prefix:
+            update_args.append(f'--prefix={self.npm_prefix}')
+        else:
+            update_args.append('--global')
+
+        proc = self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=[
+            'update',
+            *update_args,
+            *packages,
+        ])
+
+        if proc.returncode != 0:
+            print(proc.stdout.strip())
+            print(proc.stderr.strip())
+            raise Exception(f'{self.__class__.__name__}: update got returncode {proc.returncode} while updating {packages}: {packages}')
+
+        return (proc.stderr.strip() + '\n' + proc.stdout.strip()).strip()
+
+    def default_uninstall_handler(self, bin_name: str, packages: Optional[InstallArgs]=None, **context) -> bool:
+        packages = packages or self.get_packages(bin_name)
+        if not self.INSTALLER_BIN_ABSPATH:
+            raise Exception(f'{self.__class__.__name__} uninstall method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)')
+
+        uninstall_args = [*self.npm_install_args, self.cache_arg]
+        if self.npm_prefix:
+            uninstall_args.append(f'--prefix={self.npm_prefix}')
+        else:
+            uninstall_args.append('--global')
+
+        proc = self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=[
+            'uninstall',
+            *uninstall_args,
+            *packages,
+        ])
+
+        if proc.returncode != 0:
+            print(proc.stdout.strip())
+            print(proc.stderr.strip())
+            raise Exception(f'{self.__class__.__name__}: uninstall got returncode {proc.returncode} while uninstalling {packages}: {packages}')
+
+        return True
     
     def default_abspath_handler(self, bin_name: BinName, **context) -> HostBinPath | None:
         # print(self.__class__.__name__, 'on_get_abspath', bin_name)

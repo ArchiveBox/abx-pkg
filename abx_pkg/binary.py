@@ -32,6 +32,7 @@ class Binary(ShallowBinary):
     
     loaded_binprovider: Optional[InstanceOf[BinProvider]] = Field(default=None, alias='binprovider')
     loaded_abspath: Optional[HostBinPath] = Field(default=None, alias='abspath')
+    min_version: Optional[SemVer] = None
     loaded_version: Optional[SemVer] = Field(default=None, alias='version')
     loaded_sha256: Optional[Sha256] = Field(default=None, alias='sha256')
     
@@ -64,6 +65,10 @@ class Binary(ShallowBinary):
 
     @field_validator('loaded_version', mode='before')
     def parse_version(cls, value: Any) -> Optional[SemVer]:
+        return SemVer(value) if value else None
+
+    @field_validator('min_version', mode='before')
+    def parse_min_version(cls, value: Any) -> Optional[SemVer]:
         return SemVer(value) if value else None
 
     @field_serializer('overrides', when_used='json')
@@ -110,6 +115,15 @@ class Binary(ShallowBinary):
     @property
     def python_name(self) -> str:
         return self.name.replace('-', '_').replace('.', '_')
+
+    @computed_field
+    @property
+    def is_valid(self) -> bool:
+        if not (self.name and self.loaded_abspath and self.loaded_version and (self.is_executable or self.is_script)):
+            return False
+        if self.min_version and self.loaded_version < self.min_version:
+            return False
+        return True
     
     # @validate_call
     def get_binprovider(self, binprovider_name: BinProviderName, **extra_overrides) -> InstanceOf[BinProvider]:
@@ -238,4 +252,69 @@ class Binary(ShallowBinary):
         
         provider_names = ', '.join(binproviders or [p.name for p in self.binproviders_supported])
         raise Exception(f'None of the configured providers ({provider_names}) were able to find or install binary: {self.name} ERRORS={errors}') from inner_exc
-        
+
+    @validate_call
+    def update(self, binproviders: Optional[List[BinProviderName]]=None, **extra_overrides) -> Self:
+        assert self.name, f'No binary name was provided! {self}'
+
+        if binproviders is not None and len(list(binproviders)) == 0:
+            return self
+
+        inner_exc = Exception('No providers were available')
+        errors = {}
+        for binprovider in self.binproviders_supported:
+            if binproviders and binprovider.name not in binproviders:
+                continue
+
+            try:
+                provider = self.get_binprovider(binprovider_name=binprovider.name, **extra_overrides)
+
+                updated_bin = provider.update(self.name)
+                if updated_bin is not None and updated_bin.loaded_abspath:
+                    return self.__class__(**{
+                        **self.model_dump(),
+                        **updated_bin.model_dump(exclude={'binproviders_supported'}),
+                        'loaded_binprovider': provider,
+                        'binproviders_supported': self.binproviders_supported,
+                        'overrides': self.overrides,
+                    })
+            except Exception as err:
+                inner_exc = err
+                errors[binprovider.name] = str(err)
+
+        provider_names = ', '.join(binproviders or [p.name for p in self.binproviders_supported])
+        raise Exception(f'None of the configured providers ({provider_names}) were able to update binary: {self.name} ERRORS={errors}') from inner_exc
+
+    @validate_call
+    def uninstall(self, binproviders: Optional[List[BinProviderName]]=None, **extra_overrides) -> Self:
+        assert self.name, f'No binary name was provided! {self}'
+
+        if binproviders is not None and len(list(binproviders)) == 0:
+            return self
+
+        inner_exc = Exception('No providers were available')
+        errors = {}
+        for binprovider in self.binproviders_supported:
+            if binproviders and binprovider.name not in binproviders:
+                continue
+
+            try:
+                provider = self.get_binprovider(binprovider_name=binprovider.name, **extra_overrides)
+
+                uninstalled = provider.uninstall(self.name)
+                if uninstalled:
+                    return self.__class__(**{
+                        **self.model_dump(),
+                        'loaded_binprovider': None,
+                        'loaded_abspath': None,
+                        'loaded_version': None,
+                        'loaded_sha256': None,
+                        'binproviders_supported': self.binproviders_supported,
+                        'overrides': self.overrides,
+                    })
+            except Exception as err:
+                inner_exc = err
+                errors[binprovider.name] = str(err)
+
+        provider_names = ', '.join(binproviders or [p.name for p in self.binproviders_supported])
+        raise Exception(f'None of the configured providers ({provider_names}) were able to uninstall binary: {self.name} ERRORS={errors}') from inner_exc

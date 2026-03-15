@@ -52,7 +52,7 @@ def ansible_package_install(pkg_names: str | InstallArgs, playbook_template=ANSI
             playbook = playbook_template.format(pkg_names=pkg_names, state=state, installer_module="ansible.builtin.package")
     else:
         # Custom installer module
-        playbook = playbook_template.format(pkg_names=pkg_names, state=state, installer_module="ansible.builtin.package")
+        playbook = playbook_template.format(pkg_names=pkg_names, state=state, installer_module=installer_module)
 
 
     # create a temporary directory using the context manager
@@ -112,6 +112,35 @@ class AnsibleProvider(BinProvider):
             playbook_template=self.ansible_playbook_template,
             installer_module=self.ansible_installer_module,
         )
+
+    def default_update_handler(self, bin_name: str, packages: Optional[InstallArgs] = None, **context) -> str:
+        packages = packages or self.get_packages(bin_name)
+
+        if not self.INSTALLER_BIN_ABSPATH:
+            raise Exception(f"{self.__class__.__name__}.INSTALLER_BIN is not available on this host: {self.INSTALLER_BIN}")
+
+        return ansible_package_install(
+            pkg_names=packages,
+            quiet=True,
+            playbook_template=self.ansible_playbook_template,
+            installer_module=self.ansible_installer_module,
+            state='latest',
+        )
+
+    def default_uninstall_handler(self, bin_name: str, packages: Optional[InstallArgs] = None, **context) -> bool:
+        packages = packages or self.get_packages(bin_name)
+
+        if not self.INSTALLER_BIN_ABSPATH:
+            raise Exception(f"{self.__class__.__name__}.INSTALLER_BIN is not available on this host: {self.INSTALLER_BIN}")
+
+        ansible_package_install(
+            pkg_names=packages,
+            quiet=True,
+            playbook_template=self.ansible_playbook_template,
+            installer_module=self.ansible_installer_module,
+            state='absent',
+        )
+        return True
 
 
 if __name__ == "__main__":

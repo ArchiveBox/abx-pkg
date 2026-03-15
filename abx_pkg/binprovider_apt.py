@@ -79,6 +79,62 @@ class AptProvider(BinProvider):
             return proc.stderr.strip() + "\n" + proc.stdout.strip()
         return f"Installed {packages} succesfully."
 
+    def default_update_handler(self, bin_name: BinName, packages: Optional[InstallArgs] = None, **context) -> str:
+        global _LAST_UPDATE_CHECK
+
+        packages = packages or self.get_packages(bin_name)
+
+        if not (self.INSTALLER_BIN_ABSPATH and shutil.which("dpkg")):
+            raise Exception(f"{self.__class__.__name__}.INSTALLER_BIN is not available on this host: {self.INSTALLER_BIN}")
+
+        from .binprovider_pyinfra import PYINFRA_INSTALLED, pyinfra_package_install
+
+        if PYINFRA_INSTALLED:
+            return pyinfra_package_install(packages, installer_module="operations.apt.packages", installer_extra_kwargs={"latest": True})
+
+        from .binprovider_ansible import ANSIBLE_INSTALLED, ansible_package_install
+
+        if ANSIBLE_INSTALLED:
+            return ansible_package_install(packages, installer_module="ansible.builtin.apt", state="latest")
+
+        if not _LAST_UPDATE_CHECK or (time.time() - _LAST_UPDATE_CHECK) > UPDATE_CHECK_INTERVAL:
+            self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=["update", "-qq"])
+            _LAST_UPDATE_CHECK = time.time()
+
+        proc = self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=["install", "--only-upgrade", "-y", "-qq", "--no-install-recommends", *packages])
+        if proc.returncode != 0:
+            print(proc.stdout.strip())
+            print(proc.stderr.strip())
+            raise Exception(f"{self.__class__.__name__} update got returncode {proc.returncode} while updating {packages}: {packages}")
+
+        return f"Updated {packages} succesfully."
+
+    def default_uninstall_handler(self, bin_name: BinName, packages: Optional[InstallArgs] = None, **context) -> bool:
+        packages = packages or self.get_packages(bin_name)
+
+        if not (self.INSTALLER_BIN_ABSPATH and shutil.which("dpkg")):
+            raise Exception(f"{self.__class__.__name__}.INSTALLER_BIN is not available on this host: {self.INSTALLER_BIN}")
+
+        from .binprovider_pyinfra import PYINFRA_INSTALLED, pyinfra_package_install
+
+        if PYINFRA_INSTALLED:
+            pyinfra_package_install(packages, installer_module="operations.apt.packages", installer_extra_kwargs={"present": False})
+            return True
+
+        from .binprovider_ansible import ANSIBLE_INSTALLED, ansible_package_install
+
+        if ANSIBLE_INSTALLED:
+            ansible_package_install(packages, installer_module="ansible.builtin.apt", state="absent")
+            return True
+
+        proc = self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=["remove", "-y", "-qq", *packages])
+        if proc.returncode != 0:
+            print(proc.stdout.strip())
+            print(proc.stderr.strip())
+            raise Exception(f"{self.__class__.__name__} uninstall got returncode {proc.returncode} while removing {packages}: {packages}")
+
+        return True
+
 
 if __name__ == "__main__":
     result = apt = AptProvider()

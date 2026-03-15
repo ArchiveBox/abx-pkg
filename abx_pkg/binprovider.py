@@ -187,6 +187,8 @@ DEFAULT_OVERRIDES = {
         'abspath': 'self.default_abspath_handler',
         'packages': 'self.default_packages_handler',
         'install': 'self.default_install_handler',
+        'update': 'self.default_update_handler',
+        'uninstall': 'self.default_uninstall_handler',
     },
 }
 
@@ -354,7 +356,7 @@ class BinProvider(BaseModel):
         
         updated_binprovider: Self = self.model_copy()
         
-        # main binary-specific overrides for [abspath, version, packages, install]
+        # main binary-specific overrides for [abspath, version, packages, install, update, uninstall]
         overrides = overrides or {}
         
         # extra overrides that are also configurable, can add more in the future as-needed for tunable options
@@ -520,6 +522,20 @@ class BinProvider(BaseModel):
         #     raise Exception(f'{self.name} Failed to install {bin_name}: {proc.stderr.strip()}\n{proc.stdout.strip()}')
 
         return f'{self.name} BinProvider does not implement any install method'
+
+    # @validate_call
+    def default_update_handler(self, bin_name: BinName, packages: Optional[InstallArgs]=None, **context) -> 'ActionFuncReturnValue':
+        return f'{self.name} BinProvider does not implement any update method'
+
+    # @validate_call
+    def default_uninstall_handler(self, bin_name: BinName, packages: Optional[InstallArgs]=None, **context) -> 'ActionFuncReturnValue':
+        return False
+
+    def invalidate_cache(self, bin_name: BinName) -> None:
+        if not self._cache:
+            return
+        for method_cache in self._cache.values():
+            method_cache.pop(bin_name, None)
 
 
     def setup_PATH(self) -> None:
@@ -704,6 +720,77 @@ class BinProvider(BaseModel):
 
     @final
     @validate_call
+    def update(self, bin_name: BinName, quiet: bool=False, nocache: bool=False) -> ShallowBinary | None:
+        self.setup()
+
+        packages = self.get_packages(bin_name, quiet=quiet, nocache=nocache)
+
+        self.setup_PATH()
+        update_log = None
+        try:
+            update_log = cast(ActionFuncReturnValue, self._call_handler_for_action(bin_name=bin_name, handler_type='update', packages=packages))
+        except Exception as err:
+            update_log = f'{self.__class__.__name__} Failed to update {bin_name}, got {err.__class__.__name__}: {err}'
+            if not quiet:
+                raise
+
+        if self._dry_run:
+            return ShallowBinary(
+                name=bin_name,
+                binprovider=self,
+                abspath=Path(shutil.which(bin_name) or UNKNOWN_ABSPATH),
+                version=cast(SemVer, UNKNOWN_VERSION),
+                sha256=UNKNOWN_SHA256,
+                binproviders=[self],
+            )
+
+        self.invalidate_cache(bin_name)
+
+        updated_abspath = self.get_abspath(bin_name, quiet=True, nocache=True)
+        if not quiet:
+            assert updated_abspath, f'{self.__class__.__name__} Unable to find abspath for {bin_name} after updating. PATH={self.PATH} LOG={update_log}'
+
+        updated_version = self.get_version(bin_name, abspath=updated_abspath, quiet=True, nocache=True)
+        if not quiet:
+            assert updated_version, f'{self.__class__.__name__} Unable to find version for {bin_name} after updating. ABSPATH={updated_abspath} LOG={update_log}'
+
+        sha256 = self.get_sha256(bin_name, abspath=updated_abspath, nocache=True) or UNKNOWN_SHA256
+
+        if updated_abspath and updated_version:
+            return ShallowBinary(
+                name=bin_name,
+                binprovider=self,
+                abspath=updated_abspath,
+                version=updated_version,
+                sha256=sha256,
+                binproviders=[self],
+            )
+
+        return None
+
+    @final
+    @validate_call
+    def uninstall(self, bin_name: BinName, quiet: bool=False, nocache: bool=False) -> bool:
+        packages = self.get_packages(bin_name, quiet=quiet, nocache=nocache)
+
+        self.setup_PATH()
+        uninstall_result = None
+        try:
+            uninstall_result = cast(ActionFuncReturnValue, self._call_handler_for_action(bin_name=bin_name, handler_type='uninstall', packages=packages))
+        except Exception:
+            if not quiet:
+                raise
+            return False
+
+        self.invalidate_cache(bin_name)
+
+        if self._dry_run:
+            return True
+
+        return uninstall_result is not False
+
+    @final
+    @validate_call
     def load(self, bin_name: BinName, quiet: bool=True, nocache: bool=False) -> ShallowBinary | None:
         installed_abspath = self.get_abspath(bin_name, quiet=quiet, nocache=nocache)
         if not installed_abspath:
@@ -743,6 +830,8 @@ class EnvProvider(BinProvider):
         '*': {
             **BinProvider.model_fields['overrides'].default['*'],
             'install': 'self.install_noop',
+            'update': 'self.update_noop',
+            'uninstall': 'self.uninstall_noop',
         },
         'python': {
             'abspath': Path(sys.executable),
@@ -754,6 +843,12 @@ class EnvProvider(BinProvider):
         """The env BinProvider is ready-only and does not install any packages, so this is a no-op"""
         return 'env is ready-only and just checks for existing binaries in $PATH'
 
+    def update_noop(self, bin_name: BinName, packages: Optional[InstallArgs]=None, **context) -> str:
+        return 'env is read-only and just checks for existing binaries in $PATH'
+
+    def uninstall_noop(self, bin_name: BinName, packages: Optional[InstallArgs]=None, **context) -> bool:
+        return False
+
 ############################################################################################################
 
 
@@ -762,7 +857,8 @@ AbspathFuncReturnValue = str | HostBinPath | None
 VersionFuncReturnValue = str | Tuple[int, ...] | Tuple[str, ...] | SemVer | None     # SemVer is a subclass of NamedTuple
 PackagesFuncReturnValue = List[str] | Tuple[str, ...] | str | InstallArgs | None
 InstallFuncReturnValue = str | None
-ProviderFuncReturnValue = AbspathFuncReturnValue | VersionFuncReturnValue | PackagesFuncReturnValue | InstallFuncReturnValue
+ActionFuncReturnValue = str | bool | None
+ProviderFuncReturnValue = AbspathFuncReturnValue | VersionFuncReturnValue | PackagesFuncReturnValue | InstallFuncReturnValue | ActionFuncReturnValue
 
 @runtime_checkable
 class AbspathFuncWithArgs(Protocol):
@@ -784,25 +880,34 @@ class InstallFuncWithArgs(Protocol):
     def __call__(_self, binprovider: 'BinProvider', bin_name: BinName, **context) -> 'InstallFuncReturnValue':
         ...
 
+@runtime_checkable
+class ActionFuncWithArgs(Protocol):
+    def __call__(_self, binprovider: 'BinProvider', bin_name: BinName, **context) -> 'ActionFuncReturnValue':
+        ...
+
 AbspathFuncWithNoArgs = Callable[[], AbspathFuncReturnValue]
 VersionFuncWithNoArgs = Callable[[], VersionFuncReturnValue]
 PackagesFuncWithNoArgs = Callable[[], PackagesFuncReturnValue]
 InstallFuncWithNoArgs = Callable[[], InstallFuncReturnValue]
+ActionFuncWithNoArgs = Callable[[], ActionFuncReturnValue]
 
 AbspathHandlerValue = SelfMethodName | AbspathFuncWithNoArgs | AbspathFuncWithArgs | AbspathFuncReturnValue
 VersionHandlerValue = SelfMethodName | VersionFuncWithNoArgs | VersionFuncWithArgs | VersionFuncReturnValue
 PackagesHandlerValue = SelfMethodName | PackagesFuncWithNoArgs | PackagesFuncWithArgs | PackagesFuncReturnValue
 InstallHandlerValue = SelfMethodName | InstallFuncWithNoArgs | InstallFuncWithArgs | InstallFuncReturnValue
+ActionHandlerValue = SelfMethodName | ActionFuncWithNoArgs | ActionFuncWithArgs | ActionFuncReturnValue
 
-HandlerType = Literal['abspath', 'version', 'packages', 'install']
-HandlerValue = AbspathHandlerValue | VersionHandlerValue | PackagesHandlerValue | InstallHandlerValue
-HandlerReturnValue = AbspathFuncReturnValue | VersionFuncReturnValue | PackagesFuncReturnValue | InstallFuncReturnValue
+HandlerType = Literal['abspath', 'version', 'packages', 'install', 'update', 'uninstall']
+HandlerValue = AbspathHandlerValue | VersionHandlerValue | PackagesHandlerValue | InstallHandlerValue | ActionHandlerValue
+HandlerReturnValue = AbspathFuncReturnValue | VersionFuncReturnValue | PackagesFuncReturnValue | InstallFuncReturnValue | ActionFuncReturnValue
 
 class HandlerDict(TypedDict, total=False):
     abspath: AbspathHandlerValue
     version: VersionHandlerValue
     packages: PackagesHandlerValue
     install: InstallHandlerValue
+    update: ActionHandlerValue
+    uninstall: ActionHandlerValue
 
 # Binary.overrides map BinProviderName:HandlerType:Handler    {'brew': {'packages': [...]}}
 BinaryOverrides = Dict[BinProviderName, HandlerDict]

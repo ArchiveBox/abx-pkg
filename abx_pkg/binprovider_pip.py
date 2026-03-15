@@ -216,6 +216,35 @@ class PipProvider(BinProvider):
             *self.pip_install_args,
             *packages,
         ])
+
+    def _pip_update(self, packages: InstallArgs) -> subprocess.CompletedProcess:
+        pip_abspath = self.INSTALLER_BIN_ABSPATH
+        if not pip_abspath:
+            raise Exception(
+                f"{self.__class__.__name__} update method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)"
+            )
+
+        return self.exec(bin_name=pip_abspath, cmd=[
+            'install',
+            '--no-input',
+            self.cache_arg,
+            *self.pip_install_args,
+            '--upgrade',
+            *packages,
+        ])
+
+    def _pip_uninstall(self, packages: InstallArgs) -> subprocess.CompletedProcess:
+        pip_abspath = self.INSTALLER_BIN_ABSPATH
+        if not pip_abspath:
+            raise Exception(
+                f"{self.__class__.__name__} uninstall method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)"
+            )
+
+        return self.exec(bin_name=pip_abspath, cmd=[
+            'uninstall',
+            '--yes',
+            *packages,
+        ])
         
     
     def default_install_handler(self, bin_name: str, packages: Optional[InstallArgs] = None, **context) -> str:
@@ -235,6 +264,33 @@ class PipProvider(BinProvider):
             raise Exception(f"{self.__class__.__name__}: install got returncode {proc.returncode} while installing {packages}: {packages}")
 
         return proc.stderr.strip() + "\n" + proc.stdout.strip()
+
+    def default_update_handler(self, bin_name: str, packages: Optional[InstallArgs] = None, **context) -> str:
+        if self.pip_venv:
+            self.setup()
+
+        packages = packages or self.get_packages(bin_name)
+
+        proc = self._pip_update(packages)
+
+        if proc.returncode != 0:
+            print(proc.stdout.strip())
+            print(proc.stderr.strip())
+            raise Exception(f"{self.__class__.__name__}: update got returncode {proc.returncode} while updating {packages}: {packages}")
+
+        return proc.stderr.strip() + "\n" + proc.stdout.strip()
+
+    def default_uninstall_handler(self, bin_name: str, packages: Optional[InstallArgs] = None, **context) -> bool:
+        packages = packages or self.get_packages(bin_name)
+
+        proc = self._pip_uninstall(packages)
+
+        if proc.returncode != 0:
+            print(proc.stdout.strip())
+            print(proc.stderr.strip())
+            raise Exception(f"{self.__class__.__name__}: uninstall got returncode {proc.returncode} while uninstalling {packages}: {packages}")
+
+        return True
 
     def default_abspath_handler(self, bin_name: BinName, **context) -> HostBinPath | None:
         

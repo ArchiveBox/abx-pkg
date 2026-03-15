@@ -96,6 +96,62 @@ class BrewProvider(BinProvider):
 
         return proc.stderr.strip() + "\n" + proc.stdout.strip()
 
+    def default_update_handler(self, bin_name: str, packages: Optional[InstallArgs] = None, **context) -> str:
+        global _LAST_UPDATE_CHECK
+
+        packages = packages or self.get_packages(bin_name)
+
+        if not self.INSTALLER_BIN_ABSPATH:
+            raise Exception(f"{self.__class__.__name__}.INSTALLER_BIN is not available on this host: {self.INSTALLER_BIN}")
+
+        from .binprovider_pyinfra import PYINFRA_INSTALLED, pyinfra_package_install
+
+        if PYINFRA_INSTALLED:
+            return pyinfra_package_install(packages, installer_module="operations.brew.packages", installer_extra_kwargs={"latest": True})
+
+        from .binprovider_ansible import ANSIBLE_INSTALLED, ansible_package_install
+
+        if ANSIBLE_INSTALLED:
+            return ansible_package_install(packages, installer_module="community.general.homebrew", state="latest")
+
+        if not _LAST_UPDATE_CHECK or (time.time() - _LAST_UPDATE_CHECK) > UPDATE_CHECK_INTERVAL:
+            self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=["update"])
+            _LAST_UPDATE_CHECK = time.time()
+
+        proc = self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=["upgrade", *packages])
+        if proc.returncode != 0:
+            print(proc.stdout.strip())
+            print(proc.stderr.strip())
+            raise Exception(f"{self.__class__.__name__} update got returncode {proc.returncode} while updating {packages}: {packages}")
+
+        return proc.stderr.strip() + "\n" + proc.stdout.strip()
+
+    def default_uninstall_handler(self, bin_name: str, packages: Optional[InstallArgs] = None, **context) -> bool:
+        packages = packages or self.get_packages(bin_name)
+
+        if not self.INSTALLER_BIN_ABSPATH:
+            raise Exception(f"{self.__class__.__name__}.INSTALLER_BIN is not available on this host: {self.INSTALLER_BIN}")
+
+        from .binprovider_pyinfra import PYINFRA_INSTALLED, pyinfra_package_install
+
+        if PYINFRA_INSTALLED:
+            pyinfra_package_install(packages, installer_module="operations.brew.packages", installer_extra_kwargs={"present": False})
+            return True
+
+        from .binprovider_ansible import ANSIBLE_INSTALLED, ansible_package_install
+
+        if ANSIBLE_INSTALLED:
+            ansible_package_install(packages, installer_module="community.general.homebrew", state="absent")
+            return True
+
+        proc = self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=["uninstall", *packages])
+        if proc.returncode != 0:
+            print(proc.stdout.strip())
+            print(proc.stderr.strip())
+            raise Exception(f"{self.__class__.__name__} uninstall got returncode {proc.returncode} while uninstalling {packages}: {packages}")
+
+        return True
+
     def default_abspath_handler(self, bin_name: BinName | HostBinPath, **context) -> HostBinPath | None:
         # print(f'[*] {self.__class__.__name__}: Getting abspath for {bin_name}...')
 

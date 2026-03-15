@@ -111,6 +111,31 @@ class PyinfraProvider(BinProvider):
             installer_extra_kwargs=self.pyinfra_installer_kwargs,
         )
 
+    def default_update_handler(self, bin_name: str, packages: Optional[InstallArgs] = None, **context) -> str:
+        packages = packages or self.get_packages(bin_name)
+
+        return pyinfra_package_install(
+            pkg_names=packages,
+            installer_module=self.pyinfra_installer_module,
+            installer_extra_kwargs={
+                **self.pyinfra_installer_kwargs,
+                'latest': True,
+            },
+        )
+
+    def default_uninstall_handler(self, bin_name: str, packages: Optional[InstallArgs] = None, **context) -> bool:
+        packages = packages or self.get_packages(bin_name)
+
+        pyinfra_package_install(
+            pkg_names=packages,
+            installer_module=self.pyinfra_installer_module,
+            installer_extra_kwargs={
+                **self.pyinfra_installer_kwargs,
+                'present': False,
+            },
+        )
+        return True
+
 
 if __name__ == "__main__":
     result = pyinfra = PyinfraProvider()
