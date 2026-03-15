@@ -122,6 +122,8 @@ __all__ = [
     # BinProviders (classes)
     *ALL_PROVIDER_CLASS_NAMES,
 
-    # BinProvider lazy singletons
-    *ALL_PROVIDER_NAMES,
+    # Note: provider singleton names (apt, pip, brew, etc.) are intentionally
+    # excluded from __all__ so that `from abx_pkg import *` does not eagerly
+    # instantiate every provider. Use explicit imports instead:
+    #   from abx_pkg import apt, pip, brew
 ]
