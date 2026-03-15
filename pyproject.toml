@@ -61,8 +61,8 @@ all = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "mypy>=1.19.1",
     "pyright",
     "django>=4.0",
