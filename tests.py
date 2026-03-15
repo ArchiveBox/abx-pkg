@@ -16,6 +16,8 @@ from abx_pkg import (
     BinProvider, EnvProvider, Binary, SemVer, BinProviderOverrides,
     PipProvider, NpmProvider, AptProvider, BrewProvider,
 )
+from abx_pkg.binprovider_ansible import AnsibleProvider
+from abx_pkg.binprovider_pyinfra import PyinfraProvider
 
 REAL_OS_STAT = os.stat
 
@@ -292,6 +294,249 @@ class TestBinary(unittest.TestCase):
         self.assertTrue(python_bin.is_executable)
         self.assertFalse(python_bin.is_script)
         self.assertTrue(bool(str(python_bin)))  # easy way to make sure serializing doesnt throw an error
+
+    def test_min_version_accepts_string(self):
+        binary = Binary(name='python', abspath=sys.executable, version='1.2.3', min_version='1.2.0')
+
+        self.assertEqual(binary.min_version, SemVer('1.2.0'))
+        self.assertTrue(binary.is_valid)
+
+    def test_min_version_invalidates_lower_loaded_version(self):
+        binary = Binary(name='python', abspath=sys.executable, version='1.2.3', min_version=SemVer('1.2.4'))
+
+        self.assertEqual(binary.min_version, SemVer('1.2.4'))
+        self.assertFalse(binary.is_valid)
+
+    def test_min_version_allows_equal_loaded_version(self):
+        binary = Binary(name='python', abspath=sys.executable, version='1.2.3', min_version='1.2.3')
+
+        self.assertTrue(binary.is_valid)
+
+    def test_update_uses_matching_provider_and_returns_loaded_binary(self):
+        provider = EnvProvider()
+        updated_bin = provider.load('python')
+        assert updated_bin is not None
+
+        binary = Binary(name='python', binproviders=[provider])
+        with mock.patch.object(EnvProvider, 'update', return_value=updated_bin, create=True) as mock_update:
+            result = binary.update(binproviders=[provider.name])
+
+        mock_update.assert_called_once_with('python')
+        self.assertEqual(result.loaded_binprovider, provider)
+        self.assertEqual(result.loaded_abspath, updated_bin.loaded_abspath)
+        self.assertEqual(result.loaded_version, updated_bin.loaded_version)
+        self.assertEqual(result.loaded_sha256, updated_bin.loaded_sha256)
+
+    def test_uninstall_clears_loaded_fields(self):
+        provider = EnvProvider()
+        binary = Binary(
+            name='python',
+            binproviders=[provider],
+            binprovider=provider,
+            abspath=sys.executable,
+            version='1.2.3',
+            sha256='unknown',
+        )
+
+        with mock.patch.object(EnvProvider, 'uninstall', return_value=True, create=True) as mock_uninstall:
+            result = binary.uninstall(binproviders=[provider.name])
+
+        mock_uninstall.assert_called_once_with('python')
+        self.assertIsNone(result.loaded_binprovider)
+        self.assertIsNone(result.loaded_abspath)
+        self.assertIsNone(result.loaded_version)
+        self.assertIsNone(result.loaded_sha256)
+        self.assertEqual(result.binproviders_supported, [provider])
+        self.assertFalse(result.is_valid)
+
+
+class TestUpdateAndUninstall(unittest.TestCase):
+
+    @mock.patch.object(BinProvider, 'INSTALLER_BIN_ABSPATH', new_callable=mock.PropertyMock, return_value=Path('/usr/local/bin/brew'))
+    @mock.patch('abx_pkg.binprovider_brew.BrewProvider.load_PATH', lambda self: self)
+    @mock.patch('abx_pkg.binprovider_pyinfra.PYINFRA_INSTALLED', False)
+    @mock.patch('abx_pkg.binprovider_ansible.ANSIBLE_INSTALLED', False)
+    def test_brew_provider_update_uses_upgrade_command(self, _mock_installer_bin_abspath):
+        provider = BrewProvider()
+        proc = subprocess.CompletedProcess(args=[], returncode=0, stdout='', stderr='')
+
+        with (
+            mock.patch('abx_pkg.binprovider_brew.time.time', return_value=0),
+            mock.patch.object(BrewProvider, 'exec', side_effect=[proc, proc]) as mock_exec,
+            mock.patch.object(BrewProvider, 'get_abspath', return_value=Path(sys.executable)),
+            mock.patch.object(BrewProvider, 'get_version', return_value=SemVer('3.11.0')),
+            mock.patch.object(BrewProvider, 'get_sha256', return_value='unknown'),
+        ):
+            provider.update('python')
+
+        self.assertEqual(mock_exec.call_args_list[0].kwargs['cmd'], ['update'])
+        self.assertEqual(mock_exec.call_args_list[1].kwargs['cmd'], ['upgrade', 'python'])
+
+    @mock.patch.object(BinProvider, 'INSTALLER_BIN_ABSPATH', new_callable=mock.PropertyMock, return_value=Path('/usr/local/bin/brew'))
+    @mock.patch('abx_pkg.binprovider_brew.BrewProvider.load_PATH', lambda self: self)
+    @mock.patch('abx_pkg.binprovider_pyinfra.PYINFRA_INSTALLED', False)
+    @mock.patch('abx_pkg.binprovider_ansible.ANSIBLE_INSTALLED', False)
+    def test_brew_provider_uninstall_uses_uninstall_command(self, _mock_installer_bin_abspath):
+        provider = BrewProvider()
+        proc = subprocess.CompletedProcess(args=[], returncode=0, stdout='', stderr='')
+
+        with mock.patch.object(BrewProvider, 'exec', return_value=proc) as mock_exec:
+            result = provider.uninstall('python')
+
+        self.assertTrue(result)
+        self.assertEqual(mock_exec.call_args.kwargs['cmd'], ['uninstall', 'python'])
+
+    @mock.patch.object(BinProvider, 'INSTALLER_BIN_ABSPATH', new_callable=mock.PropertyMock, return_value=Path('/usr/local/bin/npm'))
+    @mock.patch('abx_pkg.binprovider_npm.NpmProvider._load_PATH', return_value='')
+    def test_npm_provider_update_uses_update_command(self, _mock_load_path, _mock_installer_bin_abspath):
+        provider = NpmProvider(euid=os.geteuid())
+        proc = subprocess.CompletedProcess(args=[], returncode=0, stdout='', stderr='')
+
+        with (
+            mock.patch.object(NpmProvider, 'exec', return_value=proc) as mock_exec,
+            mock.patch.object(NpmProvider, 'get_abspath', return_value=Path(sys.executable)),
+            mock.patch.object(NpmProvider, 'get_version', return_value=SemVer('3.11.0')),
+            mock.patch.object(NpmProvider, 'get_sha256', return_value='unknown'),
+        ):
+            provider.update('python')
+
+        self.assertEqual(mock_exec.call_args.kwargs['cmd'], ['update', '--force', '--no-audit', '--no-fund', '--loglevel=error', provider.cache_arg, '--global', 'python'])
+
+    @mock.patch.object(BinProvider, 'INSTALLER_BIN_ABSPATH', new_callable=mock.PropertyMock, return_value=Path('/usr/local/bin/npm'))
+    @mock.patch('abx_pkg.binprovider_npm.NpmProvider._load_PATH', return_value='')
+    def test_npm_provider_uninstall_uses_uninstall_command(self, _mock_load_path, _mock_installer_bin_abspath):
+        provider = NpmProvider(euid=os.geteuid())
+        proc = subprocess.CompletedProcess(args=[], returncode=0, stdout='', stderr='')
+
+        with mock.patch.object(NpmProvider, 'exec', return_value=proc) as mock_exec:
+            result = provider.uninstall('python')
+
+        self.assertTrue(result)
+        self.assertEqual(mock_exec.call_args.kwargs['cmd'], ['uninstall', '--force', '--no-audit', '--no-fund', '--loglevel=error', provider.cache_arg, '--global', 'python'])
+
+    @mock.patch.object(BinProvider, 'INSTALLER_BIN_ABSPATH', new_callable=mock.PropertyMock, return_value=Path('/usr/local/bin/pip'))
+    @mock.patch('abx_pkg.binprovider_pip.PipProvider.load_PATH_from_pip_sitepackages', lambda self: self)
+    def test_pip_provider_update_uses_install_upgrade(self, _mock_installer_bin_abspath):
+        provider = PipProvider(euid=os.geteuid())
+        proc = subprocess.CompletedProcess(args=[], returncode=0, stdout='', stderr='')
+
+        with (
+            mock.patch.object(PipProvider, 'exec', return_value=proc) as mock_exec,
+            mock.patch.object(PipProvider, 'get_abspath', return_value=Path(sys.executable)),
+            mock.patch.object(PipProvider, 'get_version', return_value=SemVer('3.11.0')),
+            mock.patch.object(PipProvider, 'get_sha256', return_value='unknown'),
+        ):
+            provider.update('python')
+
+        self.assertEqual(mock_exec.call_args.kwargs['cmd'], ['install', '--no-input', provider.cache_arg, *provider.pip_install_args, '--upgrade', 'python'])
+
+    @mock.patch.object(BinProvider, 'INSTALLER_BIN_ABSPATH', new_callable=mock.PropertyMock, return_value=Path('/usr/local/bin/pip'))
+    @mock.patch('abx_pkg.binprovider_pip.PipProvider.load_PATH_from_pip_sitepackages', lambda self: self)
+    def test_pip_provider_uninstall_uses_uninstall_command(self, _mock_installer_bin_abspath):
+        provider = PipProvider(euid=os.geteuid())
+        proc = subprocess.CompletedProcess(args=[], returncode=0, stdout='', stderr='')
+
+        with mock.patch.object(PipProvider, 'exec', return_value=proc) as mock_exec:
+            result = provider.uninstall('python')
+
+        self.assertTrue(result)
+        self.assertEqual(mock_exec.call_args.kwargs['cmd'], ['uninstall', '--yes', 'python'])
+
+    @mock.patch.object(BinProvider, 'INSTALLER_BIN_ABSPATH', new_callable=mock.PropertyMock, return_value=Path('/usr/bin/apt-get'))
+    @mock.patch('abx_pkg.binprovider_apt.shutil.which', side_effect=lambda name: '/usr/bin/dpkg' if name == 'dpkg' else '/usr/bin/apt-get')
+    @mock.patch('abx_pkg.binprovider_pyinfra.PYINFRA_INSTALLED', False)
+    @mock.patch('abx_pkg.binprovider_ansible.ANSIBLE_INSTALLED', False)
+    def test_apt_provider_update_uses_only_upgrade(self, _mock_installer_bin_abspath, _mock_which):
+        proc = subprocess.CompletedProcess(args=[], returncode=0, stdout='', stderr='')
+
+        with (
+            mock.patch('abx_pkg.binprovider_apt.time.time', return_value=0),
+            mock.patch.object(AptProvider, 'exec', side_effect=[proc, proc, proc]) as mock_exec,
+            mock.patch.object(AptProvider, 'get_abspath', return_value=Path(sys.executable)),
+            mock.patch.object(AptProvider, 'get_version', return_value=SemVer('3.11.0')),
+            mock.patch.object(AptProvider, 'get_sha256', return_value='unknown'),
+        ):
+            provider = AptProvider()
+            provider.update('python')
+
+        self.assertEqual(mock_exec.call_args_list[1].kwargs['cmd'], ['update', '-qq'])
+        self.assertEqual(mock_exec.call_args_list[2].kwargs['cmd'], ['install', '--only-upgrade', '-y', '-qq', '--no-install-recommends', 'python'])
+
+    @mock.patch.object(BinProvider, 'INSTALLER_BIN_ABSPATH', new_callable=mock.PropertyMock, return_value=Path('/usr/bin/apt-get'))
+    @mock.patch('abx_pkg.binprovider_apt.shutil.which', side_effect=lambda name: '/usr/bin/dpkg' if name == 'dpkg' else '/usr/bin/apt-get')
+    @mock.patch('abx_pkg.binprovider_pyinfra.PYINFRA_INSTALLED', False)
+    @mock.patch('abx_pkg.binprovider_ansible.ANSIBLE_INSTALLED', False)
+    def test_apt_provider_uninstall_uses_remove(self, _mock_installer_bin_abspath, _mock_which):
+        proc = subprocess.CompletedProcess(args=[], returncode=0, stdout='', stderr='')
+
+        with mock.patch.object(AptProvider, 'exec', side_effect=[proc, proc]) as mock_exec:
+            provider = AptProvider()
+            result = provider.uninstall('python')
+
+        self.assertTrue(result)
+        self.assertEqual(mock_exec.call_args_list[1].kwargs['cmd'], ['remove', '-y', '-qq', 'python'])
+
+    @mock.patch('abx_pkg.binprovider_pyinfra.pyinfra_package_install', return_value='updated')
+    @mock.patch.object(PyinfraProvider, 'get_abspath', return_value=Path(sys.executable))
+    @mock.patch.object(PyinfraProvider, 'get_version', return_value=SemVer('3.11.0'))
+    @mock.patch.object(PyinfraProvider, 'get_sha256', return_value='unknown')
+    def test_pyinfra_provider_update_uses_latest_state(self, _mock_sha256, _mock_version, _mock_abspath, mock_pyinfra_install):
+        provider = PyinfraProvider(pyinfra_installer_module='operations.server.packages')
+
+        provider.update('python')
+
+        mock_pyinfra_install.assert_called_once_with(
+            pkg_names=('python',),
+            installer_module='operations.server.packages',
+            installer_extra_kwargs={'latest': True},
+        )
+
+    @mock.patch('abx_pkg.binprovider_pyinfra.pyinfra_package_install', return_value='removed')
+    def test_pyinfra_provider_uninstall_uses_absent_state(self, mock_pyinfra_install):
+        provider = PyinfraProvider(pyinfra_installer_module='operations.server.packages')
+
+        result = provider.uninstall('python')
+
+        self.assertTrue(result)
+        mock_pyinfra_install.assert_called_once_with(
+            pkg_names=('python',),
+            installer_module='operations.server.packages',
+            installer_extra_kwargs={'present': False},
+        )
+
+    @mock.patch.object(BinProvider, 'INSTALLER_BIN_ABSPATH', new_callable=mock.PropertyMock, return_value=Path('/usr/local/bin/ansible'))
+    @mock.patch('abx_pkg.binprovider_ansible.ansible_package_install', return_value='updated')
+    @mock.patch.object(AnsibleProvider, 'get_abspath', return_value=Path(sys.executable))
+    @mock.patch.object(AnsibleProvider, 'get_version', return_value=SemVer('3.11.0'))
+    @mock.patch.object(AnsibleProvider, 'get_sha256', return_value='unknown')
+    def test_ansible_provider_update_uses_latest_state(self, _mock_sha256, _mock_version, _mock_abspath, mock_ansible_install, _mock_installer_bin_abspath):
+        provider = AnsibleProvider(ansible_installer_module='ansible.builtin.package')
+
+        provider.update('python')
+
+        mock_ansible_install.assert_called_once_with(
+            pkg_names=('python',),
+            quiet=True,
+            playbook_template=provider.ansible_playbook_template,
+            installer_module='ansible.builtin.package',
+            state='latest',
+        )
+
+    @mock.patch.object(BinProvider, 'INSTALLER_BIN_ABSPATH', new_callable=mock.PropertyMock, return_value=Path('/usr/local/bin/ansible'))
+    @mock.patch('abx_pkg.binprovider_ansible.ansible_package_install', return_value='removed')
+    def test_ansible_provider_uninstall_uses_absent_state(self, mock_ansible_install, _mock_installer_bin_abspath):
+        provider = AnsibleProvider(ansible_installer_module='ansible.builtin.package')
+
+        result = provider.uninstall('python')
+
+        self.assertTrue(result)
+        mock_ansible_install.assert_called_once_with(
+            pkg_names=('python',),
+            quiet=True,
+            playbook_template=provider.ansible_playbook_template,
+            installer_module='ansible.builtin.package',
+            state='absent',
+        )
 
 
 def flatten(xss):

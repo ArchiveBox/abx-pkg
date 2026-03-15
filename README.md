@@ -506,7 +506,6 @@ print(rg.version)                       # SemVer(14, 1, 0)
 - [ ] Implement `update` and `remove` actions on BinProviders
 - [ ] Add `preinstall` and `postinstall` hooks for things like adding `apt` sources and running cleanup scripts
 - [ ] Implement more package managers (`cargo`, `gem`, `go get`, `ppm`, `nix`, `docker`, etc.)
-- [ ] Add `Binary.min_version` that affects `.is_valid` based on whether it meets minimum `SemVer` threshold
 
 
 ### Other Packages We Like
