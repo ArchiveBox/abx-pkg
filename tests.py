@@ -185,17 +185,21 @@ class TestLogging(unittest.TestCase):
     def test_load_or_install_does_not_log_error_for_expected_load_fallback(self):
         class FallbackProvider(BinProvider):
             name: str = 'fallback'
+            installed: bool = False
 
-            def load(self, bin_name: str, **context):
-                raise RuntimeError('simulated load miss')
+            def default_abspath_handler(self, bin_name: str, **context):
+                if not self.installed:
+                    return None
+                return Path('/usr/bin/true')
 
-            def install(self, bin_name: str, **context):
-                return BinProvider.load(
-                    EnvProvider(),
-                    'python',
-                    quiet=True,
-                    nocache=True,
-                )
+            def default_version_handler(self, bin_name: str, abspath: Optional[Path] = None, **context):
+                if not self.installed:
+                    return None
+                return SemVer('1.2.3')
+
+            def default_install_handler(self, bin_name: str, install_args: Optional[InstallArgs] = None, **context):
+                self.installed = True
+                return 'installed'
 
         provider = FallbackProvider()
 
@@ -210,15 +214,31 @@ class TestLogging(unittest.TestCase):
     def test_multi_provider_load_or_install_logs_intermediate_failures_at_debug_only(self):
         class FirstFailsProvider(BinProvider):
             name: str = 'first_fail'
+            installed: bool = False
 
-            def load_or_install(self, bin_name: str, **context):
+            def default_abspath_handler(self, bin_name: str, **context):
+                return None
+
+            def default_install_handler(self, bin_name: str, install_args: Optional[InstallArgs] = None, **context):
                 raise RuntimeError('simulated first provider failure')
 
         class SecondSucceedsProvider(BinProvider):
             name: str = 'second_ok'
+            installed: bool = False
 
-            def load_or_install(self, bin_name: str, **context):
-                return BinProvider.load(EnvProvider(), 'python', quiet=True, nocache=True)
+            def default_abspath_handler(self, bin_name: str, **context):
+                if not self.installed:
+                    return None
+                return Path('/usr/bin/true')
+
+            def default_version_handler(self, bin_name: str, abspath: Optional[Path] = None, **context):
+                if not self.installed:
+                    return None
+                return SemVer('2.3.4')
+
+            def default_install_handler(self, bin_name: str, install_args: Optional[InstallArgs] = None, **context):
+                self.installed = True
+                return 'installed'
 
         binary = Binary(
             name='demo-multi-provider-ok',
@@ -237,13 +257,19 @@ class TestLogging(unittest.TestCase):
         class FirstFailsProvider(BinProvider):
             name: str = 'first_fail'
 
-            def load_or_install(self, bin_name: str, **context):
+            def default_abspath_handler(self, bin_name: str, **context):
+                return None
+
+            def default_install_handler(self, bin_name: str, install_args: Optional[InstallArgs] = None, **context):
                 raise RuntimeError('simulated first provider failure')
 
         class ThirdFailsProvider(BinProvider):
             name: str = 'third_fail'
 
-            def load_or_install(self, bin_name: str, **context):
+            def default_abspath_handler(self, bin_name: str, **context):
+                return None
+
+            def default_install_handler(self, bin_name: str, install_args: Optional[InstallArgs] = None, **context):
                 raise RuntimeError('simulated third provider failure with enough text to catch truncation')
 
         binary = Binary(
