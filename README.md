@@ -111,6 +111,32 @@ print(ffmpeg.model_dump())          # ... everything can also be dumped/loaded a
 print(ffmpeg.model_json_schema())   # ... OpenAPI-ready JSON schema showing all available fields
 ```
 
+### Logging
+
+`abx-pkg` now uses the standard Python `logging` module. By default it stays quiet unless your application configures logging or you opt in with `configure_logging(...)`.
+
+```python
+import logging
+from abx_pkg import Binary, EnvProvider, configure_logging
+
+configure_logging(logging.INFO)
+
+python = Binary(name='python', binproviders=[EnvProvider()]).load()
+```
+
+- `DEBUG`: traces most `abx-pkg` method calls and subprocess execution
+- `INFO`: logs binary load/install/update/uninstall lifecycle events
+- `WARNING`: only warnings and errors
+
+You can also manage it with standard logging primitives:
+
+```python
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logging.getLogger("abx_pkg").setLevel(logging.DEBUG)
+```
+
 ### Supported Package Managers
 
 **So far it supports `installing`/`finding installed`/`updating`/`removing` packages on `Linux`/`macOS` with:**

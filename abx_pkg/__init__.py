@@ -15,6 +15,7 @@ from .base_types import (
 )
 from .semver import SemVer, bin_version
 from .shallowbinary import ShallowBinary
+from .logging import logger, get_logger, configure_logging
 from .binprovider import (
     BinProvider,
     EnvProvider,
@@ -68,6 +69,9 @@ __all__ = [
     "Binary",
     "SemVer",
     "ShallowBinary",
+    "logger",
+    "get_logger",
+    "configure_logging",
     
     # Helper Types
     "BinName",

@@ -37,6 +37,9 @@ from .base_types import (
     bin_abspaths,
     func_takes_args_or_kwargs,
 )
+from .logging import format_command, get_logger, log_method_call
+
+logger = get_logger(__name__)
 
 ################## GLOBALS ##########################################
 
@@ -187,6 +190,7 @@ class ShallowBinary(BaseModel):
         return self.loaded_abspath and self.loaded_abspath.resolve()
 
     # @validate_call
+    @log_method_call(include_result=True)
     def exec(
         self, bin_name: BinName | HostBinPath | None = None, cmd: Iterable[str | Path | int | float | bool] = (), cwd: str | Path = ".", quiet=False, **kwargs
     ) -> subprocess.CompletedProcess:
@@ -196,8 +200,7 @@ class ShallowBinary(BaseModel):
             assert self.loaded_version, "Binary must have a loaded_version, make sure to load_or_install() first"
         assert os.path.isdir(cwd) and os.access(cwd, os.R_OK), f"cwd must be a valid, accessible directory: {cwd}"
         cmd = [str(bin_name), *(str(arg) for arg in cmd)]
-        if not quiet:
-            print('$', ' '.join(cmd), file=sys.stderr)
+        logger.debug("Executing binary command: %s", format_command(cmd))
         return subprocess.run(cmd, capture_output=True, text=True, cwd=str(cwd), **kwargs)
 
 
@@ -369,6 +372,7 @@ class BinProvider(BaseModel):
 
     @final
     # @validate_call(config={'arbitrary_types_allowed': True})
+    @log_method_call(include_result=True)
     def get_provider_with_overrides(self, overrides: Optional['BinProviderOverrides']=None, dry_run: bool=False, install_timeout: int | None=None, version_timeout: int | None=None) -> Self:
         # created an updated copy of the BinProvider with the overrides applied, then get the handlers on it.
         # important to do this so that any subsequent calls to handler functions down the call chain
@@ -402,11 +406,13 @@ class BinProvider(BaseModel):
 
 
     # @validate_call
+    @log_method_call(include_result=True)
     def _get_handler_keys(self, handler_type: 'HandlerType') -> Tuple['HandlerType', ...]:
         if handler_type in ('install_args', 'packages'):
             return ('install_args', 'packages')
         return (handler_type,)
 
+    @log_method_call(include_result=True)
     def _get_handler_for_action(self, bin_name: BinName, handler_type: 'HandlerType') -> Callable[..., 'HandlerReturnValue']:
         """
         Get the handler func for a given key + Dict of handler callbacks + fallback default handler.
@@ -441,6 +447,7 @@ class BinProvider(BaseModel):
         return handler_func
 
     # @validate_call
+    @log_method_call(include_result=True)
     def _get_compatible_kwargs(self, handler_func: Callable[..., 'HandlerReturnValue'], kwargs: Dict[str, Any]) -> Dict[str, Any]:
         if not kwargs:
             return kwargs
@@ -456,6 +463,7 @@ class BinProvider(BaseModel):
             if key in accepted_kwargs
         }
 
+    @log_method_call(include_result=True)
     def _call_handler_for_action(self, bin_name: BinName, handler_type: 'HandlerType', **kwargs) -> 'HandlerReturnValue':
         handler_func: Callable[..., HandlerReturnValue] = self._get_handler_for_action(
             bin_name=bin_name,           # e.g. 'yt-dlp', or 'wget', etc.
@@ -491,6 +499,7 @@ class BinProvider(BaseModel):
     # DEFAULT HANDLERS, override these in subclasses as needed:
 
     # @validate_call
+    @log_method_call(include_result=True)
     def default_abspath_handler(self, bin_name: BinName | HostBinPath, **context) -> 'AbspathFuncReturnValue':  # aka str | Path | None
         # print(f'[*] {self.__class__.__name__}: Getting abspath for {bin_name}...')
 
@@ -500,6 +509,7 @@ class BinProvider(BaseModel):
         return bin_abspath(bin_name, PATH=self.PATH)
     
     # @validate_call
+    @log_method_call(include_result=True)
     def default_version_handler(self, bin_name: BinName, abspath: Optional[HostBinPath]=None, **context) -> 'VersionFuncReturnValue':  # aka List[str] | Tuple[str, ...]
         
         abspath = abspath or self.get_abspath(bin_name, quiet=True)
@@ -543,16 +553,19 @@ class BinProvider(BaseModel):
         ) from validation_err
 
     # @validate_call
+    @log_method_call(include_result=True)
     def default_install_args_handler(self, bin_name: BinName, **context) -> 'InstallArgsFuncReturnValue':     # aka List[str] aka InstallArgs
         # print(f'[*] {self.__class__.__name__}: Getting install command for {bin_name}')
         # ... install command calculation logic here
         return [bin_name]
 
+    @log_method_call(include_result=True)
     def default_packages_handler(self, bin_name: BinName, **context) -> 'InstallArgsFuncReturnValue':
         return self.default_install_args_handler(bin_name, **context)
 
     # @validate_call
     @remap_kwargs({'packages': 'install_args'})
+    @log_method_call(include_result=True)
     def default_install_handler(self, bin_name: BinName, install_args: Optional[InstallArgs]=None, **context) -> 'InstallFuncReturnValue':      # aka str
         self.setup()
         install_args = install_args or self.get_install_args(bin_name)
@@ -573,14 +586,17 @@ class BinProvider(BaseModel):
 
     # @validate_call
     @remap_kwargs({'packages': 'install_args'})
+    @log_method_call(include_result=True)
     def default_update_handler(self, bin_name: BinName, install_args: Optional[InstallArgs]=None, **context) -> 'ActionFuncReturnValue':
         return f'{self.name} BinProvider does not implement any update method'
 
     # @validate_call
     @remap_kwargs({'packages': 'install_args'})
+    @log_method_call(include_result=True)
     def default_uninstall_handler(self, bin_name: BinName, install_args: Optional[InstallArgs]=None, **context) -> 'ActionFuncReturnValue':
         return False
 
+    @log_method_call()
     def invalidate_cache(self, bin_name: BinName) -> None:
         if not self._cache:
             return
@@ -588,12 +604,14 @@ class BinProvider(BaseModel):
             method_cache.pop(bin_name, None)
 
 
+    @log_method_call()
     def setup_PATH(self) -> None:
         for path in reversed(self.PATH.split(':')):
             if path not in sys.path:
                 sys.path.insert(0, path)   # e.g. /opt/archivebox/bin:/bin:/usr/local/bin:...
 
     # @validate_call
+    @log_method_call(include_result=True)
     def exec(self, bin_name: BinName | HostBinPath, cmd: Iterable[str | Path | int | float | bool]=(), cwd: Path | str='.', quiet=False, **kwargs) -> subprocess.CompletedProcess:
         if shutil.which(str(bin_name)):
             bin_abspath = bin_name
@@ -602,9 +620,11 @@ class BinProvider(BaseModel):
         assert bin_abspath, f'BinProvider {self.name} cannot execute bin_name {bin_name} because it could not find its abspath. (Did {self.__class__.__name__}.load_or_install({bin_name}) fail?)'
         assert os.access(cwd, os.R_OK) and os.path.isdir(cwd), f'cwd must be a valid, accessible directory: {cwd}'
         cmd = [str(bin_abspath), *(str(arg) for arg in cmd)]
-        if not quiet:
-            prefix = 'DRY RUN: $' if self._dry_run else '$'
-            print(prefix, ' '.join(cmd), file=sys.stderr)
+        if self._dry_run:
+            logger.info("Dry run command via provider %s: %s", self.name, format_command(cmd))
+            print(f"DRY RUN: {format_command(cmd)}", file=sys.stderr)
+        else:
+            logger.debug("Executing provider command via %s: %s", self.name, format_command(cmd))
             
         # https://stackoverflow.com/a/6037494/2156113
         # copy env and modify it to run the subprocess as the the designated user
@@ -637,12 +657,14 @@ class BinProvider(BaseModel):
     @final
     @binprovider_cache
     # @validate_call
+    @log_method_call(include_result=True)
     def get_abspaths(self, bin_name: BinName, nocache: bool=False) -> List[HostBinPath]:
         return bin_abspaths(bin_name, PATH=self.PATH)
 
     @final
     @binprovider_cache
     # @validate_call
+    @log_method_call(include_result=True)
     def get_sha256(self, bin_name: BinName, abspath: Optional[HostBinPath]=None, nocache: bool=False) -> Sha256 | None:
         """Get the sha256 hash of the binary at the given abspath (or equivalent hash of the underlying package)"""
         
@@ -663,12 +685,14 @@ class BinProvider(BaseModel):
     @final
     @binprovider_cache
     # @validate_call
+    @log_method_call(include_result=True)
     def get_abspath(self, bin_name: BinName, quiet: bool=False, nocache: bool=False) -> HostBinPath | None:
         self.setup_PATH()
         abspath = None
         try:
             abspath = cast(AbspathFuncReturnValue, self._call_handler_for_action(bin_name=bin_name, handler_type='abspath'))
-        except Exception:
+        except Exception as err:
+            logger.warning("Provider %s failed to resolve abspath for %s: %s", self.name, bin_name, err)
             if not quiet:
                 raise
         if not abspath:
@@ -679,11 +703,13 @@ class BinProvider(BaseModel):
     @final
     @binprovider_cache
     # @validate_call
+    @log_method_call(include_result=True)
     def get_version(self, bin_name: BinName, abspath: Optional[HostBinPath]=None, quiet: bool=False, nocache: bool=False) -> SemVer | None:
         version = None
         try:
             version = cast(VersionFuncReturnValue, self._call_handler_for_action(bin_name=bin_name, handler_type='version', abspath=abspath))
-        except Exception:
+        except Exception as err:
+            logger.warning("Provider %s failed to resolve version for %s: %s", self.name, bin_name, err)
             if not quiet:
                 raise
         
@@ -698,11 +724,13 @@ class BinProvider(BaseModel):
     @final
     @binprovider_cache
     # @validate_call
+    @log_method_call(include_result=True)
     def get_install_args(self, bin_name: BinName, quiet: bool=False, nocache: bool=False) -> InstallArgs:
         install_args = None
         try:
             install_args = cast(InstallArgsFuncReturnValue, self._call_handler_for_action(bin_name=bin_name, handler_type='install_args'))
-        except Exception:
+        except Exception as err:
+            logger.warning("Provider %s failed to resolve install args for %s: %s", self.name, bin_name, err)
             if not quiet:
                 raise
 
@@ -711,20 +739,24 @@ class BinProvider(BaseModel):
         result = TypeAdapter(InstallArgs).validate_python(install_args)
         return result
 
+    @log_method_call(include_result=True)
     def get_packages(self, bin_name: BinName, quiet: bool=False, nocache: bool=False) -> InstallArgs:
         return self.get_install_args(bin_name, quiet=quiet, nocache=nocache)
 
+    @log_method_call()
     def setup(self) -> None:
         """Override this to do any setup steps needed before installing packaged (e.g. create a venv, init an npm prefix, etc.)"""
         pass
 
     @final
     @binprovider_cache
+    @log_method_call(include_result=True)
     @validate_call
     def install(self, bin_name: BinName, quiet: bool=False, nocache: bool=False) -> ShallowBinary | None:
         self.setup()
         
         install_args = self.get_install_args(bin_name, quiet=quiet, nocache=nocache)
+        logger.info("Installing %s via provider %s with args %s", bin_name, self.name, list(install_args))
         
         self.setup_PATH()
         install_log = None
@@ -732,6 +764,7 @@ class BinProvider(BaseModel):
             install_log = cast(InstallFuncReturnValue, self._call_handler_for_action(bin_name=bin_name, handler_type='install', install_args=install_args, packages=install_args))
         except Exception as err:
             install_log = f'{self.__class__.__name__} Failed to install {bin_name}, got {err.__class__.__name__}: {err}'
+            logger.warning("Install failed for %s via provider %s: %s", bin_name, self.name, err)
             if not quiet:
                 raise
             
@@ -769,14 +802,18 @@ class BinProvider(BaseModel):
         else:
             result = None
 
+        if result:
+            logger.info("Installed %s via provider %s at %s", bin_name, self.name, result.loaded_abspath)
         return result
 
     @final
+    @log_method_call(include_result=True)
     @validate_call
     def update(self, bin_name: BinName, quiet: bool=False, nocache: bool=False) -> ShallowBinary | None:
         self.setup()
 
         install_args = self.get_install_args(bin_name, quiet=quiet, nocache=nocache)
+        logger.info("Updating %s via provider %s with args %s", bin_name, self.name, list(install_args))
 
         self.setup_PATH()
         update_log = None
@@ -784,6 +821,7 @@ class BinProvider(BaseModel):
             update_log = cast(ActionFuncReturnValue, self._call_handler_for_action(bin_name=bin_name, handler_type='update', install_args=install_args, packages=install_args))
         except Exception as err:
             update_log = f'{self.__class__.__name__} Failed to update {bin_name}, got {err.__class__.__name__}: {err}'
+            logger.warning("Update failed for %s via provider %s: %s", bin_name, self.name, err)
             if not quiet:
                 raise
 
@@ -810,6 +848,7 @@ class BinProvider(BaseModel):
         sha256 = self.get_sha256(bin_name, abspath=updated_abspath, nocache=True) or UNKNOWN_SHA256
 
         if updated_abspath and updated_version:
+            logger.info("Updated %s via provider %s at %s", bin_name, self.name, updated_abspath)
             return ShallowBinary(
                 name=bin_name,
                 binprovider=self,
@@ -822,15 +861,18 @@ class BinProvider(BaseModel):
         return None
 
     @final
+    @log_method_call(include_result=True)
     @validate_call
     def uninstall(self, bin_name: BinName, quiet: bool=False, nocache: bool=False) -> bool:
         install_args = self.get_install_args(bin_name, quiet=quiet, nocache=nocache)
+        logger.info("Uninstalling %s via provider %s with args %s", bin_name, self.name, list(install_args))
 
         self.setup_PATH()
         uninstall_result = None
         try:
             uninstall_result = cast(ActionFuncReturnValue, self._call_handler_for_action(bin_name=bin_name, handler_type='uninstall', install_args=install_args, packages=install_args))
-        except Exception:
+        except Exception as err:
+            logger.warning("Uninstall failed for %s via provider %s: %s", bin_name, self.name, err)
             if not quiet:
                 raise
             return False
@@ -840,11 +882,15 @@ class BinProvider(BaseModel):
         if self._dry_run:
             return True
 
+        if uninstall_result is not False:
+            logger.info("Uninstalled %s via provider %s", bin_name, self.name)
         return uninstall_result is not False
 
     @final
+    @log_method_call(include_result=True)
     @validate_call
     def load(self, bin_name: BinName, quiet: bool=True, nocache: bool=False) -> ShallowBinary | None:
+        logger.info("Loading %s via provider %s", bin_name, self.name)
         installed_abspath = self.get_abspath(bin_name, quiet=quiet, nocache=nocache)
         if not installed_abspath:
             return None
@@ -854,8 +900,8 @@ class BinProvider(BaseModel):
             return None
         
         sha256 = self.get_sha256(bin_name, abspath=installed_abspath) or UNKNOWN_SHA256  # not ideal to store UNKNOWN_SHA256but it's better than nothing and this value isnt critical
-        
-        return ShallowBinary(
+
+        result = ShallowBinary(
             name=bin_name,
             binprovider=self,
             abspath=installed_abspath,
@@ -863,10 +909,14 @@ class BinProvider(BaseModel):
             sha256=sha256,
             binproviders=[self],
         )
+        logger.info("Loaded %s via provider %s from %s", bin_name, self.name, installed_abspath)
+        return result
 
     @final
+    @log_method_call(include_result=True)
     @validate_call
     def load_or_install(self, bin_name: BinName, quiet: bool=False, nocache: bool=False) -> ShallowBinary | None:
+        logger.info("Loading or installing %s via provider %s", bin_name, self.name)
         installed = self.load(bin_name=bin_name, quiet=True, nocache=nocache)
         if not installed:
             installed = self.install(bin_name=bin_name, quiet=quiet, nocache=nocache)
@@ -893,15 +943,18 @@ class EnvProvider(BinProvider):
     }
 
     @remap_kwargs({'packages': 'install_args'})
+    @log_method_call(include_result=True)
     def install_noop(self, bin_name: BinName, install_args: Optional[InstallArgs]=None, **context) -> str:
         """The env BinProvider is ready-only and does not install any packages, so this is a no-op"""
         return 'env is ready-only and just checks for existing binaries in $PATH'
 
     @remap_kwargs({'packages': 'install_args'})
+    @log_method_call(include_result=True)
     def update_noop(self, bin_name: BinName, install_args: Optional[InstallArgs]=None, **context) -> str:
         return 'env is read-only and just checks for existing binaries in $PATH'
 
     @remap_kwargs({'packages': 'install_args'})
+    @log_method_call(include_result=True)
     def uninstall_noop(self, bin_name: BinName, install_args: Optional[InstallArgs]=None, **context) -> bool:
         return False
 

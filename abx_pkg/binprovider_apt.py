@@ -11,6 +11,9 @@ from pydantic import model_validator, TypeAdapter
 
 from .base_types import BinProviderName, PATHStr, BinName, InstallArgs
 from .binprovider import BinProvider, remap_kwargs
+from .logging import get_logger, log_subprocess_error
+
+logger = get_logger(__name__)
 
 _LAST_UPDATE_CHECK = None
 UPDATE_CHECK_INTERVAL = 60 * 60 * 24  # 1 day
@@ -73,8 +76,7 @@ class AptProvider(BinProvider):
 
         proc = self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=["install", "-y", "-qq", "--no-install-recommends", *install_args])
         if proc.returncode != 0:
-            print(proc.stdout.strip())
-            print(proc.stderr.strip())
+            log_subprocess_error(logger, f"{self.__class__.__name__} install", proc.stdout, proc.stderr)
             raise Exception(f"{self.__class__.__name__} install got returncode {proc.returncode} while installing {install_args}: {install_args}")
 
             return proc.stderr.strip() + "\n" + proc.stdout.strip()
@@ -105,8 +107,7 @@ class AptProvider(BinProvider):
 
         proc = self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=["install", "--only-upgrade", "-y", "-qq", "--no-install-recommends", *install_args])
         if proc.returncode != 0:
-            print(proc.stdout.strip())
-            print(proc.stderr.strip())
+            log_subprocess_error(logger, f"{self.__class__.__name__} update", proc.stdout, proc.stderr)
             raise Exception(f"{self.__class__.__name__} update got returncode {proc.returncode} while updating {install_args}: {install_args}")
 
         return f"Updated {install_args} succesfully."
@@ -132,8 +133,7 @@ class AptProvider(BinProvider):
 
         proc = self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=["remove", "-y", "-qq", *install_args])
         if proc.returncode != 0:
-            print(proc.stdout.strip())
-            print(proc.stderr.strip())
+            log_subprocess_error(logger, f"{self.__class__.__name__} uninstall", proc.stdout, proc.stderr)
             raise Exception(f"{self.__class__.__name__} uninstall got returncode {proc.returncode} while removing {install_args}: {install_args}")
 
         return True

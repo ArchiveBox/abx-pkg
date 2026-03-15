@@ -19,6 +19,9 @@ from pydantic import model_validator, TypeAdapter, computed_field
 from .base_types import BinProviderName, PATHStr, BinName, InstallArgs, HostBinPath, bin_abspath, bin_abspaths
 from .semver import SemVer
 from .binprovider import BinProvider, DEFAULT_ENV_PATH, remap_kwargs
+from .logging import get_logger, log_subprocess_error
+
+logger = get_logger(__name__)
 
 ACTIVE_VENV = os.getenv('VIRTUAL_ENV', None)
 _CACHED_GLOBAL_PIP_BIN_DIRS: Set[str] | None = None
@@ -261,8 +264,7 @@ class PipProvider(BinProvider):
         proc = self._pip_install(install_args)
 
         if proc.returncode != 0:
-            print(proc.stdout.strip())
-            print(proc.stderr.strip())
+            log_subprocess_error(logger, f"{self.__class__.__name__} install", proc.stdout, proc.stderr)
             raise Exception(f"{self.__class__.__name__}: install got returncode {proc.returncode} while installing {install_args}: {install_args}")
 
         return proc.stderr.strip() + "\n" + proc.stdout.strip()
@@ -277,8 +279,7 @@ class PipProvider(BinProvider):
         proc = self._pip_update(install_args)
 
         if proc.returncode != 0:
-            print(proc.stdout.strip())
-            print(proc.stderr.strip())
+            log_subprocess_error(logger, f"{self.__class__.__name__} update", proc.stdout, proc.stderr)
             raise Exception(f"{self.__class__.__name__}: update got returncode {proc.returncode} while updating {install_args}: {install_args}")
 
         return proc.stderr.strip() + "\n" + proc.stdout.strip()
@@ -290,8 +291,7 @@ class PipProvider(BinProvider):
         proc = self._pip_uninstall(install_args)
 
         if proc.returncode != 0:
-            print(proc.stdout.strip())
-            print(proc.stderr.strip())
+            log_subprocess_error(logger, f"{self.__class__.__name__} uninstall", proc.stdout, proc.stderr)
             raise Exception(f"{self.__class__.__name__}: uninstall got returncode {proc.returncode} while uninstalling {install_args}: {install_args}")
 
         return True

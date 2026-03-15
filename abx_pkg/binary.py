@@ -8,6 +8,7 @@ from pydantic import Field, model_validator, computed_field, field_validator, va
 from .semver import SemVer
 from .shallowbinary import ShallowBinary
 from .binprovider import BinProvider, EnvProvider, BinaryOverrides
+from .logging import get_logger, log_method_call
 from .base_types import (
     BinName,
     bin_abspath,
@@ -19,6 +20,7 @@ from .base_types import (
 )
 
 DEFAULT_PROVIDER = EnvProvider()
+logger = get_logger(__name__)
 
 
 class Binary(ShallowBinary):
@@ -125,6 +127,7 @@ class Binary(ShallowBinary):
             return False
         return True
     
+    @log_method_call()
     # @validate_call
     def get_binprovider(self, binprovider_name: BinProviderName, **extra_overrides) -> InstanceOf[BinProvider]:
         for binprovider in self.binproviders_supported:
@@ -137,24 +140,32 @@ class Binary(ShallowBinary):
         raise KeyError(f'{binprovider_name} is not a supported BinProvider for Binary(name={self.name})')
 
     @validate_call
+    @log_method_call(include_result=True)
     def install(self, binproviders: Optional[List[BinProviderName]]=None, **extra_overrides) -> Self:
         assert self.name, f'No binary name was provided! {self}'
 
         if binproviders is not None and len(list(binproviders)) == 0:
+            logger.debug("Skipping install for %s because binproviders list was empty", self.name)
             return self
-        
-        
+
+        logger.info("Installing binary %s", self.name)
         inner_exc = Exception('No providers were available')
         errors = {}
         for binprovider in self.binproviders_supported:
             if binproviders and (binprovider.name not in binproviders):
                 continue
-            
+
             try:
                 provider = self.get_binprovider(binprovider_name=binprovider.name, **extra_overrides)
-                
+                logger.debug("Trying provider %s for install of %s", provider.name, self.name)
                 installed_bin = provider.install(self.name)
                 if installed_bin is not None and installed_bin.loaded_abspath:
+                    logger.info(
+                        "Installed binary %s via provider %s at %s",
+                        self.name,
+                        provider.name,
+                        installed_bin.loaded_abspath,
+                    )
                     # print('INSTALLED', self.name, installed_bin)
                     return self.__class__(**{
                         **self.model_dump(),
@@ -164,26 +175,30 @@ class Binary(ShallowBinary):
                         'overrides': self.overrides,
                     })
             except Exception as err:
-                # print(err)
-                # raise
+                logger.warning("Provider %s failed to install %s: %s", binprovider.name, self.name, err)
                 inner_exc = err
                 errors[binprovider.name] = str(err)
-                
+
         provider_names = ', '.join(binproviders or [p.name for p in self.binproviders_supported])
+        logger.error("Unable to install binary %s via providers %s", self.name, provider_names)
         raise Exception(f'None of the configured providers ({provider_names}) were able to install binary: {self.name} ERRORS={errors}') from inner_exc
 
     @validate_call
+    @log_method_call(include_result=True)
     def load(self, binproviders: Optional[List[BinProviderName]]=None, nocache=False, **extra_overrides) -> Self:
         assert self.name, f'No binary name was provided! {self}'
 
         # if we're already loaded, skip loading
         if self.is_valid:
+            logger.debug("Skipping load for %s because it is already valid", self.name)
             return self
         
         # if binproviders list is passed but it's empty, skip loading
         if binproviders is not None and len(list(binproviders)) == 0:
+            logger.debug("Skipping load for %s because binproviders list was empty", self.name)
             return self
 
+        logger.info("Loading binary %s", self.name)
         inner_exc = Exception('No providers were available')
         errors = {}
         for binprovider in self.binproviders_supported:
@@ -192,9 +207,15 @@ class Binary(ShallowBinary):
             
             try:
                 provider = self.get_binprovider(binprovider_name=binprovider.name, **extra_overrides)
-                
+                logger.debug("Trying provider %s for load of %s", provider.name, self.name)
                 installed_bin = provider.load(self.name, nocache=nocache)
                 if installed_bin is not None and installed_bin.loaded_abspath:
+                    logger.info(
+                        "Loaded binary %s via provider %s from %s",
+                        self.name,
+                        provider.name,
+                        installed_bin.loaded_abspath,
+                    )
                     # print('LOADED', binprovider, self.name, installed_bin)
                     return self.__class__(**{
                         **self.model_dump(),
@@ -206,23 +227,28 @@ class Binary(ShallowBinary):
                 else:
                     continue
             except Exception as err:
-                # print(err)
+                logger.warning("Provider %s failed to load %s: %s", binprovider.name, self.name, err)
                 inner_exc = err
                 errors[binprovider.name] = str(err)
-        
+
         provider_names = ', '.join(binproviders or [p.name for p in self.binproviders_supported])
+        logger.error("Unable to load binary %s via providers %s", self.name, provider_names)
         raise Exception(f'None of the configured providers ({provider_names}) were able to load binary: {self.name} ERRORS={errors}') from inner_exc
 
     @validate_call
+    @log_method_call(include_result=True)
     def load_or_install(self, binproviders: Optional[List[BinProviderName]]=None, nocache: bool=False, **extra_overrides) -> Self:
         assert self.name, f'No binary name was provided! {self}'
 
         if self.is_valid:
+            logger.debug("Skipping load_or_install for %s because it is already valid", self.name)
             return self
 
         if binproviders is not None and len(list(binproviders)) == 0:
+            logger.debug("Skipping load_or_install for %s because binproviders list was empty", self.name)
             return self
 
+        logger.info("Loading or installing binary %s", self.name)
         inner_exc = Exception('No providers were available')
         errors = {}
         for binprovider in self.binproviders_supported:
@@ -231,9 +257,15 @@ class Binary(ShallowBinary):
             
             try:
                 provider = self.get_binprovider(binprovider_name=binprovider.name, **extra_overrides)
-                
+                logger.debug("Trying provider %s for load_or_install of %s", provider.name, self.name)
                 installed_bin = provider.load_or_install(self.name, nocache=nocache)
                 if installed_bin is not None and installed_bin.loaded_abspath:
+                    logger.info(
+                        "Resolved binary %s via provider %s at %s",
+                        self.name,
+                        provider.name,
+                        installed_bin.loaded_abspath,
+                    )
                     # print('LOADED_OR_INSTALLED', self.name, installed_bin)
                     return self.__class__(**{
                         **self.model_dump(),
@@ -245,21 +277,25 @@ class Binary(ShallowBinary):
                 else:
                     continue
             except Exception as err:
-                # print(err)
+                logger.warning("Provider %s failed to load_or_install %s: %s", binprovider.name, self.name, err)
                 inner_exc = err
                 errors[binprovider.name] = str(err)
                 continue
-        
+
         provider_names = ', '.join(binproviders or [p.name for p in self.binproviders_supported])
+        logger.error("Unable to load or install binary %s via providers %s", self.name, provider_names)
         raise Exception(f'None of the configured providers ({provider_names}) were able to find or install binary: {self.name} ERRORS={errors}') from inner_exc
 
     @validate_call
+    @log_method_call(include_result=True)
     def update(self, binproviders: Optional[List[BinProviderName]]=None, **extra_overrides) -> Self:
         assert self.name, f'No binary name was provided! {self}'
 
         if binproviders is not None and len(list(binproviders)) == 0:
+            logger.debug("Skipping update for %s because binproviders list was empty", self.name)
             return self
 
+        logger.info("Updating binary %s", self.name)
         inner_exc = Exception('No providers were available')
         errors = {}
         for binprovider in self.binproviders_supported:
@@ -268,9 +304,15 @@ class Binary(ShallowBinary):
 
             try:
                 provider = self.get_binprovider(binprovider_name=binprovider.name, **extra_overrides)
-
+                logger.debug("Trying provider %s for update of %s", provider.name, self.name)
                 updated_bin = provider.update(self.name)
                 if updated_bin is not None and updated_bin.loaded_abspath:
+                    logger.info(
+                        "Updated binary %s via provider %s at %s",
+                        self.name,
+                        provider.name,
+                        updated_bin.loaded_abspath,
+                    )
                     return self.__class__(**{
                         **self.model_dump(),
                         **updated_bin.model_dump(exclude={'binproviders_supported'}),
@@ -279,19 +321,24 @@ class Binary(ShallowBinary):
                         'overrides': self.overrides,
                     })
             except Exception as err:
+                logger.warning("Provider %s failed to update %s: %s", binprovider.name, self.name, err)
                 inner_exc = err
                 errors[binprovider.name] = str(err)
 
         provider_names = ', '.join(binproviders or [p.name for p in self.binproviders_supported])
+        logger.error("Unable to update binary %s via providers %s", self.name, provider_names)
         raise Exception(f'None of the configured providers ({provider_names}) were able to update binary: {self.name} ERRORS={errors}') from inner_exc
 
     @validate_call
+    @log_method_call(include_result=True)
     def uninstall(self, binproviders: Optional[List[BinProviderName]]=None, **extra_overrides) -> Self:
         assert self.name, f'No binary name was provided! {self}'
 
         if binproviders is not None and len(list(binproviders)) == 0:
+            logger.debug("Skipping uninstall for %s because binproviders list was empty", self.name)
             return self
 
+        logger.info("Uninstalling binary %s", self.name)
         inner_exc = Exception('No providers were available')
         errors = {}
         for binprovider in self.binproviders_supported:
@@ -300,9 +347,10 @@ class Binary(ShallowBinary):
 
             try:
                 provider = self.get_binprovider(binprovider_name=binprovider.name, **extra_overrides)
-
+                logger.debug("Trying provider %s for uninstall of %s", provider.name, self.name)
                 uninstalled = provider.uninstall(self.name)
                 if uninstalled:
+                    logger.info("Uninstalled binary %s via provider %s", self.name, provider.name)
                     return self.__class__(**{
                         **self.model_dump(),
                         'loaded_binprovider': None,
@@ -313,8 +361,10 @@ class Binary(ShallowBinary):
                         'overrides': self.overrides,
                     })
             except Exception as err:
+                logger.warning("Provider %s failed to uninstall %s: %s", binprovider.name, self.name, err)
                 inner_exc = err
                 errors[binprovider.name] = str(err)
 
         provider_names = ', '.join(binproviders or [p.name for p in self.binproviders_supported])
+        logger.error("Unable to uninstall binary %s via providers %s", self.name, provider_names)
         raise Exception(f'None of the configured providers ({provider_names}) were able to uninstall binary: {self.name} ERRORS={errors}') from inner_exc

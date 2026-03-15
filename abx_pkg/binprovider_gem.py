@@ -11,6 +11,9 @@ from typing_extensions import Self
 
 from .base_types import BinProviderName, PATHStr, BinName, InstallArgs
 from .binprovider import BinProvider, DEFAULT_ENV_PATH, remap_kwargs
+from .logging import get_logger, log_subprocess_error
+
+logger = get_logger(__name__)
 
 
 DEFAULT_GEM_HOME = Path(os.environ.get("GEM_HOME", "~/.local/share/gem")).expanduser()
@@ -71,11 +74,38 @@ class GemProvider(BinProvider):
 
     def _gem_scope_args(self) -> list[str]:
         return [
-            "--install-dir",
+            "-i",
             str(self._gem_home()),
-            "--bindir",
-            str(self._bindir()),
         ]
+
+    def _gem_env(self) -> dict[str, str]:
+        env = os.environ.copy()
+        gem_home = str(self._gem_home())
+        env["GEM_HOME"] = gem_home
+        env["GEM_PATH"] = gem_home
+        return env
+
+    def _patch_generated_wrappers(self) -> None:
+        gem_home = str(self._gem_home())
+        gem_use_paths_line = f'Gem.use_paths("{gem_home}", ["{gem_home}"])'
+
+        for wrapper_path in self._bindir().iterdir():
+            if not wrapper_path.is_file():
+                continue
+
+            wrapper_text = wrapper_path.read_text(encoding="utf-8")
+            if gem_use_paths_line in wrapper_text or "Gem.activate_bin_path" not in wrapper_text:
+                continue
+
+            if "require 'rubygems'" in wrapper_text:
+                wrapper_text = wrapper_text.replace("require 'rubygems'", f"require 'rubygems'\n{gem_use_paths_line}", 1)
+            else:
+                wrapper_lines = wrapper_text.splitlines()
+                insert_at = 1 if wrapper_lines and wrapper_lines[0].startswith("#!") else 0
+                wrapper_lines[insert_at:insert_at] = [gem_use_paths_line, ""]
+                wrapper_text = "\n".join(wrapper_lines) + "\n"
+
+            wrapper_path.write_text(wrapper_text, encoding="utf-8")
 
     @remap_kwargs({'packages': 'install_args'})
     def default_install_handler(self, bin_name: str, install_args: Optional[InstallArgs] = None, **context) -> str:
@@ -88,12 +118,13 @@ class GemProvider(BinProvider):
         proc = self.exec(
             bin_name=self.INSTALLER_BIN_ABSPATH,
             cmd=["install", *self._gem_install_args(), *install_args],
+            env=self._gem_env(),
         )
         if proc.returncode != 0:
-            print(proc.stdout.strip())
-            print(proc.stderr.strip())
+            log_subprocess_error(logger, f"{self.__class__.__name__} install", proc.stdout, proc.stderr)
             raise Exception(f"{self.__class__.__name__}: install got returncode {proc.returncode} while installing {install_args}: {install_args}")
 
+        self._patch_generated_wrappers()
         return (proc.stderr.strip() + "\n" + proc.stdout.strip()).strip()
 
     @remap_kwargs({'packages': 'install_args'})
@@ -107,12 +138,13 @@ class GemProvider(BinProvider):
         proc = self.exec(
             bin_name=self.INSTALLER_BIN_ABSPATH,
             cmd=["update", *self._gem_install_args(), *install_args],
+            env=self._gem_env(),
         )
         if proc.returncode != 0:
-            print(proc.stdout.strip())
-            print(proc.stderr.strip())
+            log_subprocess_error(logger, f"{self.__class__.__name__} update", proc.stdout, proc.stderr)
             raise Exception(f"{self.__class__.__name__}: update got returncode {proc.returncode} while updating {install_args}: {install_args}")
 
+        self._patch_generated_wrappers()
         return (proc.stderr.strip() + "\n" + proc.stdout.strip()).strip()
 
     @remap_kwargs({'packages': 'install_args'})
@@ -124,10 +156,10 @@ class GemProvider(BinProvider):
         proc = self.exec(
             bin_name=self.INSTALLER_BIN_ABSPATH,
             cmd=["uninstall", "--all", "--executables", "--ignore-dependencies", "--force", *self._gem_scope_args(), *install_args],
+            env=self._gem_env(),
         )
-        if proc.returncode != 0:
-            print(proc.stdout.strip())
-            print(proc.stderr.strip())
+        if proc.returncode != 0 and "is not installed in GEM_HOME" not in proc.stderr:
+            log_subprocess_error(logger, f"{self.__class__.__name__} uninstall", proc.stdout, proc.stderr)
             raise Exception(f"{self.__class__.__name__}: uninstall got returncode {proc.returncode} while uninstalling {install_args}: {install_args}")
 
         bindir = self._bindir()

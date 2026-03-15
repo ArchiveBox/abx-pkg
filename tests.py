@@ -8,7 +8,8 @@ import tempfile
 import unittest
 import subprocess
 import contextlib
-from io import StringIO
+import time
+import logging
 from unittest import mock
 from pathlib import Path
 from typing import Optional
@@ -19,6 +20,7 @@ from abx_pkg import (
     BinProvider, EnvProvider, Binary, SemVer, BinProviderOverrides, InstallArgs,
     PipProvider, NpmProvider, AptProvider, BrewProvider, CargoProvider,
     GemProvider, GoGetProvider, NixProvider, DockerProvider,
+    configure_logging, get_logger,
 )
 from abx_pkg.binprovider import remap_kwargs
 from abx_pkg.binprovider_ansible import AnsibleProvider
@@ -26,6 +28,34 @@ from abx_pkg.binprovider_pyinfra import PyinfraProvider
 
 REAL_OS_STAT = os.stat
 LIVE_PKG_TESTS = os.environ.get('ABX_PKG_LIVE_PKG_TESTS') == '1'
+
+
+class ListHandler(logging.Handler):
+    def __init__(self):
+        super().__init__()
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.records.append(record)
+
+
+@contextlib.contextmanager
+def capture_abx_logs(level: int | str):
+    package_logger = get_logger()
+    handler = ListHandler()
+    original_handlers = list(package_logger.handlers)
+    original_level = package_logger.level
+    original_propagate = package_logger.propagate
+
+    configure_logging(level=level, handler=handler, replace_handlers=True, propagate=False)
+
+    try:
+        yield handler.records
+    finally:
+        package_logger.handlers.clear()
+        package_logger.handlers.extend(original_handlers)
+        package_logger.setLevel(original_level)
+        package_logger.propagate = original_propagate
 
 
 def stat_with_uid(path, uid):
@@ -69,6 +99,56 @@ class TestSemVer(unittest.TestCase):
         self.assertEqual(SemVer.parse('Google Chrome 124.0.6367.208+beta_234. 234.234.123\n123.456.324'), (124, 0, 6367))
         self.assertEqual(getattr(SemVer.parse('Google Chrome 124.0.6367.208+beta_234. 234.234.123\n123.456.324'), 'full_text'), 'Google Chrome 124.0.6367.208+beta_234. 234.234.123')
         self.assertEqual(SemVer.parse('Google Chrome'), None)
+
+
+class TestLogging(unittest.TestCase):
+
+    def test_configure_logging_accepts_string_level(self):
+        with capture_abx_logs('INFO') as records:
+            logger = get_logger()
+            logger.info('hello from tests')
+
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0].levelno, logging.INFO)
+        self.assertEqual(records[0].getMessage(), 'hello from tests')
+
+    def test_debug_logging_emits_method_calls(self):
+        binary = Binary(name='python', binproviders=[EnvProvider()])
+
+        with capture_abx_logs(logging.DEBUG) as records:
+            binary.load()
+
+        messages = [record.getMessage() for record in records]
+        self.assertTrue(any('Calling Binary.load(' in message for message in messages))
+        self.assertTrue(any('Calling BinProvider.load(' in message for message in messages))
+
+    def test_info_logging_emits_lifecycle_messages_without_debug_calls(self):
+        binary = Binary(name='python', binproviders=[EnvProvider()])
+
+        with capture_abx_logs(logging.INFO) as records:
+            binary.load()
+
+        messages = [record.getMessage() for record in records]
+        self.assertTrue(any('Loading binary python' in message for message in messages))
+        self.assertTrue(any('Loaded binary python via provider env' in message for message in messages))
+        self.assertFalse(any(message.startswith('Calling ') for message in messages))
+
+    def test_warning_logging_emits_failures(self):
+        class BrokenProvider(BinProvider):
+            name: str = 'broken'
+
+            def default_install_handler(self, bin_name: str, install_args: Optional[InstallArgs] = None, **context) -> str:
+                raise RuntimeError('boom')
+
+        binary = Binary(name='missing-bin', binproviders=[BrokenProvider()])
+
+        with capture_abx_logs(logging.WARNING) as records:
+            with self.assertRaises(Exception):
+                binary.install()
+
+        messages = [record.getMessage() for record in records]
+        self.assertTrue(any('Install failed for missing-bin via provider broken: boom' in message for message in messages))
+        self.assertFalse(any(record.levelno < logging.WARNING for record in records))
 
 
 class TestBinProvider(unittest.TestCase):
@@ -460,7 +540,7 @@ class TestBinary(unittest.TestCase):
             expected_commands=[
                 ['install', '--install-dir', '/tmp/gem-home', '--bindir', '/tmp/gem-home/bin', '--no-document', 'rake'],
                 ['update', '--install-dir', '/tmp/gem-home', '--bindir', '/tmp/gem-home/bin', '--no-document', 'rake'],
-                ['uninstall', '--all', '--executables', '--ignore-dependencies', '--force', '--install-dir', '/tmp/gem-home', '--bindir', '/tmp/gem-home/bin', 'rake'],
+                ['uninstall', '--all', '--executables', '--ignore-dependencies', '--force', '-i', '/tmp/gem-home', 'rake'],
             ],
         )
 
@@ -706,10 +786,8 @@ class TestUpdateAndUninstall(unittest.TestCase):
                 '--executables',
                 '--ignore-dependencies',
                 '--force',
-                '--install-dir',
+                '-i',
                 '/tmp/gem-home',
-                '--bindir',
-                '/tmp/gem-home/bin',
                 'lolcat',
             ],
         )
@@ -952,6 +1030,13 @@ def docker_daemon_is_available() -> bool:
     return subprocess.run([docker, 'info'], capture_output=True, text=True).returncode == 0
 
 
+def gem_package_is_installed(package: str) -> bool:
+    gem = shutil.which('gem')
+    if not gem:
+        return False
+    return bool(subprocess.run([gem, 'list', f'^{package}$', '-a'], capture_output=True, text=True).stdout.strip())
+
+
 class LiveUpdateAndUninstallTest(unittest.TestCase):
 
     @classmethod
@@ -984,54 +1069,128 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
         with self.assertRaises(Exception):
             binary.load(nocache=True)
 
+    def run_lifecycle_phase(self, binary: Binary, phase: str, func, details: str = ""):
+        provider_name = binary.binproviders_supported[0].name
+        prefix = f"[live:{provider_name}:{binary.name}] {phase}"
+        if details:
+            prefix = f"{prefix} {details}"
+
+        print(f"{prefix} START", file=sys.stderr, flush=True)
+        started = time.perf_counter()
+        try:
+            result = func()
+        except Exception as err:
+            elapsed = time.perf_counter() - started
+            print(f"{prefix} FAIL {elapsed:.2f}s {err}", file=sys.stderr, flush=True)
+            raise
+
+        elapsed = time.perf_counter() - started
+        print(f"{prefix} OK {elapsed:.2f}s", file=sys.stderr, flush=True)
+        return result
+
     def assert_binary_lifecycle(self, binary: Binary, version_args=('--version',), override_binary: Binary | None = None, override_version_args=('--version',)):
         base_provider = binary.binproviders_supported[0]
         binaries_to_cleanup = [binary, *( [override_binary] if override_binary else [] )]
 
         try:
-            self.assert_binary_missing(binary)
-            self.assertTrue(binary.get_binprovider(base_provider.name).get_install_args(binary.name))
+            self.run_lifecycle_phase(binary, 'load-missing', lambda: self.assert_binary_missing(binary))
+            self.run_lifecycle_phase(
+                binary,
+                'get-install-args',
+                lambda: self.assertTrue(binary.get_binprovider(base_provider.name).get_install_args(binary.name)),
+            )
 
-            loaded_or_installed = binary.load_or_install(nocache=True)
-            self.assert_binary_loaded_state(loaded_or_installed, version_args=version_args)
+            loaded_or_installed = self.run_lifecycle_phase(
+                binary,
+                'load-or-install',
+                lambda: binary.load_or_install(nocache=True),
+                details=f"install_args={base_provider.get_install_args(binary.name)}",
+            )
+            self.run_lifecycle_phase(binary, 'verify-load-or-install', lambda: self.assert_binary_loaded_state(loaded_or_installed, version_args=version_args))
 
-            loaded = binary.load(nocache=True)
-            self.assert_binary_loaded_state(loaded, version_args=version_args)
+            loaded = self.run_lifecycle_phase(binary, 'load', lambda: binary.load(nocache=True))
+            self.run_lifecycle_phase(binary, 'verify-load', lambda: self.assert_binary_loaded_state(loaded, version_args=version_args))
 
-            updated = loaded_or_installed.update()
-            self.assert_binary_loaded_state(updated, version_args=version_args)
+            updated = self.run_lifecycle_phase(
+                binary,
+                'update',
+                lambda: loaded_or_installed.update(),
+                details=f"install_args={base_provider.get_install_args(binary.name)}",
+            )
+            self.run_lifecycle_phase(binary, 'verify-update', lambda: self.assert_binary_loaded_state(updated, version_args=version_args))
 
-            removed = updated.uninstall()
-            self.assert_binary_unloaded_state(removed)
-            self.assert_binary_missing(binary)
+            removed = self.run_lifecycle_phase(
+                binary,
+                'uninstall',
+                lambda: updated.uninstall(),
+                details=f"install_args={base_provider.get_install_args(binary.name)}",
+            )
+            self.run_lifecycle_phase(binary, 'verify-uninstall', lambda: self.assert_binary_unloaded_state(removed))
+            self.run_lifecycle_phase(binary, 'verify-missing-after-uninstall', lambda: self.assert_binary_missing(binary))
 
-            installed = binary.install()
-            self.assert_binary_loaded_state(installed, version_args=version_args)
-            removed_after_install = installed.uninstall()
-            self.assert_binary_unloaded_state(removed_after_install)
-            self.assert_binary_missing(binary)
+            installed = self.run_lifecycle_phase(
+                binary,
+                'install',
+                lambda: binary.install(),
+                details=f"install_args={base_provider.get_install_args(binary.name)}",
+            )
+            self.run_lifecycle_phase(binary, 'verify-install', lambda: self.assert_binary_loaded_state(installed, version_args=version_args))
+            removed_after_install = self.run_lifecycle_phase(
+                binary,
+                'uninstall-after-install',
+                lambda: installed.uninstall(),
+                details=f"install_args={base_provider.get_install_args(binary.name)}",
+            )
+            self.run_lifecycle_phase(binary, 'verify-uninstall-after-install', lambda: self.assert_binary_unloaded_state(removed_after_install))
+            self.run_lifecycle_phase(binary, 'verify-missing-after-install-cycle', lambda: self.assert_binary_missing(binary))
 
             if override_binary:
-                self.assert_binary_missing(override_binary)
                 override_provider = override_binary.get_binprovider(base_provider.name)
-                self.assertEqual(
-                    override_provider.get_install_args(override_binary.name),
-                    tuple(override_binary.overrides[base_provider.name]['install_args']),
+                override_install_args = tuple(override_binary.overrides[base_provider.name]['install_args'])
+
+                self.run_lifecycle_phase(override_binary, 'load-missing-override', lambda: self.assert_binary_missing(override_binary))
+                override_provider = override_binary.get_binprovider(base_provider.name)
+                self.run_lifecycle_phase(
+                    override_binary,
+                    'get-install-args-override',
+                    lambda: self.assertEqual(override_provider.get_install_args(override_binary.name), override_install_args),
                 )
 
-                override_installed = override_binary.install()
-                self.assert_binary_loaded_state(override_installed, version_args=override_version_args)
+                override_installed = self.run_lifecycle_phase(
+                    override_binary,
+                    'install-override',
+                    lambda: override_binary.install(),
+                    details=f"install_args={override_install_args}",
+                )
+                self.run_lifecycle_phase(override_binary, 'verify-install-override', lambda: self.assert_binary_loaded_state(override_installed, version_args=override_version_args))
 
-                override_updated = override_installed.update()
-                self.assert_binary_loaded_state(override_updated, version_args=override_version_args)
+                override_updated = self.run_lifecycle_phase(
+                    override_binary,
+                    'update-override',
+                    lambda: override_installed.update(),
+                    details=f"install_args={override_install_args}",
+                )
+                self.run_lifecycle_phase(override_binary, 'verify-update-override', lambda: self.assert_binary_loaded_state(override_updated, version_args=override_version_args))
 
-                override_removed = override_updated.uninstall()
-                self.assert_binary_unloaded_state(override_removed)
-                self.assert_binary_missing(override_binary)
+                override_removed = self.run_lifecycle_phase(
+                    override_binary,
+                    'uninstall-override',
+                    lambda: override_updated.uninstall(),
+                    details=f"install_args={override_install_args}",
+                )
+                self.run_lifecycle_phase(override_binary, 'verify-uninstall-override', lambda: self.assert_binary_unloaded_state(override_removed))
+                self.run_lifecycle_phase(override_binary, 'verify-missing-after-uninstall-override', lambda: self.assert_binary_missing(override_binary))
         finally:
             for candidate in binaries_to_cleanup:
                 provider = candidate.get_binprovider(candidate.binproviders_supported[0].name)
-                provider.uninstall(candidate.name, quiet=True, nocache=True)
+                try:
+                    provider.uninstall(candidate.name, quiet=True, nocache=True)
+                except Exception as err:
+                    print(
+                        f"[live:{provider.name}:{candidate.name}] cleanup-ignore {err}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
 
     def make_override_binary(self, binary: Binary, install_args: list[str]) -> Binary:
         provider_name = binary.binproviders_supported[0].name
@@ -1067,6 +1226,13 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             return package
         raise unittest.SkipTest('No safe missing apt package candidates were available for a live lifecycle test')
 
+    def pick_missing_gem_package(self) -> str:
+        for package in ('lolcat', 'cowsay'):
+            if gem_package_is_installed(package):
+                continue
+            return package
+        raise unittest.SkipTest('No safe missing gem package candidates were available for a live lifecycle test')
+
     def test_pip_provider_live_update_and_uninstall(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = PipProvider(pip_venv=Path(temp_dir) / 'venv')
@@ -1095,8 +1261,9 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = GemProvider(gem_home=Path(temp_dir) / 'gem-home', gem_bindir=Path(temp_dir) / 'gem-home/bin')
-            binary = Binary(name='rake', binproviders=[provider])
-            self.assert_binary_lifecycle(binary, override_binary=self.make_override_binary(binary, ['rake']))
+            gem_package = self.pick_missing_gem_package()
+            binary = Binary(name=gem_package, binproviders=[provider])
+            self.assert_binary_lifecycle(binary, override_binary=self.make_override_binary(binary, [gem_package]))
 
     def test_go_get_provider_live_update_and_uninstall(self):
         if not shutil.which('go'):
@@ -1257,13 +1424,14 @@ class InstallTest(unittest.TestCase):
         pipprovider.install(bin_name='doesnotexist')
         mock_run.assert_not_called()
         
-    @mock.patch("sys.stderr", new_callable=StringIO)
-    def test_dry_run_prints_stderr(self, mock_stderr):
+    def test_dry_run_logs_info(self):
         pipprovider = PipProvider()
         binary = Binary(name='doesnotexist', binproviders=[pipprovider])
-        binary.install(dry_run=True)
-            
-        self.assertIn('DRY RUN', mock_stderr.getvalue())
+        with capture_abx_logs(logging.INFO) as records:
+            binary.install(dry_run=True)
+
+        messages = [record.getMessage() for record in records]
+        self.assertTrue(any('Dry run command via provider pip:' in message for message in messages))
 
     def test_brew_provider(self):
         # print(provider.PATH)

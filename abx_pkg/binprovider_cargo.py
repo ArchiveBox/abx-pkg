@@ -11,6 +11,9 @@ from typing_extensions import Self
 
 from .base_types import BinProviderName, PATHStr, BinName, InstallArgs
 from .binprovider import BinProvider, remap_kwargs
+from .logging import get_logger, log_subprocess_error
+
+logger = get_logger(__name__)
 
 
 DEFAULT_CARGO_HOME = Path(os.environ.get("CARGO_HOME", "~/.cargo")).expanduser()
@@ -62,12 +65,17 @@ class CargoProvider(BinProvider):
 
     def setup(self) -> None:
         self.cargo_home.mkdir(parents=True, exist_ok=True)
+        self._cargo_target_dir().mkdir(parents=True, exist_ok=True)
         if self.cargo_root:
             (self.cargo_root / "bin").mkdir(parents=True, exist_ok=True)
+
+    def _cargo_target_dir(self) -> Path:
+        return (self.cargo_root or self.cargo_home) / "target"
 
     def _cargo_env(self) -> dict[str, str]:
         env = os.environ.copy()
         env["CARGO_HOME"] = str(self.cargo_home)
+        env["CARGO_TARGET_DIR"] = str(self._cargo_target_dir())
         if self.cargo_root:
             env["CARGO_INSTALL_ROOT"] = str(self.cargo_root)
         return env
@@ -92,8 +100,7 @@ class CargoProvider(BinProvider):
             env=self._cargo_env(),
         )
         if proc.returncode != 0:
-            print(proc.stdout.strip())
-            print(proc.stderr.strip())
+            log_subprocess_error(logger, f"{self.__class__.__name__} install", proc.stdout, proc.stderr)
             raise Exception(f"{self.__class__.__name__}: install got returncode {proc.returncode} while installing {install_args}: {install_args}")
 
         return (proc.stderr.strip() + "\n" + proc.stdout.strip()).strip()
@@ -112,8 +119,7 @@ class CargoProvider(BinProvider):
             env=self._cargo_env(),
         )
         if proc.returncode != 0:
-            print(proc.stdout.strip())
-            print(proc.stderr.strip())
+            log_subprocess_error(logger, f"{self.__class__.__name__} update", proc.stdout, proc.stderr)
             raise Exception(f"{self.__class__.__name__}: update got returncode {proc.returncode} while updating {install_args}: {install_args}")
 
         return (proc.stderr.strip() + "\n" + proc.stdout.strip()).strip()
@@ -129,9 +135,8 @@ class CargoProvider(BinProvider):
             cmd=["uninstall", *self._cargo_install_args(), *install_args],
             env=self._cargo_env(),
         )
-        if proc.returncode != 0:
-            print(proc.stdout.strip())
-            print(proc.stderr.strip())
+        if proc.returncode != 0 and "did not match any packages" not in proc.stderr:
+            log_subprocess_error(logger, f"{self.__class__.__name__} uninstall", proc.stdout, proc.stderr)
             raise Exception(f"{self.__class__.__name__}: uninstall got returncode {proc.returncode} while uninstalling {install_args}: {install_args}")
 
         return True

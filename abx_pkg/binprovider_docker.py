@@ -13,6 +13,9 @@ from typing_extensions import Self
 from .base_types import BinProviderName, PATHStr, BinName, InstallArgs, HostBinPath
 from .semver import SemVer
 from .binprovider import BinProvider, remap_kwargs
+from .logging import get_logger, log_subprocess_error
+
+logger = get_logger(__name__)
 
 
 DEFAULT_DOCKER_ROOT = Path(os.environ.get("ABX_PKG_DOCKER_ROOT", "~/.cache/abx-pkg/docker")).expanduser()
@@ -117,8 +120,7 @@ class DockerProvider(BinProvider):
         for image_ref in install_args:
             proc = self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=["pull", image_ref])
             if proc.returncode != 0:
-                print(proc.stdout.strip())
-                print(proc.stderr.strip())
+                log_subprocess_error(logger, f"{self.__class__.__name__} install", proc.stdout, proc.stderr)
                 raise Exception(f"{self.__class__.__name__}: install got returncode {proc.returncode} while pulling {image_ref}")
             logs.append((proc.stderr.strip() + "\n" + proc.stdout.strip()).strip())
 
@@ -146,8 +148,7 @@ class DockerProvider(BinProvider):
         for image_ref in install_args:
             proc = self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=["image", "rm", "--force", image_ref], quiet=True)
             if proc.returncode != 0 and image_ref == main_image:
-                print(proc.stdout.strip())
-                print(proc.stderr.strip())
+                log_subprocess_error(logger, f"{self.__class__.__name__} uninstall", proc.stdout, proc.stderr)
                 raise Exception(f"{self.__class__.__name__}: uninstall got returncode {proc.returncode} while removing {image_ref}")
 
         return True
