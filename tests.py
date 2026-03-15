@@ -20,6 +20,7 @@ from abx_pkg.binprovider_ansible import AnsibleProvider
 from abx_pkg.binprovider_pyinfra import PyinfraProvider
 
 REAL_OS_STAT = os.stat
+LIVE_PKG_TESTS = os.environ.get('ABX_PKG_LIVE_PKG_TESTS') == '1'
 
 
 def stat_with_uid(path, uid):
@@ -541,6 +542,137 @@ class TestUpdateAndUninstall(unittest.TestCase):
 
 def flatten(xss):
     return [x for xs in xss for x in xs]
+
+
+def brew_formula_is_installed(package: str) -> bool:
+    brew = shutil.which('brew')
+    if not brew:
+        return False
+    return subprocess.run([brew, 'list', '--formula', package], capture_output=True, text=True).returncode == 0
+
+
+def apt_package_is_installed(package: str) -> bool:
+    dpkg = shutil.which('dpkg')
+    if not dpkg:
+        return False
+    return subprocess.run([dpkg, '-s', package], capture_output=True, text=True).returncode == 0
+
+
+class LiveUpdateAndUninstallTest(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        if not LIVE_PKG_TESTS:
+            raise unittest.SkipTest('Set ABX_PKG_LIVE_PKG_TESTS=1 to run destructive live package-manager tests')
+
+    def assert_binary_lifecycle(self, binary: Binary):
+        provider = binary.binproviders_supported[0]
+        self.assertIsNone(provider.load(binary.name, quiet=True, nocache=True))
+
+        try:
+            binary = binary.install()
+            self.assertTrue(binary.is_valid)
+            self.assertEqual(binary.loaded_binprovider, provider)
+            self.assertIsNotNone(binary.loaded_abspath)
+            self.assertIsNotNone(binary.loaded_version)
+
+            updated_binary = binary.update()
+            self.assertTrue(updated_binary.is_valid)
+            self.assertEqual(updated_binary.loaded_binprovider, provider)
+            self.assertIsNotNone(updated_binary.loaded_abspath)
+            self.assertIsNotNone(updated_binary.loaded_version)
+
+            removed_binary = updated_binary.uninstall()
+            self.assertFalse(removed_binary.is_valid)
+            self.assertIsNone(removed_binary.loaded_binprovider)
+            self.assertIsNone(removed_binary.loaded_abspath)
+            self.assertIsNone(removed_binary.loaded_version)
+            self.assertIsNone(removed_binary.loaded_sha256)
+        finally:
+            provider.uninstall(binary.name, quiet=True, nocache=True)
+
+        self.assertIsNone(provider.load(binary.name, quiet=True, nocache=True))
+
+    def pick_missing_brew_formula(self) -> str:
+        provider = BrewProvider()
+        for formula in ('fzy', 'entr', 'renameutils', 'watch', 'hello'):
+            if brew_formula_is_installed(formula):
+                continue
+            if provider.load(formula, quiet=True, nocache=True) is not None:
+                continue
+            return formula
+        raise unittest.SkipTest('No safe missing brew formula candidates were available for a live lifecycle test')
+
+    def pick_missing_apt_package(self) -> str:
+        provider = AptProvider()
+        for package in ('tree', 'jq', 'whois', 'rename', 'mlocate'):
+            if apt_package_is_installed(package):
+                continue
+            if provider.load(package, quiet=True, nocache=True) is not None:
+                continue
+            return package
+        raise unittest.SkipTest('No safe missing apt package candidates were available for a live lifecycle test')
+
+    def test_pip_provider_live_update_and_uninstall(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            provider = PipProvider(pip_venv=Path(temp_dir) / 'venv')
+            binary = Binary(name='black', binproviders=[provider])
+            self.assert_binary_lifecycle(binary)
+
+    def test_npm_provider_live_update_and_uninstall(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            provider = NpmProvider(npm_prefix=Path(temp_dir) / 'npm')
+            binary = Binary(name='esbuild', binproviders=[provider])
+            self.assert_binary_lifecycle(binary)
+
+    def test_brew_provider_live_update_and_uninstall(self):
+        if not shutil.which('brew'):
+            raise unittest.SkipTest('brew is not available on this host')
+
+        provider = BrewProvider()
+        binary = Binary(name=self.pick_missing_brew_formula(), binproviders=[provider])
+        self.assert_binary_lifecycle(binary)
+
+    def test_pyinfra_provider_live_update_and_uninstall(self):
+        if not shutil.which('pyinfra'):
+            raise unittest.SkipTest('pyinfra is not available on this host')
+
+        if 'linux' in sys.platform and shutil.which('apt-get'):
+            provider = PyinfraProvider(pyinfra_installer_module='operations.apt.packages')
+            binary = Binary(name=self.pick_missing_apt_package(), binproviders=[provider])
+        elif shutil.which('brew'):
+            provider = PyinfraProvider(pyinfra_installer_module='operations.brew.packages')
+            binary = Binary(name=self.pick_missing_brew_formula(), binproviders=[provider])
+        else:
+            raise unittest.SkipTest('Neither apt nor brew is available on this host')
+
+        self.assert_binary_lifecycle(binary)
+
+    def test_ansible_provider_live_update_and_uninstall(self):
+        if not shutil.which('ansible'):
+            raise unittest.SkipTest('ansible is not available on this host')
+
+        if 'linux' in sys.platform and shutil.which('apt-get'):
+            provider = AnsibleProvider(ansible_installer_module='ansible.builtin.apt')
+            binary = Binary(name=self.pick_missing_apt_package(), binproviders=[provider])
+        elif shutil.which('brew'):
+            provider = AnsibleProvider(ansible_installer_module='community.general.homebrew')
+            binary = Binary(name=self.pick_missing_brew_formula(), binproviders=[provider])
+        else:
+            raise unittest.SkipTest('Neither apt nor brew is available on this host')
+
+        self.assert_binary_lifecycle(binary)
+
+    def test_apt_provider_live_update_and_uninstall(self):
+        if 'linux' not in sys.platform:
+            raise unittest.SkipTest('apt live lifecycle tests only run on Linux hosts')
+        if not shutil.which('apt-get'):
+            raise unittest.SkipTest('apt-get is not available on this host')
+
+        provider = AptProvider()
+        binary = Binary(name=self.pick_missing_apt_package(), binproviders=[provider])
+        self.assert_binary_lifecycle(binary)
+
 
 class InstallTest(unittest.TestCase):
 

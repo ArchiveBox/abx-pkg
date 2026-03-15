@@ -102,7 +102,7 @@ print(ffmpeg.model_json_schema())   # ... OpenAPI-ready JSON schema showing all 
 
 ### Supported Package Managers
 
-**So far it supports `installing`/`finding installed`/~~`updating`/`removing`~~ packages on `Linux`/`macOS` with:**
+**So far it supports `installing`/`finding installed`/`updating`/`removing` packages on `Linux`/`macOS` with:**
 
 - `apt` (Ubuntu/Debian/etc.)
 - `brew` (macOS/Linux)
@@ -133,12 +133,17 @@ This type represents a "provider of binaries", e.g. a package manager like `apt`
 * `.PATH -> PATHStr('/opt/homebrew/bin:/usr/local/bin:...')`  where provider stores bins
 * `get_packages(bin_name: str) -> InstallArgs(['curl', 'libcurl4', '...])` find pkg dependencies for a bin
 - `install(bin_name: str)` install a bin using binprovider to install needed packages
+- `update(bin_name: str)` update a bin using the binprovider's package manager
+- `uninstall(bin_name: str)` remove a bin using the binprovider's package manager
 - `load(bin_name: str)`  find an existing installed binary
 - `load_or_install(bin_name: str)` `->` `Binary` find existing / install if needed
 - `get_version(bin_name: str) -> SemVer('1.0.0')`  get currently installed version
 - `get_abspath(bin_name: str) -> Path('/absolute/path/to/bin')` get installed bin abspath
 * `get_abspaths(bin_name: str) -> [Path('/opt/homebrew/bin/curl'), Path('/other/paths/to/curl'), ...]` get all matching bins found
 * `get_sha256(bin_name: str) -> str` get sha256 hash hexdigest of the binary
+
+`install()` and `update()` return a loaded binary with fresh `abspath` / `version` / `sha256` metadata.
+`uninstall()` removes the package and returns `True` when the provider action succeeded.
 
 
 ```python
@@ -161,6 +166,11 @@ print(curl.version)                   # SemVer('8.4.0')
 print(curl.sha256)                    # 9fd780521c97365f94c90724d80a889097ae1eeb2ffce67b87869cb7e79688ec
 curl.exec(['--version'])              # curl 7.81.0 (x86_64-pc-linux-gnu) libcurl/7.81.0 ...
 
+# Example: Updating and removing curl with the same provider
+curl = apt.update(bin_name='curl')
+assert curl.is_valid
+assert apt.uninstall(bin_name='curl') is True
+
 ### Example: Finding/Installing django with pip (w/ customized binpath resolution behavior)
 pip = PipProvider(
     abspath_handler={'*': lambda self, bin_name, **context: inspect.getfile(bin_name)},  # use python inspect to get path instead of os.which
@@ -176,12 +186,15 @@ This type represents a single binary dependency aka a package (e.g. `wget`, `cur
 It can define one or more `BinProvider`s that it supports, along with overrides to customize the behavior for each.
 
 `Binary`s implement the following interface:
-- `load()`, `install()`, `load_or_install()` `->` `Binary`
+- `load()`, `install()`, `update()`, `uninstall()`, `load_or_install()` `->` `Binary`
 - `binprovider: InstanceOf[BinProvider]`
 - `abspath: Path`
 - `abspaths: list[Path]`
 - `version: SemVer`
 - `sha256: str`
+
+`Binary.install()` and `Binary.update()` return a fresh loaded `Binary`.
+`Binary.uninstall()` returns a `Binary` with `binprovider`, `abspath`, `version`, and `sha256` cleared after removal.
 
 ```python
 from abx_pkg import BinProvider, Binary, BinProviderName, BinName, ProviderLookupDict, SemVer
@@ -216,6 +229,12 @@ print(ytdlp.abspaths)                     # [Path('/opt/homebrew/bin/yt-dlp'), P
 print(ytdlp.version)                      # SemVer('2024.4.9')
 print(ytdlp.sha256)                       # 46c3518cfa788090c42e379971485f56d007a6ce366dafb0556134ca724d6a36
 print(ytdlp.is_valid)                     # True
+
+# Lifecycle actions preserve the Binary type and refresh/clear loaded metadata as needed
+ytdlp = ytdlp.update()
+assert ytdlp.is_valid
+ytdlp = ytdlp.uninstall()
+assert ytdlp.abspath is None and ytdlp.version is None
 ```
 
 ```python
@@ -503,7 +522,6 @@ print(rg.version)                       # SemVer(14, 1, 0)
 
 - [x] Implement initial basic support for `apt`, `brew`, and `pip`
 - [x] Provide editability and actions via Django Admin UI using [`django-pydantic-field`](https://github.com/surenkov/django-pydantic-field) and [`django-jsonform`](https://django-jsonform.readthedocs.io/en/latest/)
-- [ ] Implement `update` and `remove` actions on BinProviders
 - [ ] Add `preinstall` and `postinstall` hooks for things like adding `apt` sources and running cleanup scripts
 - [ ] Implement more package managers (`cargo`, `gem`, `go get`, `ppm`, `nix`, `docker`, etc.)
 
