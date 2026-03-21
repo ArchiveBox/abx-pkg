@@ -1,10 +1,8 @@
 [project]
 name = "abx-pkg"
-version = "1.9.13"
+version = "1.9.14"
 description = "System package manager interfaces with Python type hints"
-authors = [
-    {name = "Nick Sweeting", email = "abx-pkg-pyproject-toml@sweeting.me"},
-]
+authors = [{name = "Nick Sweeting"}, {name = "ArchiveBox"}]
 requires-python = ">=3.11"
 license = {text = "MIT"}
 readme = "README.md"
@@ -14,6 +12,13 @@ keywords = [
     "apt",
     "brew",
     "pip",
+    "nix",
+    "cargo",
+    "gem",
+    "docker",
+    "pyinfra",
+    "ansible",
+    "devops",
     "system",
     "dependencies",
 ]
@@ -79,9 +84,9 @@ dev = [
 
 [tool.mypy]
 mypy_path = "abx_pkg"
-python_version = "3.10"
-warn_return_any = "True"
-warn_unused_configs = "True"
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
 plugins = [
     "mypy_django_plugin.main",
 ]
