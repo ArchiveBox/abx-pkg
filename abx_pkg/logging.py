@@ -1,6 +1,7 @@
 __package__ = "abx_pkg"
 
 import functools
+import importlib.util
 import logging as py_logging
 import shlex
 from contextvars import ContextVar
@@ -12,15 +13,10 @@ from typing_extensions import ParamSpec, TypeVar
 
 LOGGER_NAME = "abx_pkg"
 DEFAULT_LOG_FORMAT = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
-RICH_INSTALLED = False
+RICH_INSTALLED = importlib.util.find_spec("rich") is not None
 
 if TYPE_CHECKING:
     from rich.console import Console
-
-try:
-    RICH_INSTALLED = True
-except ImportError:
-    pass
 
 logger = py_logging.getLogger(LOGGER_NAME)
 if not any(isinstance(handler, py_logging.NullHandler) for handler in logger.handlers):
