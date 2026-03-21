@@ -11,7 +11,38 @@ permissions:
   contents: read
 
 jobs:
+  precheck:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        enable-cache: true
+        cache-dependency-glob: "uv.lock"
+
+    - name: Setup venv and install pip dependencies
+      run: |
+        uv venv --python "3.12" \
+        && uv sync --all-extras \
+        && uv pip install pip \
+        && echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH" \
+        && if [ -d /nix/var/nix/profiles/default/bin ]; then echo "/nix/var/nix/profiles/default/bin" >> "$GITHUB_PATH"; fi
+
+    - name: Run pre-commit checks
+      run: |
+        source .venv/bin/activate \
+        && prek run --all-files
+
   build:
+    needs: precheck
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: true
