@@ -10,25 +10,26 @@ def patch_schema_for_jsonform(schema):
     """recursively patch a schema dictionary in-place to fix any missing properties/keys on objects"""
 
     # base case: schema is type: "object" with no properties/keys
-    if schema.get('type') == 'object' and not ('properties' in schema or 'keys' in schema):
-        if 'default' in schema and isinstance(schema['default'], dict):
-            schema['properties'] = {
+    if schema.get("type") == "object" and not (
+        "properties" in schema or "keys" in schema
+    ):
+        if "default" in schema and isinstance(schema["default"], dict):
+            schema["properties"] = {
                 key: {"type": "string", "default": value}
-                for key, value in schema['default'].items()
+                for key, value in schema["default"].items()
             }
         else:
-            schema['properties'] = {}
-    elif schema.get('type') == 'array' and not ('items' in schema):
-        if 'default' in schema and isinstance(schema['default'], (tuple, list)):
-            schema['items'] = {'type': 'string', 'default': schema['default']}
+            schema["properties"] = {}
+    elif schema.get("type") == "array" and "items" not in schema:
+        if "default" in schema and isinstance(schema["default"], (tuple, list)):
+            schema["items"] = {"type": "string", "default": schema["default"]}
         else:
-            schema['items'] = {'type': 'string', 'default': []}
+            schema["items"] = {"type": "string", "default": []}
 
     # recursive case: iterate through all values and process any sub-objects
     for key, value in schema.items():
         if isinstance(value, dict):
             patch_schema_for_jsonform(value)
-
 
 
 class PatchedJSONFormWidget(JSONFormWidget):
@@ -38,8 +39,8 @@ class PatchedJSONFormWidget(JSONFormWidget):
         return self.schema
 
 
-
 class DependencyAdmin(admin.ModelAdmin):
     formfield_overrides = {PydanticSchemaField: {"widget": PatchedJSONFormWidget}}
+
 
 admin.site.register(Dependency, DependencyAdmin)

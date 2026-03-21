@@ -15,7 +15,13 @@ from .base_types import (
 )
 from .semver import SemVer, bin_version
 from .shallowbinary import ShallowBinary
-from .logging import logger, get_logger, configure_logging, configure_rich_logging, RICH_INSTALLED
+from .logging import (
+    logger,
+    get_logger,
+    configure_logging,
+    configure_rich_logging,
+    RICH_INSTALLED,
+)
 from .exceptions import (
     ABXPkgError,
     BinaryOperationError,
@@ -68,16 +74,20 @@ ALL_PROVIDERS = [
     AnsibleProvider,
     PyinfraProvider,
 ]
-ALL_PROVIDER_NAMES = [provider.model_fields['name'].default for provider in ALL_PROVIDERS]  # pip, apt, brew, etc.
-ALL_PROVIDER_CLASS_NAMES = [provider.__name__ for provider in ALL_PROVIDERS]                 # PipProvider, AptProvider, BrewProvider, etc.
+ALL_PROVIDER_NAMES = [
+    provider.model_fields["name"].default for provider in ALL_PROVIDERS
+]  # pip, apt, brew, etc.
+ALL_PROVIDER_CLASS_NAMES = [
+    provider.__name__ for provider in ALL_PROVIDERS
+]  # PipProvider, AptProvider, BrewProvider, etc.
 
 # Lazy provider singletons: maps provider name -> class
 # e.g. 'apt' -> AptProvider, 'pip' -> PipProvider, 'env' -> EnvProvider
 _PROVIDER_CLASS_BY_NAME = {
-    provider.model_fields['name'].default: provider
-    for provider in ALL_PROVIDERS
+    provider.model_fields["name"].default: provider for provider in ALL_PROVIDERS
 }
 _provider_singletons: dict = {}
+
 
 def __getattr__(name: str):
     if name in _PROVIDER_CLASS_BY_NAME:
@@ -96,10 +106,16 @@ __all__ = [
     "logger",
     "get_logger",
     "configure_logging",
-
     "configure_rich_logging",
     "RICH_INSTALLED",
-    
+    # Exceptions
+    "ABXPkgError",
+    "BinaryOperationError",
+    "BinaryInstallError",
+    "BinaryLoadError",
+    "BinaryLoadOrInstallError",
+    "BinaryUpdateError",
+    "BinaryUninstallError",
     # Helper Types
     "BinName",
     "InstallArgs",
@@ -108,7 +124,6 @@ __all__ = [
     "HostBinPath",
     "HostExistsPath",
     "BinProviderName",
-
     # Override types
     "BinProviderOverrides",
     "BinaryOverrides",
@@ -117,23 +132,19 @@ __all__ = [
     "HandlerValue",
     "HandlerDict",
     "HandlerReturnValue",
-
     # Validator Functions
     "bin_version",
     "bin_name",
     "bin_abspath",
     "bin_abspaths",
     "func_takes_args_or_kwargs",
-
     # Globals
     "OPERATING_SYSTEM",
     "DEFAULT_PATH",
     "DEFAULT_ENV_PATH",
     "PYTHON_BIN_DIR",
-
     # BinProviders (classes)
     *ALL_PROVIDER_CLASS_NAMES,
-
     # Note: provider singleton names (apt, pip, brew, etc.) are intentionally
     # excluded from __all__ so that `from abx_pkg import *` does not eagerly
     # instantiate every provider. Use explicit imports instead:

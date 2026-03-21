@@ -74,7 +74,7 @@ print(apt.PATH, apt.get_abspaths('wget'), apt.get_version('wget'))
 # our Binary API provides a nice type-checkable, validated, serializable handle
 ffmpeg = Binary(name='ffmpeg').load()
 print(ffmpeg)                       # name=ffmpeg abspath=/usr/bin/ffmpeg version=3.3.0 is_valid=True binprovider=apt ...
-print(ffmpeg.abspaths)              # show all the ffmpeg binaries found in $PATH (in case theres more than one available)
+print(ffmpeg.abspaths)              # show all the ffmpeg binaries found in $PATH (in case there's more than one available)
 print(ffmpeg.model_dump())          # ... everything can also be dumped/loaded as json-ready dict
 print(ffmpeg.model_json_schema())   # ... OpenAPI-ready JSON schema showing all available fields
 ```
@@ -226,7 +226,7 @@ class CustomBrewProvider(BrewProvider):
         return extra_packages_lookup_table.get(platform.machine(), [bin_name])
 
 
-### Example: Create a re-usable class defining a binary and its providers
+### Example: Create a reusable class defining a binary and its providers
 class YtdlpBinary(Binary):
     name: BinName = 'ytdlp'
     description: str = 'YT-DLP (Replacement for YouTube-DL) Media Downloader'

@@ -1,6 +1,6 @@
 [project]
 name = "abx-pkg"
-version = "1.9.12"
+version = "1.9.13"
 description = "System package manager interfaces with Python type hints"
 authors = [
     {name = "Nick Sweeting", email = "abx-pkg-pyproject-toml@sweeting.me"},
@@ -73,6 +73,8 @@ dev = [
     "pytest>=9.0.2",
     "rich>=14.0.0",
     "prek>=0.3.6",
+    "ruff>=0.15.7",
+    "ty>=0.0.24",
 ]
 
 [tool.mypy]

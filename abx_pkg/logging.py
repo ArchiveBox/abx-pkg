@@ -6,7 +6,8 @@ import shlex
 from contextvars import ContextVar
 
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 from typing_extensions import ParamSpec, TypeVar
 
@@ -93,7 +94,9 @@ def configure_rich_logging(
     highlighter: Any | None = None,
 ) -> py_logging.Logger:
     if RichHandler is None:
-        raise RuntimeError('rich is not installed, install "abx-pkg[rich]" to enable rich logging')
+        raise RuntimeError(
+            'rich is not installed, install "abx-pkg[rich]" to enable rich logging',
+        )
 
     handler = RichHandler(
         console=console,
@@ -104,7 +107,9 @@ def configure_rich_logging(
         show_path=show_path,
         omit_repeated_times=omit_repeated_times,
         keywords=keywords,
-        highlighter=highlighter if highlighter is not None else (ReprHighlighter() if ReprHighlighter is not None else None),
+        highlighter=highlighter
+        if highlighter is not None
+        else (ReprHighlighter() if ReprHighlighter is not None else None),
     )
     return configure_logging(
         level=level,
@@ -124,7 +129,12 @@ def format_provider(provider: Any) -> str:
     return f"{provider.__class__.__name__}()"
 
 
-def format_loaded_binary(action: str, abspath: Path | str, version: Any, provider: Any) -> str:
+def format_loaded_binary(
+    action: str,
+    abspath: Path | str,
+    version: Any,
+    provider: Any,
+) -> str:
     return f"{action} {abspath} v{version} via {format_provider(provider)}"
 
 
@@ -148,10 +158,15 @@ def summarize_value(value: Any, max_length: int = 200) -> str:
     elif isinstance(value, (str, int, float, bool, type(None))):
         rendered = repr(value)
     elif isinstance(value, dict):
-        items = ", ".join(f"{summarize_value(key, 40)}: {summarize_value(val, 60)}" for key, val in list(value.items())[:4])
+        items = ", ".join(
+            f"{summarize_value(key, 40)}: {summarize_value(val, 60)}"
+            for key, val in list(value.items())[:4]
+        )
         rendered = f"{{{items}}}"
     elif isinstance(value, (list, tuple, set, frozenset)):
-        rendered_items = ", ".join(summarize_value(item, 40) for item in list(value)[:4])
+        rendered_items = ", ".join(
+            summarize_value(item, 40) for item in list(value)[:4]
+        )
         rendered = f"{type(value).__name__}([{rendered_items}])"
     elif hasattr(value, "name"):
         rendered = format_named_value(value)
@@ -165,11 +180,16 @@ def summarize_value(value: Any, max_length: int = 200) -> str:
 
 def _format_method_call(args: tuple[Any, ...], kwargs: dict[str, Any]) -> str:
     rendered_args = [summarize_value(arg, 80) for arg in args]
-    rendered_kwargs = [f"{key}={summarize_value(value, 80)}" for key, value in kwargs.items()]
+    rendered_kwargs = [
+        f"{key}={summarize_value(value, 80)}" for key, value in kwargs.items()
+    ]
     return ", ".join([*rendered_args, *rendered_kwargs])
 
 
-def log_method_call(level: int = py_logging.DEBUG, include_result: bool = False) -> Callable[[Callable[P, R]], Callable[P, R]]:
+def log_method_call(
+    level: int = py_logging.DEBUG,
+    include_result: bool = False,
+) -> Callable[[Callable[P, R]], Callable[P, R]]:
     def decorator(func: Callable[P, R]) -> Callable[P, R]:
         @functools.wraps(func)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
@@ -187,14 +207,29 @@ def log_method_call(level: int = py_logging.DEBUG, include_result: bool = False)
             try:
                 result = func(*args, **kwargs)
             except Exception as err:
-                if should_trace and trace_depth == 0 and method_logger.isEnabledFor(py_logging.ERROR):
-                    method_logger.error("%s(%s) raised %r", func.__qualname__, rendered_call, err)
+                if (
+                    should_trace
+                    and trace_depth == 0
+                    and method_logger.isEnabledFor(py_logging.ERROR)
+                ):
+                    method_logger.error(
+                        "%s(%s) raised %r",
+                        func.__qualname__,
+                        rendered_call,
+                        err,
+                    )
                 raise
             finally:
                 if token is not None:
                     TRACE_DEPTH.reset(token)
             if should_trace and include_result and method_logger.isEnabledFor(level):
-                method_logger.log(level, "%s(%s) returned %s", func.__qualname__, rendered_call, summarize_value(result))
+                method_logger.log(
+                    level,
+                    "%s(%s) returned %s",
+                    func.__qualname__,
+                    rendered_call,
+                    summarize_value(result),
+                )
             return result
 
         return wrapper
@@ -202,7 +237,12 @@ def log_method_call(level: int = py_logging.DEBUG, include_result: bool = False)
     return decorator
 
 
-def log_subprocess_error(command_logger: py_logging.Logger, action: str, stdout: str | None, stderr: str | None) -> None:
+def log_subprocess_error(
+    command_logger: py_logging.Logger,
+    action: str,
+    stdout: str | None,
+    stderr: str | None,
+) -> None:
     trimmed_stdout = (stdout or "").strip()
     trimmed_stderr = (stderr or "").strip()
     if trimmed_stdout:
@@ -212,7 +252,9 @@ def log_subprocess_error(command_logger: py_logging.Logger, action: str, stdout:
 
 
 def format_subprocess_output(stdout: str | None, stderr: str | None) -> str:
-    return "\n".join(part for part in ((stdout or "").strip(), (stderr or "").strip()) if part)
+    return "\n".join(
+        part for part in ((stdout or "").strip(), (stderr or "").strip()) if part
+    )
 
 
 def format_exception_with_output(err: Exception) -> str:

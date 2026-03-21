@@ -9,20 +9,45 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     initial = True
 
-    dependencies = [
-    ]
+    dependencies = []
 
     operations = [
         migrations.CreateModel(
-            name='Dependency',
+            name="Dependency",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('label', models.CharField(max_length=63)),
-                ('default_binprovider', django_pydantic_field.fields.PydanticSchemaField(config=None, default={'name': 'env'}, encoder=django.core.serializers.json.DjangoJSONEncoder, schema=pydantic_pkgr.binprovider.BinProvider)),
-                ('binaries', django_pydantic_field.fields.PydanticSchemaField(config=None, default=[], encoder=django.core.serializers.json.DjangoJSONEncoder, schema=django_pydantic_field.compat.django.GenericContainer(list, (pydantic_pkgr.binary.Binary,)))),
+                (
+                    "id",
+                    models.BigAutoField(
+                        auto_created=True,
+                        primary_key=True,
+                        serialize=False,
+                        verbose_name="ID",
+                    ),
+                ),
+                ("label", models.CharField(max_length=63)),
+                (
+                    "default_binprovider",
+                    django_pydantic_field.fields.PydanticSchemaField(
+                        config=None,
+                        default={"name": "env"},
+                        encoder=django.core.serializers.json.DjangoJSONEncoder,
+                        schema=pydantic_pkgr.binprovider.BinProvider,
+                    ),
+                ),
+                (
+                    "binaries",
+                    django_pydantic_field.fields.PydanticSchemaField(
+                        config=None,
+                        default=[],
+                        encoder=django.core.serializers.json.DjangoJSONEncoder,
+                        schema=django_pydantic_field.compat.django.GenericContainer(
+                            list,
+                            (pydantic_pkgr.binary.Binary,),
+                        ),
+                    ),
+                ),
             ],
         ),
     ]

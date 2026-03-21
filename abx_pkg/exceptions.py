@@ -1,6 +1,6 @@
 __package__ = "abx_pkg"
 
-from typing import Mapping
+from collections.abc import Mapping
 
 
 class ABXPkgError(Exception):
@@ -14,7 +14,13 @@ class BinProviderError(ABXPkgError):
 class BinProviderOperationError(BinProviderError):
     action: str = "operate on"
 
-    def __init__(self, provider_name: str, target: object, returncode: int | None = None, output: str | None = None):
+    def __init__(
+        self,
+        provider_name: str,
+        target: object,
+        returncode: int | None = None,
+        output: str | None = None,
+    ):
         self.provider_name = provider_name
         self.target = target
         self.returncode = returncode
@@ -44,19 +50,26 @@ class BinProviderUnavailableError(BinProviderError):
         self.provider_name = provider_name
         self.action = action
         self.installer_bin = installer_bin
-        super().__init__(f"{self.provider_name} cannot {self.action} because {self.installer_bin} is not available on this host")
+        super().__init__(
+            f"{self.provider_name} cannot {self.action} because {self.installer_bin} is not available on this host",
+        )
 
 
 class BinaryOperationError(ABXPkgError):
     action: str = "operate on"
 
-    def __init__(self, binary_name: str, provider_names: str, errors: Mapping[str, str] | None = None):
+    def __init__(
+        self,
+        binary_name: str,
+        provider_names: str,
+        errors: Mapping[str, str] | None = None,
+    ):
         self.binary_name = binary_name
         self.provider_names = provider_names
         self.errors = dict(errors or {})
         super().__init__(
             f"Unable to {self.action} binary {self.binary_name} via providers {self.provider_names}. "
-            f"ERRORS={self.errors}"
+            f"ERRORS={self.errors}",
         )
 
 
