@@ -4,6 +4,7 @@ __package__ = "abx_pkg"
 import os
 import sys
 import shutil
+import importlib.util
 from pathlib import Path
 
 from typing import Any
@@ -11,21 +12,7 @@ from typing import Any
 from .base_types import BinProviderName, PATHStr, BinName, InstallArgs
 from .binprovider import BinProvider, OPERATING_SYSTEM, DEFAULT_PATH, remap_kwargs
 
-PYINFRA_INSTALLED = False
-PYINFRA_IMPORT_ERROR = None
-try:
-    # from pyinfra import host
-    from pyinfra import operations  # noqa: F401
-    from pyinfra.api import Config, Inventory, State
-    from pyinfra.api.connect import connect_all
-    from pyinfra.api.operation import add_op
-    from pyinfra.api.operations import run_ops
-    from pyinfra.api.exceptions import PyinfraError
-
-    PYINFRA_INSTALLED = True
-except ImportError as err:
-    PYINFRA_IMPORT_ERROR = err
-    pass
+PYINFRA_INSTALLED = importlib.util.find_spec("pyinfra") is not None
 
 
 def pyinfra_package_install(
@@ -36,14 +23,22 @@ def pyinfra_package_install(
     if not PYINFRA_INSTALLED:
         raise RuntimeError(
             "Pyinfra is not installed! To fix:\n    pip install pyinfra",
-        ) from PYINFRA_IMPORT_ERROR
+        )
+
+    from pyinfra.api.config import Config
+    from pyinfra.api.inventory import Inventory
+    from pyinfra.api.state import State
+    from pyinfra.api.connect import connect_all
+    from pyinfra.api.operation import add_op
+    from pyinfra.api.operations import run_ops
+    from pyinfra.api.exceptions import PyinfraError
 
     config = Config()
     inventory = Inventory((["@local"], {}))
     state = State(inventory=inventory, config=config)
 
     if isinstance(pkg_names, str):
-        pkg_names = pkg_names.split(" ")  # type: ignore
+        pkg_names = pkg_names.split(" ")
 
     connect_all(state)
 
@@ -53,7 +48,9 @@ def pyinfra_package_install(
         if is_macos:
             installer_module = "operations.brew.packages"
             try:
-                _sudo_user = Path(shutil.which("brew")).stat().st_uid
+                brew_abspath = shutil.which("brew")
+                if brew_abspath:
+                    _sudo_user = Path(brew_abspath).stat().st_uid
             except Exception:
                 pass
         else:
@@ -165,11 +162,12 @@ class PyinfraProvider(BinProvider):
 
 if __name__ == "__main__":
     result = pyinfra = PyinfraProvider()
+    func = None
 
     if len(sys.argv) > 1:
         result = func = getattr(pyinfra, sys.argv[1])  # e.g. install
 
-    if len(sys.argv) > 2:
+    if len(sys.argv) > 2 and callable(func):
         result = func(sys.argv[2])  # e.g. install ffmpeg
 
     print(result)

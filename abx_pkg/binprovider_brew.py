@@ -458,11 +458,12 @@ if __name__ == "__main__":
     # ./binprovider_brew.py get_version pip
     # ./binprovider_brew.py get_abspath pip
     result = brew = BrewProvider()
+    func = None
 
     if len(sys.argv) > 1:
         result = func = getattr(brew, sys.argv[1])  # e.g. install
 
-    if len(sys.argv) > 2:
+    if len(sys.argv) > 2 and callable(func):
         result = func(sys.argv[2])  # e.g. install ffmpeg
 
     print(result)

@@ -221,13 +221,16 @@ class DockerProvider(BinProvider):
 
     def default_abspath_handler(
         self,
-        bin_name: BinName,
+        bin_name: BinName | HostBinPath,
         **context,
     ) -> HostBinPath | None:
         wrapper_path = self.bin_dir() / str(bin_name)
         if wrapper_path.is_file() and os.access(wrapper_path, os.R_OK):
             return TypeAdapter(HostBinPath).validate_python(wrapper_path)
-        return super().default_abspath_handler(bin_name, **context)
+        abspath = super().default_abspath_handler(bin_name, **context)
+        if abspath is None:
+            return None
+        return TypeAdapter(HostBinPath).validate_python(abspath)
 
     def default_version_handler(
         self,

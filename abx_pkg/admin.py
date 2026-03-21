@@ -1,3 +1,5 @@
+from types import MethodType
+
 from django.contrib import admin
 
 
@@ -11,20 +13,21 @@ def register_admin_views(admin_site: admin.AdminSite):
         get_urls,
     )
 
-    CustomAdminCls = admin_site.__class__
-
-    admin_site.get_app_list = get_app_list.__get__(admin_site, CustomAdminCls)
-    admin_site.admin_data_index_view = admin_data_index_view.__get__(
+    setattr(admin_site, "get_app_list", MethodType(get_app_list, admin_site))
+    setattr(
         admin_site,
-        CustomAdminCls,
+        "admin_data_index_view",
+        MethodType(admin_data_index_view, admin_site),
     )
-    admin_site.get_admin_data_urls = get_admin_data_urls.__get__(
+    setattr(
         admin_site,
-        CustomAdminCls,
+        "get_admin_data_urls",
+        MethodType(get_admin_data_urls, admin_site),
     )
-    admin_site.get_urls = get_urls(admin_site.get_urls).__get__(
+    setattr(
         admin_site,
-        CustomAdminCls,
+        "get_urls",
+        MethodType(get_urls(admin_site.get_urls), admin_site),
     )
 
     return admin_site

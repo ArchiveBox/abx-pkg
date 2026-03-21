@@ -11,7 +11,7 @@ def get_all_binaries() -> list[Binary]:
     ]
 
 
-def get_binary(name: str) -> Binary:
+def get_binary(name: str) -> Binary | None:
     """Override this function implement getting the list of binaries to render"""
 
     from abx_pkg import settings

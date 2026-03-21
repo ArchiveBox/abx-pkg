@@ -1,5 +1,6 @@
 __package__ = "abx_pkg"
 
+import inspect
 import os
 import shutil
 
@@ -49,11 +50,17 @@ PATHStr = Annotated[str, BeforeValidator(validate_PATH)]
 
 def func_takes_args_or_kwargs(lambda_func: Callable[..., Any]) -> bool:
     """returns True if a lambda func takes args/kwargs of any kind, otherwise false if it's pure/argless"""
-    code = lambda_func.__code__
-    has_args = code.co_argcount > 0
-    has_varargs = code.co_flags & 0x04 != 0
-    has_varkw = code.co_flags & 0x08 != 0
-    return has_args or has_varargs or has_varkw
+    signature = inspect.signature(lambda_func)
+    return any(
+        parameter.kind
+        in (
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            inspect.Parameter.VAR_POSITIONAL,
+            inspect.Parameter.VAR_KEYWORD,
+        )
+        for parameter in signature.parameters.values()
+    )
 
 
 # @validate_call

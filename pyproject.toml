@@ -87,7 +87,7 @@ plugins = [
 ]
 
 [tool.pyright]
-include = ["abx_pkg"]
+include = ["abx_pkg", "tests.py", "django_example_project/project"]
 exclude = [
     "**/node_modules",
     "**/__pycache__",

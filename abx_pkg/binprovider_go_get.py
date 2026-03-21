@@ -160,4 +160,5 @@ class GoGetProvider(BinProvider):
                         if version:
                             return version
 
-        return super().default_version_handler(bin_name, abspath=abspath, **context)
+        version = super().default_version_handler(bin_name, abspath=abspath, **context)
+        return SemVer.parse(version) if version else None

@@ -144,7 +144,18 @@ __all__ = [
     "DEFAULT_ENV_PATH",
     "PYTHON_BIN_DIR",
     # BinProviders (classes)
-    *ALL_PROVIDER_CLASS_NAMES,
+    "EnvProvider",
+    "AptProvider",
+    "BrewProvider",
+    "CargoProvider",
+    "GemProvider",
+    "GoGetProvider",
+    "NixProvider",
+    "DockerProvider",
+    "PipProvider",
+    "NpmProvider",
+    "AnsibleProvider",
+    "PyinfraProvider",
     # Note: provider singleton names (apt, pip, brew, etc.) are intentionally
     # excluded from __all__ so that `from abx_pkg import *` does not eagerly
     # instantiate every provider. Use explicit imports instead:

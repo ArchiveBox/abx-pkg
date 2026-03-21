@@ -4,9 +4,8 @@ import functools
 import logging as py_logging
 import shlex
 from contextvars import ContextVar
-
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from collections.abc import Callable
 
 from typing_extensions import ParamSpec, TypeVar
@@ -15,16 +14,13 @@ LOGGER_NAME = "abx_pkg"
 DEFAULT_LOG_FORMAT = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
 RICH_INSTALLED = False
 
-try:
+if TYPE_CHECKING:
     from rich.console import Console
-    from rich.highlighter import ReprHighlighter
-    from rich.logging import RichHandler
 
+try:
     RICH_INSTALLED = True
 except ImportError:
-    Console = Any  # type: ignore[assignment]
-    ReprHighlighter = None
-    RichHandler = None
+    pass
 
 logger = py_logging.getLogger(LOGGER_NAME)
 if not any(isinstance(handler, py_logging.NullHandler) for handler in logger.handlers):
@@ -79,7 +75,7 @@ def configure_logging(
 
 def configure_rich_logging(
     level: int | str = py_logging.INFO,
-    console: Console | None = None,
+    console: "Console | None" = None,
     fmt: str = "%(message)s",
     datefmt: str | None = None,
     propagate: bool = False,
@@ -93,10 +89,13 @@ def configure_rich_logging(
     keywords: list[str] | None = None,
     highlighter: Any | None = None,
 ) -> py_logging.Logger:
-    if RichHandler is None:
+    if not RICH_INSTALLED:
         raise RuntimeError(
             'rich is not installed, install "abx-pkg[rich]" to enable rich logging',
         )
+
+    from rich.highlighter import ReprHighlighter
+    from rich.logging import RichHandler
 
     handler = RichHandler(
         console=console,
@@ -107,9 +106,7 @@ def configure_rich_logging(
         show_path=show_path,
         omit_repeated_times=omit_repeated_times,
         keywords=keywords,
-        highlighter=highlighter
-        if highlighter is not None
-        else (ReprHighlighter() if ReprHighlighter is not None else None),
+        highlighter=highlighter if highlighter is not None else ReprHighlighter(),
     )
     return configure_logging(
         level=level,
@@ -194,16 +191,18 @@ def log_method_call(
         @functools.wraps(func)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
             method_logger = get_logger(func.__module__)
+            func_name = getattr(func, "__name__", type(func).__name__)
+            qualname = getattr(func, "__qualname__", func_name)
             should_trace = not (
-                func.__name__.startswith("_")
-                or func.__name__ == "get_binprovider"
-                or func.__name__ == "get_provider_with_overrides"
+                func_name.startswith("_")
+                or func_name == "get_binprovider"
+                or func_name == "get_provider_with_overrides"
             )
             rendered_call = _format_method_call(args, kwargs)
             trace_depth = TRACE_DEPTH.get()
             token = TRACE_DEPTH.set(trace_depth + 1) if should_trace else None
             if should_trace and method_logger.isEnabledFor(level):
-                method_logger.log(level, "%s(%s)", func.__qualname__, rendered_call)
+                method_logger.log(level, "%s(%s)", qualname, rendered_call)
             try:
                 result = func(*args, **kwargs)
             except Exception as err:
@@ -214,7 +213,7 @@ def log_method_call(
                 ):
                     method_logger.error(
                         "%s(%s) raised %r",
-                        func.__qualname__,
+                        qualname,
                         rendered_call,
                         err,
                     )
@@ -226,7 +225,7 @@ def log_method_call(
                 method_logger.log(
                     level,
                     "%s(%s) returned %s",
-                    func.__qualname__,
+                    qualname,
                     rendered_call,
                     summarize_value(result),
                 )

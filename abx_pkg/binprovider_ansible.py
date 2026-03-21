@@ -6,6 +6,7 @@ import sys
 import json
 import shutil
 import tempfile
+import importlib.util
 from pathlib import Path
 from typing import Any
 
@@ -13,14 +14,7 @@ from .base_types import BinProviderName, PATHStr, BinName, InstallArgs
 from .binprovider import BinProvider, OPERATING_SYSTEM, DEFAULT_PATH, remap_kwargs
 
 
-ANSIBLE_INSTALLED = False
-ANSIBLE_IMPORT_ERROR = None
-try:
-    from ansible_runner import Runner, RunnerConfig
-
-    ANSIBLE_INSTALLED = True
-except ImportError as err:
-    ANSIBLE_IMPORT_ERROR = err
+ANSIBLE_INSTALLED = importlib.util.find_spec("ansible_runner") is not None
 
 
 ANSIBLE_INSTALL_PLAYBOOK_TEMPLATE = """
@@ -72,7 +66,9 @@ def ansible_package_install(
     if not ANSIBLE_INSTALLED:
         raise RuntimeError(
             "Ansible is not installed! To fix:\n    pip install ansible ansible-runner",
-        ) from ANSIBLE_IMPORT_ERROR
+        )
+
+    from ansible_runner import Runner, RunnerConfig
 
     if isinstance(pkg_names, str):
         pkg_names = pkg_names.split(" ")
@@ -200,16 +196,14 @@ class AnsibleProvider(BinProvider):
                 f"{self.__class__.__name__}.INSTALLER_BIN is not available on this host: {self.INSTALLER_BIN}",
             )
 
+        module_extra_kwargs = self.get_ansible_module_extra_kwargs()
+
         return ansible_package_install(
             pkg_names=install_args,
             quiet=True,
             playbook_template=self.ansible_playbook_template,
             installer_module=self.ansible_installer_module,
-            **(
-                {"module_extra_kwargs": self.get_ansible_module_extra_kwargs()}
-                if self.get_ansible_module_extra_kwargs()
-                else {}
-            ),
+            module_extra_kwargs=module_extra_kwargs or None,
         )
 
     @remap_kwargs({"packages": "install_args"})
@@ -226,17 +220,15 @@ class AnsibleProvider(BinProvider):
                 f"{self.__class__.__name__}.INSTALLER_BIN is not available on this host: {self.INSTALLER_BIN}",
             )
 
+        module_extra_kwargs = self.get_ansible_module_extra_kwargs()
+
         return ansible_package_install(
             pkg_names=install_args,
             quiet=True,
             playbook_template=self.ansible_playbook_template,
             installer_module=self.ansible_installer_module,
             state="latest",
-            **(
-                {"module_extra_kwargs": self.get_ansible_module_extra_kwargs()}
-                if self.get_ansible_module_extra_kwargs()
-                else {}
-            ),
+            module_extra_kwargs=module_extra_kwargs or None,
         )
 
     @remap_kwargs({"packages": "install_args"})
@@ -253,28 +245,27 @@ class AnsibleProvider(BinProvider):
                 f"{self.__class__.__name__}.INSTALLER_BIN is not available on this host: {self.INSTALLER_BIN}",
             )
 
+        module_extra_kwargs = self.get_ansible_module_extra_kwargs()
+
         ansible_package_install(
             pkg_names=install_args,
             quiet=True,
             playbook_template=self.ansible_playbook_template,
             installer_module=self.ansible_installer_module,
             state="absent",
-            **(
-                {"module_extra_kwargs": self.get_ansible_module_extra_kwargs()}
-                if self.get_ansible_module_extra_kwargs()
-                else {}
-            ),
+            module_extra_kwargs=module_extra_kwargs or None,
         )
         return True
 
 
 if __name__ == "__main__":
     result = ansible = AnsibleProvider()
+    func = None
 
     if len(sys.argv) > 1:
         result = func = getattr(ansible, sys.argv[1])  # e.g. install
 
-    if len(sys.argv) > 2:
+    if len(sys.argv) > 2 and callable(func):
         result = func(sys.argv[2])  # e.g. install ffmpeg
 
     print(result)

@@ -36,13 +36,13 @@ _CACHED_GLOBAL_PIP_BIN_DIRS: set[str] | None = None
 
 USER_CACHE_PATH = Path(tempfile.gettempdir()) / "pip-cache"
 try:
-    user_cache_path = user_cache_path(
+    pip_user_cache_path = user_cache_path(
         appname="pip",
         appauthor="abx-pkg",
         ensure_exists=True,
     )
-    if os.access(user_cache_path, os.W_OK):
-        USER_CACHE_PATH = user_cache_path
+    if os.access(pip_user_cache_path, os.W_OK):
+        USER_CACHE_PATH = pip_user_cache_path
 except Exception:
     pass
 
@@ -423,7 +423,7 @@ class PipProvider(BinProvider):
 
     def default_abspath_handler(
         self,
-        bin_name: BinName,
+        bin_name: BinName | HostBinPath,
         **context,
     ) -> HostBinPath | None:
 
@@ -491,11 +491,12 @@ if __name__ == "__main__":
     # ./binprovider_pip.py get_version pip
     # ./binprovider_pip.py get_abspath pip
     result = pip = PipProvider()
+    func = None
 
     if len(sys.argv) > 1:
         result = func = getattr(pip, sys.argv[1])  # e.g. install
 
-    if len(sys.argv) > 2:
+    if len(sys.argv) > 2 and callable(func):
         result = func(sys.argv[2])  # e.g. install ffmpeg
 
     print(result)

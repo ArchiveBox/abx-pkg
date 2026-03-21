@@ -32,7 +32,6 @@ from .base_types import (
     HostBinPath,
     BinProviderName,
     PATHStr,
-    Sha256,
 )
 
 DEFAULT_PROVIDER = EnvProvider()
@@ -43,7 +42,7 @@ class Binary(ShallowBinary):
     model_config = ConfigDict(
         extra="allow",
         populate_by_name=True,
-        validate_defaults=True,
+        validate_default=True,
         validate_assignment=True,
         from_attributes=True,
         revalidate_instances="always",
@@ -59,14 +58,7 @@ class Binary(ShallowBinary):
     )
     overrides: BinaryOverrides = Field(default_factory=dict)
 
-    loaded_binprovider: InstanceOf[BinProvider] | None = Field(
-        default=None,
-        alias="binprovider",
-    )
-    loaded_abspath: HostBinPath | None = Field(default=None, alias="abspath")
     min_version: SemVer | None = None
-    loaded_version: SemVer | None = Field(default=None, alias="version")
-    loaded_sha256: Sha256 | None = Field(default=None, alias="sha256")
 
     # bin_filename:  see below
     # is_executable: see below
@@ -74,7 +66,7 @@ class Binary(ShallowBinary):
     # is_valid: see below
 
     @model_validator(mode="after")
-    def validate(self):
+    def validate_model(self) -> Self:
         # assert self.name, 'Binary.name must not be empty'
         # self.description = self.description or self.name
 
@@ -239,16 +231,13 @@ class Binary(ShallowBinary):
                 installed_bin = provider.install(self.name)
                 if installed_bin is not None and installed_bin.loaded_abspath:
                     # print('INSTALLED', self.name, installed_bin)
-                    return self.__class__(
-                        **{
-                            **self.model_dump(exclude_computed_fields=True),
-                            **installed_bin.model_dump(
-                                exclude={"binproviders_supported"},
-                                exclude_computed_fields=True,
-                            ),
+                    return self.model_copy(
+                        deep=True,
+                        update={
                             "loaded_binprovider": provider,
-                            "binproviders_supported": self.binproviders_supported,
-                            "overrides": self.overrides,
+                            "loaded_abspath": installed_bin.loaded_abspath,
+                            "loaded_version": installed_bin.loaded_version,
+                            "loaded_sha256": installed_bin.loaded_sha256,
                         },
                     )
             except Exception as err:
@@ -300,16 +289,13 @@ class Binary(ShallowBinary):
                 installed_bin = provider.load(self.name, nocache=nocache)
                 if installed_bin is not None and installed_bin.loaded_abspath:
                     # print('LOADED', binprovider, self.name, installed_bin)
-                    return self.__class__(
-                        **{
-                            **self.model_dump(exclude_computed_fields=True),
-                            **installed_bin.model_dump(
-                                exclude={"binproviders_supported"},
-                                exclude_computed_fields=True,
-                            ),
+                    return self.model_copy(
+                        deep=True,
+                        update={
                             "loaded_binprovider": provider,
-                            "binproviders_supported": self.binproviders_supported,
-                            "overrides": self.overrides,
+                            "loaded_abspath": installed_bin.loaded_abspath,
+                            "loaded_version": installed_bin.loaded_version,
+                            "loaded_sha256": installed_bin.loaded_sha256,
                         },
                     )
                 else:
@@ -364,16 +350,13 @@ class Binary(ShallowBinary):
                 installed_bin = provider.load_or_install(self.name, nocache=nocache)
                 if installed_bin is not None and installed_bin.loaded_abspath:
                     # print('LOADED_OR_INSTALLED', self.name, installed_bin)
-                    return self.__class__(
-                        **{
-                            **self.model_dump(exclude_computed_fields=True),
-                            **installed_bin.model_dump(
-                                exclude={"binproviders_supported"},
-                                exclude_computed_fields=True,
-                            ),
+                    return self.model_copy(
+                        deep=True,
+                        update={
                             "loaded_binprovider": provider,
-                            "binproviders_supported": self.binproviders_supported,
-                            "overrides": self.overrides,
+                            "loaded_abspath": installed_bin.loaded_abspath,
+                            "loaded_version": installed_bin.loaded_version,
+                            "loaded_sha256": installed_bin.loaded_sha256,
                         },
                     )
                 else:
@@ -420,16 +403,13 @@ class Binary(ShallowBinary):
                 )
                 updated_bin = provider.update(self.name)
                 if updated_bin is not None and updated_bin.loaded_abspath:
-                    return self.__class__(
-                        **{
-                            **self.model_dump(exclude_computed_fields=True),
-                            **updated_bin.model_dump(
-                                exclude={"binproviders_supported"},
-                                exclude_computed_fields=True,
-                            ),
+                    return self.model_copy(
+                        deep=True,
+                        update={
                             "loaded_binprovider": provider,
-                            "binproviders_supported": self.binproviders_supported,
-                            "overrides": self.overrides,
+                            "loaded_abspath": updated_bin.loaded_abspath,
+                            "loaded_version": updated_bin.loaded_version,
+                            "loaded_sha256": updated_bin.loaded_sha256,
                         },
                     )
             except Exception as err:
@@ -473,15 +453,13 @@ class Binary(ShallowBinary):
                 )
                 uninstalled = provider.uninstall(self.name)
                 if uninstalled:
-                    return self.__class__(
-                        **{
-                            **self.model_dump(exclude_computed_fields=True),
+                    return self.model_copy(
+                        deep=True,
+                        update={
                             "loaded_binprovider": None,
                             "loaded_abspath": None,
                             "loaded_version": None,
                             "loaded_sha256": None,
-                            "binproviders_supported": self.binproviders_supported,
-                            "overrides": self.overrides,
                         },
                     )
             except Exception as err:
