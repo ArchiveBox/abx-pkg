@@ -38,14 +38,12 @@ repos:
         name: ty-check
         entry: uv run ty check
         language: system
-        files: ^(abx_pkg/|tests.py|django_example_project/)
-        pass_filenames: false
+        files: ^(abx_pkg/|tests\.py$|django_example_project/project/(?!migrations/).+\.py$)
       - id: pyright
         name: pyright
         entry: uv run pyright
         language: system
-        files: ^(abx_pkg/|tests.py|django_example_project/)
-        pass_filenames: false
+        files: ^(abx_pkg/|tests\.py$|django_example_project/project/(?!migrations/).+\.py$)
       # see pyproject.toml for more details on ruff config
 
   - repo: https://github.com/pre-commit/pre-commit-hooks

@@ -1,7 +1,11 @@
+from typing import TYPE_CHECKING
 from collections.abc import Callable
 
 from django.conf import settings
 from django.utils.module_loading import import_string
+
+if TYPE_CHECKING:
+    from .binary import Binary
 
 
 ABX_PKG_GET_ALL_BINARIES = getattr(
@@ -29,3 +33,6 @@ else:
     raise ValueError(
         "ABX_PKG_GET_BINARY must be a function or dotted import path to a function",
     )
+
+get_all_abx_pkg_binaries: "Callable[[], list[Binary]]"
+get_abx_pkg_binary: "Callable[[str], Binary | None]"

@@ -34,13 +34,13 @@ _CACHED_HOME_DIR: Path = Path("~").expanduser().absolute()
 
 USER_CACHE_PATH = Path(tempfile.gettempdir()) / "npm-cache"
 try:
-    user_cache_path = user_cache_path(
+    npm_user_cache_path = user_cache_path(
         appname="npm",
         appauthor="abx-pkg",
         ensure_exists=True,
     )
-    if os.access(user_cache_path, os.W_OK):
-        USER_CACHE_PATH = user_cache_path
+    if os.access(npm_user_cache_path, os.W_OK):
+        USER_CACHE_PATH = npm_user_cache_path
 except Exception:
     pass
 
@@ -296,7 +296,7 @@ class NpmProvider(BinProvider):
 
     def default_abspath_handler(
         self,
-        bin_name: BinName,
+        bin_name: BinName | HostBinPath,
         **context,
     ) -> HostBinPath | None:
         # print(self.__class__.__name__, 'on_get_abspath', bin_name)
@@ -418,11 +418,12 @@ if __name__ == "__main__":
     # ./binprovider_npm.py get_version @postlight/parser
     # ./binprovider_npm.py get_abspath @postlight/parser
     result = npm = NpmProvider()
+    func = None
 
     if len(sys.argv) > 1:
         result = func = getattr(npm, sys.argv[1])  # e.g. install
 
-    if len(sys.argv) > 2:
+    if len(sys.argv) > 2 and callable(func):
         result = func(sys.argv[2])  # e.g. install ffmpeg
 
     print(result)

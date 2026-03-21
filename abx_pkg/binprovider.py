@@ -19,7 +19,6 @@ from typing import (
     Literal,
     Protocol,
     runtime_checkable,
-    ParamSpec,
     TypeVar,
 )
 from collections.abc import Callable, Iterable, Mapping
@@ -123,24 +122,23 @@ def binprovider_cache(binprovider_method):
     return cached_function
 
 
-P = ParamSpec("P")
 R = TypeVar("R")
 
 
 def remap_kwargs(
     renamed_kwargs: Mapping[str, str],
-) -> Callable[[Callable[P, R]], Callable[P, R]]:
-    def decorator(func: Callable[P, R]) -> Callable[P, R]:
+) -> Callable[[Callable[..., R]], Callable[..., R]]:
+    def decorator(func: Callable[..., R]) -> Callable[..., R]:
         @functools.wraps(func)
-        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        def wrapper(*args: object, **kwargs: object) -> R:
             mapped_kwargs = dict(kwargs)
             for old_name, new_name in renamed_kwargs.items():
                 if old_name in mapped_kwargs:
                     mapped_kwargs.setdefault(new_name, mapped_kwargs[old_name])
                     mapped_kwargs.pop(old_name, None)
-            return func(*args, **cast(Any, mapped_kwargs))
+            return func(*args, **mapped_kwargs)
 
-        return cast(Callable[P, R], wrapper)
+        return wrapper
 
     return decorator
 
@@ -154,7 +152,7 @@ class ShallowBinary(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
         populate_by_name=True,
-        validate_defaults=True,
+        validate_default=True,
         validate_assignment=False,
         from_attributes=True,
         arbitrary_types_allowed=True,
@@ -169,17 +167,20 @@ class ShallowBinary(BaseModel):
     )
     overrides: "BinaryOverrides" = Field(default_factory=dict)
 
-    loaded_binprovider: InstanceOf["BinProvider"] = Field(alias="binprovider")
-    loaded_abspath: HostBinPath = Field(alias="abspath")
-    loaded_version: SemVer = Field(alias="version")
-    loaded_sha256: Sha256 = Field(alias="sha256")
+    loaded_binprovider: InstanceOf["BinProvider"] | None = Field(
+        default=None,
+        alias="binprovider",
+    )
+    loaded_abspath: HostBinPath | None = Field(default=None, alias="abspath")
+    loaded_version: SemVer | None = Field(default=None, alias="version")
+    loaded_sha256: Sha256 | None = Field(default=None, alias="sha256")
 
-    def __getattr__(self, item):
+    def __getattr__(self, item: str) -> Any:
         """Allow accessing fields as attributes by both field name and alias name"""
         for field, meta in type(self).model_fields.items():
             if meta.alias == item:
                 return getattr(self, field)
-        return super().__getattr__(item)
+        raise AttributeError(item)
 
     def __repr__(self) -> str:
         return (
@@ -194,11 +195,11 @@ class ShallowBinary(BaseModel):
     __str__ = __repr__
 
     @model_validator(mode="after")
-    def validate(self) -> Self:
+    def validate_model(self) -> Self:
         self.description = self.description or self.name
         return self
 
-    @computed_field  # type: ignore[misc]  # see mypy issue #1362
+    @computed_field  # see mypy issue #1362
     @property
     def bin_filename(self) -> BinName:
         if self.is_script:
@@ -212,7 +213,7 @@ class ShallowBinary(BaseModel):
             name = bin_name(self.name)
         return name
 
-    @computed_field  # type: ignore[misc]  # see mypy issue #1362
+    @computed_field  # see mypy issue #1362
     @property
     def is_executable(self) -> bool:
         try:
@@ -221,7 +222,7 @@ class ShallowBinary(BaseModel):
         except (ValidationError, AssertionError):
             return False
 
-    @computed_field  # type: ignore[misc]  # see mypy issue #1362
+    @computed_field  # see mypy issue #1362
     @property
     def is_script(self) -> bool:
         try:
@@ -230,7 +231,7 @@ class ShallowBinary(BaseModel):
         except (ValidationError, AssertionError):
             return False
 
-    @computed_field  # type: ignore[misc]  # see mypy issue #1362
+    @computed_field  # see mypy issue #1362
     @property
     def is_valid(self) -> bool:
         return bool(
@@ -287,23 +288,11 @@ class ShallowBinary(BaseModel):
         )
 
 
-DEFAULT_OVERRIDES = {
-    "*": {
-        "version": "self.default_version_handler",
-        "abspath": "self.default_abspath_handler",
-        "install_args": "self.default_install_args_handler",
-        "install": "self.default_install_handler",
-        "update": "self.default_update_handler",
-        "uninstall": "self.default_uninstall_handler",
-    },
-}
-
-
 class BinProvider(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
         populate_by_name=True,
-        validate_defaults=True,
+        validate_default=True,
         validate_assignment=False,
         from_attributes=True,
         revalidate_instances="always",
@@ -320,7 +309,16 @@ class BinProvider(BaseModel):
     euid: int | None = None
 
     overrides: "BinProviderOverrides" = Field(
-        default=DEFAULT_OVERRIDES,
+        default_factory=lambda: {
+            "*": {
+                "version": "self.default_version_handler",
+                "abspath": "self.default_abspath_handler",
+                "install_args": "self.default_install_args_handler",
+                "install": "self.default_install_handler",
+                "update": "self.default_update_handler",
+                "uninstall": "self.default_uninstall_handler",
+            },
+        },
         repr=False,
         exclude=True,
     )
@@ -466,12 +464,14 @@ class BinProvider(BaseModel):
         version = UNKNOWN_VERSION
         sha256 = UNKNOWN_SHA256
 
-        return ShallowBinary(
-            name=self.INSTALLER_BIN,
-            abspath=abspath,
-            binprovider=env,
-            version=version,
-            sha256=sha256,
+        return ShallowBinary.model_validate(
+            {
+                "name": self.INSTALLER_BIN,
+                "abspath": abspath,
+                "binprovider": env,
+                "version": version,
+                "sha256": sha256,
+            },
         )
 
     @computed_field
@@ -558,8 +558,7 @@ class BinProvider(BaseModel):
 
         # if handler_func is already a callable, return it directly
         if isinstance(handler, Callable):
-            handler_func: Callable[..., HandlerReturnValue] = handler
-            return handler_func
+            return handler
 
         # if handler_func is string reference to a function on self, swap it for the actual function
         elif isinstance(handler, str) and (
@@ -575,10 +574,10 @@ class BinProvider(BaseModel):
         # if handler_func is any other value, treat is as a literal and return a func that provides the literal
         literal_value = TypeAdapter(HandlerReturnValue).validate_python(handler)
 
-        def handler_func() -> HandlerReturnValue:
+        def literal_handler() -> HandlerReturnValue:
             return literal_value
 
-        return handler_func
+        return literal_handler
 
     # @validate_call
     @log_method_call(include_result=True)
@@ -627,7 +626,6 @@ class BinProvider(BaseModel):
                 )
                 return handler_func_without_args()
 
-            handler_func = cast(Callable[..., HandlerReturnValue], handler_func)
             compatible_kwargs = self._get_compatible_kwargs(handler_func, kwargs)
             if hasattr(handler_func, "__self__"):
                 # func is already a method bound to self, just call it directly
@@ -1070,7 +1068,6 @@ class BinProvider(BaseModel):
         pass
 
     @final
-    @binprovider_cache
     @log_method_call(include_result=True)
     @validate_call
     def install(
@@ -1109,14 +1106,18 @@ class BinProvider(BaseModel):
         if self._dry_run:
             # return fake ShallowBinary if we're just doing a dry run
             # no point trying to get real abspath or version if nothing was actually installed
-            return ShallowBinary(
-                name=bin_name,
-                binprovider=self,
-                abspath=Path(shutil.which(bin_name) or UNKNOWN_ABSPATH),
-                version=cast(SemVer, UNKNOWN_VERSION),
-                sha256=UNKNOWN_SHA256,
-                binproviders=[self],
+            return ShallowBinary.model_validate(
+                {
+                    "name": bin_name,
+                    "binprovider": self,
+                    "abspath": Path(shutil.which(bin_name) or UNKNOWN_ABSPATH),
+                    "version": UNKNOWN_VERSION,
+                    "sha256": UNKNOWN_SHA256,
+                    "binproviders": [self],
+                },
             )
+
+        self.invalidate_cache(bin_name)
 
         installed_abspath = self.get_abspath(bin_name, quiet=True, nocache=nocache)
         if not quiet:
@@ -1142,27 +1143,26 @@ class BinProvider(BaseModel):
 
         if installed_abspath and installed_version:
             # installed binary is valid and ready to use
-            result = ShallowBinary(
-                name=bin_name,
-                binprovider=self,
-                abspath=installed_abspath,
-                version=installed_version,
-                sha256=sha256,
-                binproviders=[self],
+            result = ShallowBinary.model_validate(
+                {
+                    "name": bin_name,
+                    "binprovider": self,
+                    "abspath": installed_abspath,
+                    "version": installed_version,
+                    "sha256": sha256,
+                    "binproviders": [self],
+                },
             )
-        else:
-            result = None
-
-        if result:
             logger.info(
                 format_loaded_binary(
                     "Installed",
-                    result.loaded_abspath,
-                    result.loaded_version,
+                    installed_abspath,
+                    installed_version,
                     self,
                 ),
             )
-        return result
+            return result
+        return None
 
     @final
     @log_method_call(include_result=True)
@@ -1201,13 +1201,15 @@ class BinProvider(BaseModel):
                 raise
 
         if self._dry_run:
-            return ShallowBinary(
-                name=bin_name,
-                binprovider=self,
-                abspath=Path(shutil.which(bin_name) or UNKNOWN_ABSPATH),
-                version=cast(SemVer, UNKNOWN_VERSION),
-                sha256=UNKNOWN_SHA256,
-                binproviders=[self],
+            return ShallowBinary.model_validate(
+                {
+                    "name": bin_name,
+                    "binprovider": self,
+                    "abspath": Path(shutil.which(bin_name) or UNKNOWN_ABSPATH),
+                    "version": UNKNOWN_VERSION,
+                    "sha256": UNKNOWN_SHA256,
+                    "binproviders": [self],
+                },
             )
 
         self.invalidate_cache(bin_name)
@@ -1238,13 +1240,15 @@ class BinProvider(BaseModel):
             logger.info(
                 format_loaded_binary("Updated", updated_abspath, updated_version, self),
             )
-            return ShallowBinary(
-                name=bin_name,
-                binprovider=self,
-                abspath=updated_abspath,
-                version=updated_version,
-                sha256=sha256,
-                binproviders=[self],
+            return ShallowBinary.model_validate(
+                {
+                    "name": bin_name,
+                    "binprovider": self,
+                    "abspath": updated_abspath,
+                    "version": updated_version,
+                    "sha256": sha256,
+                    "binproviders": [self],
+                },
             )
 
         return None
@@ -1319,13 +1323,15 @@ class BinProvider(BaseModel):
             self.get_sha256(bin_name, abspath=installed_abspath) or UNKNOWN_SHA256
         )  # not ideal to store UNKNOWN_SHA256 but it's better than nothing and this value isn't critical
 
-        result = ShallowBinary(
-            name=bin_name,
-            binprovider=self,
-            abspath=installed_abspath,
-            version=installed_version,
-            sha256=sha256,
-            binproviders=[self],
+        result = ShallowBinary.model_validate(
+            {
+                "name": bin_name,
+                "binprovider": self,
+                "abspath": installed_abspath,
+                "version": installed_version,
+                "sha256": sha256,
+                "binproviders": [self],
+            },
         )
         logger.info(
             format_loaded_binary("Loaded", installed_abspath, installed_version, self),
@@ -1358,7 +1364,9 @@ class EnvProvider(BinProvider):
 
     overrides: "BinProviderOverrides" = {
         "*": {
-            **BinProvider.model_fields["overrides"].default["*"],
+            "version": "self.default_version_handler",
+            "abspath": "self.default_abspath_handler",
+            "install_args": "self.default_install_args_handler",
             "install": "self.install_noop",
             "update": "self.update_noop",
             "uninstall": "self.uninstall_noop",

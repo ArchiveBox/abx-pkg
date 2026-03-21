@@ -2,7 +2,7 @@
 
 from django.http import HttpRequest
 
-from admin_data_views.typing import TableContext, ItemContext
+from admin_data_views.typing import NestedDict, SectionData, TableContext, ItemContext
 from admin_data_views.utils import (
     render_with_table_view,
     render_with_item_view,
@@ -17,12 +17,12 @@ def get_all_binaries() -> list[Binary]:
     return []
 
 
-def get_binary(name: str) -> Binary:
+def get_binary(name: str) -> Binary | None:
     """Override this function implement getting the list of binaries to render"""
 
     from . import settings
 
-    for binary in settings.ABX_PKG_GET_ALL_BINARIES():
+    for binary in settings.get_all_abx_pkg_binaries():
         if binary.name == name:
             return binary
     return None
@@ -31,7 +31,7 @@ def get_binary(name: str) -> Binary:
 @render_with_table_view
 def binaries_list_view(request: HttpRequest, **kwargs) -> TableContext:
 
-    assert request.user.is_superuser, (
+    assert getattr(request.user, "is_superuser", False), (
         "Must be a superuser to view configuration settings."
     )
 
@@ -65,7 +65,7 @@ def binaries_list_view(request: HttpRequest, **kwargs) -> TableContext:
 @render_with_item_view
 def binary_detail_view(request: HttpRequest, key: str, **kwargs) -> ItemContext:
 
-    assert request.user.is_superuser, (
+    assert getattr(request.user, "is_superuser", False), (
         "Must be a superuser to view configuration settings."
     )
 
@@ -77,26 +77,27 @@ def binary_detail_view(request: HttpRequest, key: str, **kwargs) -> ItemContext:
 
     binary = binary.load_or_install()
 
+    fields: NestedDict = {
+        "binprovider": str(binary.loaded_binprovider),
+        "abspath": str(binary.loaded_abspath),
+        "version": str(binary.loaded_version),
+        "is_script": str(binary.is_script),
+        "is_executable": str(binary.is_executable),
+        "is_valid": str(binary.is_valid),
+        "overrides": str(binary.overrides),
+        "providers": str(binary.binproviders_supported),
+    }
+    data: list[SectionData] = [
+        {
+            "name": str(binary.name),
+            "description": str(binary.description),
+            "fields": fields,
+            "help_texts": {},
+        },
+    ]
+
     return ItemContext(
         slug=key,
         title=key,
-        data=[
-            {
-                "name": binary.name,
-                "description": binary.description,
-                "fields": {
-                    "binprovider": binary.loaded_provider,
-                    "abspath": binary.loaded_abspath,
-                    "version": binary.loaded_version,
-                    "is_script": binary.is_script,
-                    "is_executable": binary.is_executable,
-                    "is_valid": binary.is_valid,
-                    "overrides": str(binary.overrides),
-                    "providers": str(binary.binproviders_supported),
-                },
-                "help_texts": {
-                    # TODO
-                },
-            },
-        ],
+        data=data,
     )

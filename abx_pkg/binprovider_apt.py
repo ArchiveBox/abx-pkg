@@ -229,11 +229,12 @@ class AptProvider(BinProvider):
 
 if __name__ == "__main__":
     result = apt = AptProvider()
+    func = None
 
     if len(sys.argv) > 1:
         result = func = getattr(apt, sys.argv[1])  # e.g. install
 
-    if len(sys.argv) > 2:
+    if len(sys.argv) > 2 and callable(func):
         result = func(sys.argv[2])  # e.g. install ffmpeg
 
     print(result)

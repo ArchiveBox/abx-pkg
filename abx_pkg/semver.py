@@ -30,10 +30,6 @@ SemVerParsableTypes = str | tuple[str | int, ...] | list[str | int]
 
 
 class SemVer(SemVerTuple):
-    major: int
-    minor: int = 0
-    patch: int = 0
-
     if TYPE_CHECKING:
         full_text: str | None = ""
 
