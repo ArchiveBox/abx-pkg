@@ -7,9 +7,6 @@ from django.utils.module_loading import import_string
 if TYPE_CHECKING:
     from .binary import Binary
 
-    GetAllBinaries = Callable[[], list[Binary]]
-    GetBinary = Callable[[str], Binary | None]
-
 
 ABX_PKG_GET_ALL_BINARIES = getattr(
     settings,
@@ -37,5 +34,5 @@ else:
         "ABX_PKG_GET_BINARY must be a function or dotted import path to a function",
     )
 
-get_all_abx_pkg_binaries: GetAllBinaries
-get_abx_pkg_binary: GetBinary
+get_all_abx_pkg_binaries: "Callable[[], list[Binary]]"
+get_abx_pkg_binary: "Callable[[str], Binary | None]"
