@@ -492,6 +492,43 @@ class TestBinProvider(unittest.TestCase):
         self.assertEqual(signature.parameters['install_args'].annotation, Optional[InstallArgs])
         self.assertEqual(signature.return_annotation, InstallArgs | None)
 
+    @mock.patch.object(BinProvider, 'INSTALLER_BIN_ABSPATH', new_callable=mock.PropertyMock, return_value=Path('/custom/prefix/bin/brew'))
+    @mock.patch('abx_pkg.binprovider_brew.os.access', return_value=False)
+    @mock.patch('abx_pkg.binprovider_brew.os.path.isdir', return_value=False)
+    def test_brew_provider_load_path_uses_installer_prefix_without_shelling_out(self, _mock_isdir, _mock_access, _mock_installer_bin_abspath):
+        with mock.patch.object(BrewProvider, 'exec') as mock_exec:
+            provider = BrewProvider()
+
+        self.assertEqual(provider.brew_prefix, Path('/custom/prefix'))
+        self.assertEqual(provider.PATH, '/custom/prefix/bin')
+        mock_exec.assert_not_called()
+
+    def test_brew_provider_resolves_formula_binary_from_active_prefix(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir_path = Path(tmpdir)
+            active_prefix = tmpdir_path / 'active'
+            stale_prefix = tmpdir_path / 'stale'
+            active_brew = active_prefix / 'bin' / 'brew'
+            active_java = active_prefix / 'opt' / 'openjdk' / 'bin' / 'java'
+            stale_java = stale_prefix / 'opt' / 'openjdk' / 'bin' / 'java'
+
+            for path in (active_brew, active_java, stale_java):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('#!/bin/sh\n')
+                path.chmod(0o755)
+
+            (stale_prefix / 'bin').mkdir(parents=True, exist_ok=True)
+
+            provider = BrewProvider()
+            provider._INSTALLER_BIN_ABSPATH = active_brew
+            provider.PATH = f'{stale_prefix / "bin"}:{active_prefix / "bin"}'
+            provider.brew_prefix = active_prefix
+
+            with mock.patch.object(BrewProvider, 'get_install_args', return_value=('openjdk',)):
+                abspath = provider.default_abspath_handler('java')
+
+            self.assertEqual(abspath, active_java)
+
     @mock.patch.object(BinProvider, "INSTALLER_BIN_ABSPATH", new_callable=mock.PropertyMock, return_value=Path(sys.executable))
     @mock.patch("abx_pkg.binprovider.os.stat")
     @mock.patch("abx_pkg.binprovider.os.geteuid", return_value=0)

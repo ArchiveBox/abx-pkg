@@ -24,7 +24,7 @@ NEW_MACOS_DIR = Path('/opt/homebrew/bin')
 OLD_MACOS_DIR = Path('/usr/local/bin')
 DEFAULT_MACOS_DIR = NEW_MACOS_DIR if platform.machine() == 'arm64' else OLD_MACOS_DIR
 DEFAULT_LINUX_DIR = Path('/home/linuxbrew/.linuxbrew/bin')
-GUESSED_BREW_PREFIX = DEFAULT_MACOS_DIR if OS == 'darwin' else DEFAULT_LINUX_DIR
+GUESSED_BREW_PREFIX = DEFAULT_MACOS_DIR.parent if OS == 'darwin' else DEFAULT_LINUX_DIR.parent
 
 _LAST_UPDATE_CHECK = None
 UPDATE_CHECK_INTERVAL = 60 * 60 * 24  # 1 day
@@ -38,6 +38,58 @@ class BrewProvider(BinProvider):
     
     brew_prefix: Path = GUESSED_BREW_PREFIX
 
+    def _brew_prefixes(self) -> list[Path]:
+        prefixes: list[Path] = []
+        seen: set[str] = set()
+
+        def add_prefix(bin_dir_or_prefix: Path) -> None:
+            prefix = bin_dir_or_prefix.parent if bin_dir_or_prefix.name == "bin" else bin_dir_or_prefix
+            prefix_str = str(prefix)
+            if prefix_str in seen:
+                return
+            seen.add(prefix_str)
+            prefixes.append(prefix)
+
+        installer_bin = self.INSTALLER_BIN_ABSPATH
+        if installer_bin:
+            add_prefix(Path(installer_bin).parent)
+
+        for bin_dir in self.PATH.split(':'):
+            if not bin_dir:
+                continue
+            add_prefix(Path(bin_dir))
+
+        return prefixes
+
+    def _brew_search_paths(self, bin_name: BinName | HostBinPath) -> PATHStr:
+        package_names = [
+            package
+            for package in self.get_install_args(str(bin_name), quiet=True)
+            if isinstance(package, str) and package and not package.startswith('-')
+        ] or [str(bin_name)]
+
+        search_paths: list[str] = []
+        seen: set[str] = set()
+
+        def add_path(path: Path) -> None:
+            path_str = str(path)
+            if path_str in seen:
+                return
+            seen.add(path_str)
+            search_paths.append(path_str)
+
+        for prefix in self._brew_prefixes():
+            for package in package_names:
+                add_path(prefix / 'opt' / package / 'bin')
+                for cellar_bin in (prefix / 'Cellar' / package).glob('*/bin'):
+                    add_path(cellar_bin)
+
+        for bin_dir in self.PATH.split(':'):
+            if bin_dir:
+                add_path(Path(bin_dir))
+
+        return TypeAdapter(PATHStr).validate_python(search_paths)
+
     @model_validator(mode="after")
     def load_PATH(self):
         if not self.INSTALLER_BIN_ABSPATH:
@@ -45,21 +97,28 @@ class BrewProvider(BinProvider):
             self.PATH: PATHStr = ""
             return self
 
-        PATHs = set(self.PATH.split(':'))
-        
-        if OS == 'darwin' and os.path.isdir(DEFAULT_MACOS_DIR) and os.access(DEFAULT_MACOS_DIR, os.R_OK):
-            PATHs.add(str(DEFAULT_MACOS_DIR))
-            self.brew_prefix = DEFAULT_MACOS_DIR / "bin"
-        if OS != 'darwin' and os.path.isdir(DEFAULT_LINUX_DIR) and os.access(DEFAULT_LINUX_DIR, os.R_OK):
-            PATHs.add(str(DEFAULT_LINUX_DIR))
-            self.brew_prefix = DEFAULT_LINUX_DIR / "bin"
-        
-        if not PATHs:
-            # if we cant autodetect the paths, run brew --prefix to get the path manually (very slow)
-            self.brew_prefix = Path(self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=["--prefix"]).stdout.strip())
-            PATHs.add(str(self.brew_prefix / "bin"))
-        
-        self.PATH = TypeAdapter(PATHStr).validate_python(':'.join(PATHs))
+        bin_dirs: list[str] = []
+        seen: set[str] = set()
+
+        def add_bin_dir(path: Path) -> None:
+            path_str = str(path)
+            if path_str in seen:
+                return
+            seen.add(path_str)
+            bin_dirs.append(path_str)
+
+        add_bin_dir(Path(self.INSTALLER_BIN_ABSPATH).parent)
+
+        if OS == 'darwin':
+            for path in (DEFAULT_MACOS_DIR, NEW_MACOS_DIR, OLD_MACOS_DIR):
+                if os.path.isdir(path) and os.access(path, os.R_OK):
+                    add_bin_dir(path)
+        else:
+            if os.path.isdir(DEFAULT_LINUX_DIR) and os.access(DEFAULT_LINUX_DIR, os.R_OK):
+                add_bin_dir(DEFAULT_LINUX_DIR)
+
+        self.brew_prefix = self._brew_prefixes()[0]
+        self.PATH = TypeAdapter(PATHStr).validate_python(bin_dirs)
         return self
 
     @remap_kwargs({'packages': 'install_args'})
@@ -160,18 +219,8 @@ class BrewProvider(BinProvider):
 
         if not self.PATH:
             return None
-        
-        # not all brew-installed binaries are symlinked into the default bin dir (e.g. curl)
-        # because it might conflict with a system binary of the same name (e.g. /usr/bin/curl)
-        # so we need to check for the binary in the namespaced opt dir and Cellar paths as well
-        extra_path = self.PATH.replace('/bin', f'/opt/{bin_name}/bin')     # e.g. /opt/homebrew/opt/curl/bin/curl
-        search_paths = f'{self.PATH}:{extra_path}'
-        
-        # add unlinked Cellar paths,e.g. /opt/homebrew/Cellar/curl/8.10.1/bin
-        cellar_paths = ':'.join(str(path) for path in (self.brew_prefix / 'Cellar' / bin_name).glob('*/bin'))
-        if cellar_paths:
-            search_paths += ':' + cellar_paths
-        
+
+        search_paths = self._brew_search_paths(bin_name)
         abspath = bin_abspath(bin_name, PATH=search_paths)
         if abspath:
             return abspath
