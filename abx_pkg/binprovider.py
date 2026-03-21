@@ -1068,7 +1068,6 @@ class BinProvider(BaseModel):
         pass
 
     @final
-    @binprovider_cache
     @log_method_call(include_result=True)
     @validate_call
     def install(
@@ -1117,6 +1116,8 @@ class BinProvider(BaseModel):
                     "binproviders": [self],
                 },
             )
+
+        self.invalidate_cache(bin_name)
 
         installed_abspath = self.get_abspath(bin_name, quiet=True, nocache=nocache)
         if not quiet:

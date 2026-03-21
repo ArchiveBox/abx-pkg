@@ -221,14 +221,21 @@ class AnsibleProvider(BinProvider):
             )
 
         module_extra_kwargs = self.get_ansible_module_extra_kwargs()
-
+        if module_extra_kwargs:
+            return ansible_package_install(
+                pkg_names=install_args,
+                quiet=True,
+                playbook_template=self.ansible_playbook_template,
+                installer_module=self.ansible_installer_module,
+                state="latest",
+                module_extra_kwargs=module_extra_kwargs,
+            )
         return ansible_package_install(
             pkg_names=install_args,
             quiet=True,
             playbook_template=self.ansible_playbook_template,
             installer_module=self.ansible_installer_module,
             state="latest",
-            module_extra_kwargs=module_extra_kwargs or None,
         )
 
     @remap_kwargs({"packages": "install_args"})
@@ -246,15 +253,23 @@ class AnsibleProvider(BinProvider):
             )
 
         module_extra_kwargs = self.get_ansible_module_extra_kwargs()
-
-        ansible_package_install(
-            pkg_names=install_args,
-            quiet=True,
-            playbook_template=self.ansible_playbook_template,
-            installer_module=self.ansible_installer_module,
-            state="absent",
-            module_extra_kwargs=module_extra_kwargs or None,
-        )
+        if module_extra_kwargs:
+            ansible_package_install(
+                pkg_names=install_args,
+                quiet=True,
+                playbook_template=self.ansible_playbook_template,
+                installer_module=self.ansible_installer_module,
+                state="absent",
+                module_extra_kwargs=module_extra_kwargs,
+            )
+        else:
+            ansible_package_install(
+                pkg_names=install_args,
+                quiet=True,
+                playbook_template=self.ansible_playbook_template,
+                installer_module=self.ansible_installer_module,
+                state="absent",
+            )
         return True
 
 

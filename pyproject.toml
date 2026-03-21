@@ -98,6 +98,11 @@ reportMissingTypeStubs = false
 pythonVersion = "3.11"
 pythonPlatform = "Linux"
 
+[tool.ty.src]
+exclude = [
+    "**/migrations/**",
+]
+
 
 [project.urls]
 Homepage = "https://github.com/ArchiveBox/abx-pkg"

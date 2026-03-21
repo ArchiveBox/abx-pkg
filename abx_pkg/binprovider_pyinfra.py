@@ -4,6 +4,7 @@ __package__ = "abx_pkg"
 import os
 import sys
 import shutil
+import importlib
 import importlib.util
 from pathlib import Path
 
@@ -60,7 +61,9 @@ def pyinfra_package_install(
         assert installer_module.startswith("operations.")
 
     try:
-        installer_module_op = eval(installer_module)
+        module_name, operation_name = installer_module.rsplit(".", 1)
+        installer_module_obj = importlib.import_module(f"pyinfra.{module_name}")
+        installer_module_op = getattr(installer_module_obj, operation_name)
     except Exception as err:
         raise RuntimeError(
             f"Failed to import pyinfra installer_module {installer_module}: {err.__class__.__name__}",
