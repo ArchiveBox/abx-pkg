@@ -1,0 +1,23 @@
+abx_pkg/settings.py
+  738d98b140767eb5 37-38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.17",
+  "base_commit_sha": "8d0aaa8e5aae99b68a0f4aaaf2566d7b836d3d4d",
+  "prompts": {
+    "738d98b140767eb5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d0f25-aedd-7ff1-9172-20fec1321040",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>",
+      "messages": [],
+      "total_additions": 2,
+      "total_deletions": 5,
+      "accepted_lines": 2,
+      "overriden_lines": 0
+    }
+  }
+}
