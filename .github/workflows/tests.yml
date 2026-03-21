@@ -132,8 +132,6 @@ jobs:
 
     - name: Run non-root live package lifecycle tests on macOS
       if: runner.os == 'macOS'
-      env:
-        ABX_PKG_LIVE_PKG_TESTS: "1"
       run: |
         source .venv/bin/activate \
         && python -m unittest \
@@ -148,8 +146,6 @@ jobs:
 
     - name: Run non-root live package lifecycle tests on Linux
       if: runner.os == 'Linux'
-      env:
-        ABX_PKG_LIVE_PKG_TESTS: "1"
       run: |
         source .venv/bin/activate \
         && python -m unittest \
@@ -164,7 +160,7 @@ jobs:
     - name: Run root-required live package lifecycle tests on Linux
       if: runner.os == 'Linux'
       run: |
-        sudo env "PATH=$PATH:/nix/var/nix/profiles/default/bin" "ABX_PKG_LIVE_PKG_TESTS=1" ./.venv/bin/python -m unittest \
+        sudo env "PATH=$PATH:/nix/var/nix/profiles/default/bin" ./.venv/bin/python -m unittest \
           tests.LiveUpdateAndUninstallTest.test_apt_provider_live_update_and_uninstall \
           tests.LiveUpdateAndUninstallTest.test_pyinfra_provider_live_update_and_uninstall \
           tests.LiveUpdateAndUninstallTest.test_ansible_provider_live_update_and_uninstall
