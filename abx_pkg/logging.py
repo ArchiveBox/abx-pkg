@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 logger = py_logging.getLogger(LOGGER_NAME)
 if not any(isinstance(handler, py_logging.NullHandler) for handler in logger.handlers):
     logger.addHandler(py_logging.NullHandler())
+logger.setLevel(py_logging.WARNING)
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -43,7 +44,7 @@ def normalize_log_level(level: int | str) -> int:
 
 
 def configure_logging(
-    level: int | str = py_logging.INFO,
+    level: int | str = py_logging.WARNING,
     handler: py_logging.Handler | None = None,
     fmt: str = DEFAULT_LOG_FORMAT,
     datefmt: str | None = None,
@@ -70,7 +71,7 @@ def configure_logging(
 
 
 def configure_rich_logging(
-    level: int | str = py_logging.INFO,
+    level: int | str = py_logging.WARNING,
     console: "Console | None" = None,
     fmt: str = "%(message)s",
     datefmt: str | None = None,

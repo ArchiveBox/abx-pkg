@@ -6,6 +6,7 @@ import os
 import sys
 import json
 import tempfile
+import subprocess
 
 from pathlib import Path
 from typing import Self
@@ -28,7 +29,7 @@ from .logging import format_subprocess_output, get_logger, log_subprocess_error
 logger = get_logger(__name__)
 
 # Cache these values globally because they never change at runtime
-_CACHED_GLOBAL_NPM_PREFIX: Path | None = None
+_CACHED_GLOBAL_NPM_PREFIX: tuple[str, Path] | None = None
 _CACHED_HOME_DIR: Path = Path("~").expanduser().absolute()
 
 
@@ -80,6 +81,37 @@ class NpmProvider(BinProvider):
 
         return bool(self.INSTALLER_BIN_ABSPATH)
 
+    @computed_field
+    @property
+    def INSTALLER_BIN_ABSPATH(self) -> HostBinPath | None:
+        if self._INSTALLER_BIN_ABSPATH:
+            return self._INSTALLER_BIN_ABSPATH
+
+        manual_binary = os.environ.get("NPM_BINARY")
+        if manual_binary and os.path.isabs(manual_binary):
+            try:
+                valid_abspath = TypeAdapter(HostBinPath).validate_python(
+                    Path(manual_binary).resolve(),
+                )
+                self._INSTALLER_BIN_ABSPATH = valid_abspath
+                return valid_abspath
+            except Exception:
+                return None
+
+        abspath = (
+            bin_abspath("pnpm", PATH=self.PATH)
+            or bin_abspath("pnpm")
+            or bin_abspath(self.INSTALLER_BIN, PATH=self.PATH)
+            or bin_abspath(self.INSTALLER_BIN)
+        )
+        if not abspath:
+            return None
+
+        valid_abspath = TypeAdapter(HostBinPath).validate_python(abspath)
+        if valid_abspath:
+            self._INSTALLER_BIN_ABSPATH = valid_abspath
+        return valid_abspath
+
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
         """Detect the user (UID) to run as when executing npm."""
@@ -105,20 +137,19 @@ class NpmProvider(BinProvider):
             # restrict PATH to only use npm prefix
             npm_bin_dirs = {self.npm_prefix / "node_modules/.bin"}
 
-        if self.INSTALLER_BIN_ABSPATH:
+        npm_abspath = self.INSTALLER_BIN_ABSPATH
+        if npm_abspath:
+            using_pnpm = Path(npm_abspath).name == "pnpm"
             # find all local and global npm PATHs
-            npm_local_dir = (
-                self._CACHED_LOCAL_NPM_PREFIX
-                or self.exec(
-                    bin_name=self.INSTALLER_BIN_ABSPATH,
-                    cmd=["prefix"],
-                    quiet=True,
-                ).stdout.strip()
+            npm_local_dir = self._CACHED_LOCAL_NPM_PREFIX or (
+                Path(self._npm(["bin"], quiet=True).stdout.strip()).parent.parent
+                if using_pnpm
+                else Path(self._npm(["prefix"], quiet=True).stdout.strip())
             )
             self._CACHED_LOCAL_NPM_PREFIX = npm_local_dir
 
             # start at npm_local_dir and walk up to $HOME (or /), finding all npm bin dirs along the way
-            search_dir = Path(npm_local_dir)
+            search_dir = npm_local_dir
             stop_if_reached = [str(Path("/")), str(_CACHED_HOME_DIR)]
             num_hops, max_hops = 0, 6
             while num_hops < max_hops and str(search_dir) not in stop_if_reached:
@@ -131,22 +162,89 @@ class NpmProvider(BinProvider):
                 search_dir = search_dir.parent
                 num_hops += 1
 
+            cached_bin, cached_dir = _CACHED_GLOBAL_NPM_PREFIX or ("", Path("/"))
             npm_global_dir = (
-                _CACHED_GLOBAL_NPM_PREFIX
-                or self.exec(
-                    bin_name=self.INSTALLER_BIN_ABSPATH,
-                    cmd=["prefix", "-g"],
-                    quiet=True,
-                ).stdout.strip()
-                + "/bin"
-            )  # /opt/homebrew/bin
-            _CACHED_GLOBAL_NPM_PREFIX = npm_global_dir
+                cached_dir if cached_bin == Path(npm_abspath).name else None
+            )
+            npm_global_dir = npm_global_dir or (
+                Path(self._npm(["bin", "-g"], quiet=True).stdout.strip())
+                if using_pnpm
+                else Path(self._npm(["prefix", "-g"], quiet=True).stdout.strip())
+                / "bin"
+            )
+            _CACHED_GLOBAL_NPM_PREFIX = (Path(npm_abspath).name, npm_global_dir)
             npm_bin_dirs.add(npm_global_dir)
 
         for bin_dir in npm_bin_dirs:
             if str(bin_dir) not in PATH:
                 PATH = ":".join([*PATH.split(":"), str(bin_dir)])
         return TypeAdapter(PATHStr).validate_python(PATH)
+
+    def _npm(
+        self,
+        npm_cmd: list[str],
+        quiet: bool = False,
+        timeout: int | None = None,
+        bootstrap_pnpm: bool = False,
+    ) -> subprocess.CompletedProcess:
+        global _CACHED_GLOBAL_NPM_PREFIX
+
+        npm_abspath = self.INSTALLER_BIN_ABSPATH
+        if not npm_abspath:
+            raise Exception(
+                f"{self.__class__.__name__} install method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
+            )
+
+        manual_binary = os.environ.get("NPM_BINARY")
+        if (
+            bootstrap_pnpm
+            and Path(npm_abspath).name != "pnpm"
+            and not (manual_binary and os.path.isabs(manual_binary))
+        ):
+            npm_cmd_args = [*self.npm_install_args, self.cache_arg]
+            npm_cmd_args.append(
+                f"--prefix={self.npm_prefix}" if self.npm_prefix else "--global",
+            )
+            proc = self.exec(
+                bin_name=npm_abspath,
+                cmd=["install", *npm_cmd_args, "pnpm"],
+                quiet=quiet,
+                timeout=timeout,
+            )
+            if proc.returncode == 0:
+                self._INSTALLER_BIN_ABSPATH = None
+                self._CACHED_LOCAL_NPM_PREFIX = None
+                _CACHED_GLOBAL_NPM_PREFIX = None
+                self.PATH = self._load_PATH()
+                npm_abspath = self.INSTALLER_BIN_ABSPATH or npm_abspath
+
+        subcommand, *npm_args = npm_cmd
+        cmd = npm_cmd
+        if Path(npm_abspath).name == "pnpm":
+            cmd = [
+                {
+                    "install": "add",
+                    "show": "view",
+                    "uninstall": "remove",
+                    "list": "ls",
+                }.get(subcommand, subcommand),
+                *(
+                    f"--dir={arg.split('=', 1)[-1]}"
+                    if arg.startswith("--prefix=")
+                    else f"--store-dir={arg.split('=', 1)[-1]}"
+                    if arg.startswith("--cache=")
+                    else arg
+                    for arg in npm_args
+                    if arg not in ("--force", "--no-audit", "--no-fund")
+                ),
+            ]
+
+        return self.exec(
+            bin_name=npm_abspath,
+            cmd=cmd,
+            quiet=quiet,
+            timeout=timeout,
+        )
 
     def setup(self) -> None:
         """create npm install prefix and node_modules_dir if needed"""
@@ -188,13 +286,13 @@ class NpmProvider(BinProvider):
         else:
             npm_cmd_args.append("--global")
 
-        proc = self.exec(
-            bin_name=self.INSTALLER_BIN_ABSPATH,
-            cmd=[
+        proc = self._npm(
+            [
                 "install",
                 *npm_cmd_args,
                 *install_args,
             ],
+            bootstrap_pnpm=True,
         )
 
         if proc.returncode != 0:
@@ -231,14 +329,7 @@ class NpmProvider(BinProvider):
         else:
             update_args.append("--global")
 
-        proc = self.exec(
-            bin_name=self.INSTALLER_BIN_ABSPATH,
-            cmd=[
-                "update",
-                *update_args,
-                *install_args,
-            ],
-        )
+        proc = self._npm(["update", *update_args, *install_args])
 
         if proc.returncode != 0:
             log_subprocess_error(
@@ -272,14 +363,7 @@ class NpmProvider(BinProvider):
         else:
             uninstall_args.append("--global")
 
-        proc = self.exec(
-            bin_name=self.INSTALLER_BIN_ABSPATH,
-            cmd=[
-                "uninstall",
-                *uninstall_args,
-                *install_args,
-            ],
-        )
+        proc = self._npm(["uninstall", *uninstall_args, *install_args])
 
         if proc.returncode != 0:
             log_subprocess_error(
@@ -318,19 +402,12 @@ class NpmProvider(BinProvider):
             main_package = install_args[
                 0
             ]  # assume first package in list is the main one
-            output_lines = (
-                self.exec(
-                    bin_name=self.INSTALLER_BIN_ABSPATH,
-                    cmd=[
-                        "show",
-                        "--json",
-                        main_package,
-                    ],
+            package_info = json.loads(
+                self._npm(
+                    ["show", "--json", main_package, "bin"],
                     timeout=self._version_timeout,
                     quiet=True,
-                )
-                .stdout.strip()
-                .split("\n")
+                ).stdout.strip(),
             )
             # { ...
             #   "version": "2.2.3",
@@ -340,7 +417,11 @@ class NpmProvider(BinProvider):
             #   },
             #   ...
             # }
-            alt_bin_names = json.loads(output_lines[0])["bin"].keys()
+            alt_bin_names = (
+                package_info.get("bin", package_info)
+                if isinstance(package_info, dict)
+                else {}
+            ).keys()
             for alt_bin_name in alt_bin_names:
                 abspath = bin_abspath(alt_bin_name, PATH=self.PATH)
                 if abspath:
@@ -383,9 +464,8 @@ class NpmProvider(BinProvider):
 
             # npm list --depth=0 --json --prefix=<prefix> "@postlight/parser"
             # (dont use 'npm info @postlight/parser version', it shows *any* available version, not installed version)
-            json_output = self.exec(
-                bin_name=self.INSTALLER_BIN_ABSPATH,
-                cmd=[
+            json_output = self._npm(
+                [
                     "list",
                     f"--prefix={self.npm_prefix}" if self.npm_prefix else "--global",
                     "--depth=0",
@@ -404,7 +484,10 @@ class NpmProvider(BinProvider):
             #     }
             #   }
             # }
-            version_str = json.loads(json_output)["dependencies"][package]["version"]
+            package_listing = json.loads(json_output)
+            if isinstance(package_listing, list):
+                package_listing = package_listing[0] if package_listing else {}
+            version_str = package_listing["dependencies"][package]["version"]
             return SemVer.parse(version_str)
         except Exception:
             raise

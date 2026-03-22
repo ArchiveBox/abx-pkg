@@ -86,6 +86,11 @@ if PYTHON_BIN_DIR not in DEFAULT_ENV_PATH:
 UNKNOWN_ABSPATH = Path("/usr/bin/true")
 UNKNOWN_VERSION = cast(SemVer, SemVer.parse("999.999.999"))
 
+
+def env_flag_is_true(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 ################## VALIDATORS #######################################
 
 NEVER_CACHE = (
@@ -408,6 +413,10 @@ class BinProvider(BaseModel):
             return self.euid
 
         return self.detect_euid()
+
+    @property
+    def DRY_RUN(self) -> bool:
+        return self._dry_run or env_flag_is_true("DRY_RUN")
 
     @computed_field
     @property
@@ -856,7 +865,7 @@ class BinProvider(BaseModel):
             f"cwd must be a valid, accessible directory: {cwd}"
         )
         cmd = [str(bin_abspath), *(str(arg) for arg in cmd)]
-        if self._dry_run:
+        if self.DRY_RUN:
             logger.info(
                 "DRY RUN (%s): %s",
                 self.__class__.__name__,
@@ -883,7 +892,7 @@ class BinProvider(BaseModel):
             except Exception:
                 pass
 
-        if self._dry_run:
+        if self.DRY_RUN:
             return subprocess.CompletedProcess(cmd, 0, "", "skipped (dry run)")
 
         return subprocess.run(
@@ -1103,7 +1112,7 @@ class BinProvider(BaseModel):
             if not quiet:
                 raise
 
-        if self._dry_run:
+        if self.DRY_RUN:
             # return fake ShallowBinary if we're just doing a dry run
             # no point trying to get real abspath or version if nothing was actually installed
             return ShallowBinary.model_validate(
@@ -1200,7 +1209,7 @@ class BinProvider(BaseModel):
             if not quiet:
                 raise
 
-        if self._dry_run:
+        if self.DRY_RUN:
             return ShallowBinary.model_validate(
                 {
                     "name": bin_name,
@@ -1289,7 +1298,7 @@ class BinProvider(BaseModel):
 
         self.invalidate_cache(bin_name)
 
-        if self._dry_run:
+        if self.DRY_RUN:
             return True
 
         if uninstall_result is not False:

@@ -5,6 +5,7 @@ __package__ = "abx_pkg"
 import os
 import sys
 import site
+import shlex
 import shutil
 import sysconfig
 import subprocess
@@ -65,6 +66,11 @@ class PipProvider(BinProvider):
         "--disable-pip-version-check",
         "--quiet",
     ]  # extra args for pip install ... e.g. --upgrade
+    pip_bootstrap_packages: list[str] = [
+        "pip",
+        "setuptools",
+        "uv",
+    ]  # packages installed into newly created pip_venv environments
 
     _INSTALLER_BIN_ABSPATH: HostBinPath | None = (
         None  # speed optimization only, faster to cache the abspath than to recompute it on every access
@@ -94,10 +100,11 @@ class PipProvider(BinProvider):
             return self._INSTALLER_BIN_ABSPATH
 
         abspath = None
+        pip_binary = os.getenv("PIP_BINARY")
 
-        if self.pip_venv:
-            assert self.INSTALLER_BIN != "pipx", "Cannot use pipx with pip_venv"
-
+        if pip_binary and Path(pip_binary).expanduser().is_absolute():
+            abspath = Path(pip_binary).expanduser()
+        elif self.pip_venv:
             # use venv pip
             venv_pip_path = self.pip_venv / "bin" / self.INSTALLER_BIN
             if (
@@ -139,7 +146,7 @@ class PipProvider(BinProvider):
 
     @model_validator(mode="after")
     def load_PATH_from_pip_sitepackages(self) -> Self:
-        """Assemble PATH from pip_venv, pipx, or autodetected global python system site-packages and user site-packages"""
+        """Assemble PATH from pip_venv or autodetected global python system site-packages and user site-packages"""
         global _CACHED_GLOBAL_PIP_BIN_DIRS
         PATH = self.PATH
 
@@ -148,22 +155,6 @@ class PipProvider(BinProvider):
         if self.pip_venv:
             # restrict PATH to only use venv bin path
             pip_bin_dirs = {str(self.pip_venv / "bin")}
-
-        elif self.INSTALLER_BIN == "pipx":
-            # restrict PATH to only use global pipx bin path
-            pipx_abspath = self.INSTALLER_BIN_ABSPATH
-            if pipx_abspath:
-                proc = self.exec(
-                    bin_name=pipx_abspath,
-                    cmd=["environment"],
-                    quiet=True,
-                    timeout=self._version_timeout,
-                )  # run $ pipx environment
-                if proc.returncode == 0:
-                    PIPX_BIN_DIR = (
-                        proc.stdout.strip().split("PIPX_BIN_DIR=")[-1].split("\n", 1)[0]
-                    )
-                    pip_bin_dirs = {PIPX_BIN_DIR}
         else:
             # autodetect global system python paths
 
@@ -250,94 +241,77 @@ class PipProvider(BinProvider):
                 venv_pip_path,
                 os.X_OK,
             ), f"could not find pip inside venv after creating it: {pip_venv}"
-            self.exec(
-                bin_name=venv_pip_path,
-                cmd=["install", self.cache_arg, "--upgrade", "pip", "setuptools"],
-            )  # setuptools is not installed by default after python >= 3.12
-
-    @remap_kwargs({"packages": "install_args"})
-    def _pip_show(
-        self,
-        bin_name: BinName,
-        install_args: InstallArgs | None = None,
-    ) -> list[str]:
-        pip_abspath = self.INSTALLER_BIN_ABSPATH
-        if not pip_abspath:
-            raise Exception(
-                f"{self.__class__.__name__} install method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
-            )
-
-        install_args = (
-            install_args or self.get_install_args(str(bin_name)) or [str(bin_name)]
-        )
-        main_package = install_args[0]  # assume first package in list is the main one
-        output_lines = (
-            self.exec(
-                bin_name=pip_abspath,
-                cmd=[
-                    "show",
-                    "--no-input",
-                    main_package,
+            proc = self._pip(
+                [
+                    "install",
+                    self.cache_arg,
+                    "--upgrade",
+                    *self.pip_bootstrap_packages,
                 ],
-                timeout=self._version_timeout,
                 quiet=True,
-            )
-            .stdout.strip()
-            .split("\n")
-        )
-        return output_lines
+            )  # setuptools is not installed by default after python >= 3.12, and uv is needed for fast pip-compatible installs
+            if proc.returncode != 0:
+                raise Exception(
+                    f"{self.__class__.__name__}: setup got returncode {proc.returncode} while bootstrapping {self.pip_bootstrap_packages}\n{format_subprocess_output(proc.stdout, proc.stderr)}".strip(),
+                )
 
-    def _pip_install(self, install_args: InstallArgs) -> subprocess.CompletedProcess:
+    def _uv_pip_target_args(self) -> list[str]:
+        if self.pip_venv:
+            return ["--python", str(self.pip_venv / "bin" / "python")]
+        pip_abspath = self.INSTALLER_BIN_ABSPATH
+        if pip_abspath:
+            try:
+                shebang = Path(pip_abspath).read_text(errors="ignore").splitlines()[0]
+                if shebang.startswith("#!"):
+                    command = shlex.split(shebang[2:].strip())
+                    python = (
+                        command[1] if Path(command[0]).name == "env" else command[0]
+                    )
+                    if Path(command[0]).name == "env":
+                        python = shutil.which(python, path=DEFAULT_ENV_PATH) or python
+                    return ["--python", python]
+            except Exception:
+                pass
+        return ["--system"]
+
+    def _pip(
+        self,
+        pip_cmd: list[str],
+        quiet: bool = False,
+        timeout: int | None = None,
+    ) -> subprocess.CompletedProcess:
         pip_abspath = self.INSTALLER_BIN_ABSPATH
         if not pip_abspath:
             raise Exception(
                 f"{self.__class__.__name__} install method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
             )
 
+        uv_abspath = bin_abspath("uv", PATH=DEFAULT_ENV_PATH) or shutil.which("uv")
+        pip_binary = os.getenv("PIP_BINARY")
+        if pip_binary and Path(pip_binary).expanduser().is_absolute():
+            uv_abspath = None
+        subcommand, *pip_args = pip_cmd
+        uv_cmd = [
+            "pip",
+            subcommand,
+            *(["--quiet"] if quiet or "--quiet" in pip_args else []),
+            *(
+                self._uv_pip_target_args()
+                if subcommand in ("install", "show", "uninstall")
+                else []
+            ),
+            *(
+                arg
+                for arg in pip_args
+                if arg
+                not in ("--no-input", "--disable-pip-version-check", "--quiet", "--yes")
+            ),
+        ]
         return self.exec(
-            bin_name=pip_abspath,
-            cmd=[
-                "install",
-                "--no-input",
-                self.cache_arg,
-                *self.pip_install_args,
-                *install_args,
-            ],
-        )
-
-    def _pip_update(self, install_args: InstallArgs) -> subprocess.CompletedProcess:
-        pip_abspath = self.INSTALLER_BIN_ABSPATH
-        if not pip_abspath:
-            raise Exception(
-                f"{self.__class__.__name__} update method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
-            )
-
-        return self.exec(
-            bin_name=pip_abspath,
-            cmd=[
-                "install",
-                "--no-input",
-                self.cache_arg,
-                *self.pip_install_args,
-                "--upgrade",
-                *install_args,
-            ],
-        )
-
-    def _pip_uninstall(self, install_args: InstallArgs) -> subprocess.CompletedProcess:
-        pip_abspath = self.INSTALLER_BIN_ABSPATH
-        if not pip_abspath:
-            raise Exception(
-                f"{self.__class__.__name__} uninstall method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
-            )
-
-        return self.exec(
-            bin_name=pip_abspath,
-            cmd=[
-                "uninstall",
-                "--yes",
-                *install_args,
-            ],
+            bin_name=uv_abspath or pip_abspath,
+            cmd=uv_cmd if uv_abspath else pip_cmd,
+            quiet=quiet,
+            timeout=timeout,
         )
 
     @remap_kwargs({"packages": "install_args"})
@@ -355,7 +329,15 @@ class PipProvider(BinProvider):
         # print(f'[*] {self.__class__.__name__}: Installing {bin_name}: {self.INSTALLER_BIN_ABSPATH} install {install_args}')
 
         # pip install --no-input --cache-dir=<cache_dir> <extra_pip_args> <install_args>
-        proc = self._pip_install(install_args)
+        proc = self._pip(
+            [
+                "install",
+                "--no-input",
+                self.cache_arg,
+                *self.pip_install_args,
+                *install_args,
+            ],
+        )
 
         if proc.returncode != 0:
             log_subprocess_error(
@@ -382,7 +364,16 @@ class PipProvider(BinProvider):
 
         install_args = install_args or self.get_install_args(bin_name)
 
-        proc = self._pip_update(install_args)
+        proc = self._pip(
+            [
+                "install",
+                "--no-input",
+                self.cache_arg,
+                *self.pip_install_args,
+                "--upgrade",
+                *install_args,
+            ],
+        )
 
         if proc.returncode != 0:
             log_subprocess_error(
@@ -406,7 +397,13 @@ class PipProvider(BinProvider):
     ) -> bool:
         install_args = install_args or self.get_install_args(bin_name)
 
-        proc = self._pip_uninstall(install_args)
+        proc = self._pip(
+            [
+                "uninstall",
+                "--yes",
+                *install_args,
+            ],
+        )
 
         if proc.returncode != 0:
             log_subprocess_error(
@@ -436,7 +433,15 @@ class PipProvider(BinProvider):
             pass
 
         # fallback to using pip show to get the site-packages bin path
-        output_lines = self._pip_show(bin_name)
+        output_lines = (
+            self._pip(
+                ["show", "--no-input", str(bin_name)],
+                quiet=True,
+                timeout=self._version_timeout,
+            )
+            .stdout.strip()
+            .split("\n")
+        )
         # For more information, please refer to <http://unlicense.org/>
         # Location: /Volumes/NVME/Users/squash/Library/Python/3.11/lib/python/site-packages
         # Requires: brotli, certifi, mutagen, pycryptodomex, requests, urllib3, websockets
@@ -471,7 +476,15 @@ class PipProvider(BinProvider):
             pass
 
         # fallback to using pip show to get the version (slower)
-        output_lines = self._pip_show(bin_name)
+        output_lines = (
+            self._pip(
+                ["show", "--no-input", str(bin_name)],
+                quiet=True,
+                timeout=self._version_timeout,
+            )
+            .stdout.strip()
+            .split("\n")
+        )
         # Name: yt-dlp
         # Version: 1.3.0
         # Location: /Volumes/NVME/Users/squash/Library/Python/3.11/lib/python/site-packages

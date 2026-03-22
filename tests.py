@@ -1440,19 +1440,13 @@ class TestUpdateAndUninstall(unittest.TestCase):
         self.assertTrue(result)
         self.assertEqual(mock_exec.call_args.kwargs["cmd"], ["uninstall", "python"])
 
-    @mock.patch.object(
-        BinProvider,
-        "INSTALLER_BIN_ABSPATH",
-        new_callable=mock.PropertyMock,
-        return_value=Path("/usr/local/bin/npm"),
-    )
     @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
     def test_npm_provider_update_uses_update_command(
         self,
         _mock_load_path,
-        _mock_installer_bin_abspath,
     ):
-        provider = NpmProvider(euid=os.geteuid())
+        provider = NpmProvider(npm_prefix=Path("/tmp/npm"), euid=os.geteuid())
+        provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/pnpm")
         proc = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
 
         with (
@@ -1475,29 +1469,20 @@ class TestUpdateAndUninstall(unittest.TestCase):
             mock_exec.call_args.kwargs["cmd"],
             [
                 "update",
-                "--force",
-                "--no-audit",
-                "--no-fund",
                 "--loglevel=error",
-                provider.cache_arg,
-                "--global",
+                f"--store-dir={provider.cache_dir}",
+                "--dir=/tmp/npm",
                 "python",
             ],
         )
 
-    @mock.patch.object(
-        BinProvider,
-        "INSTALLER_BIN_ABSPATH",
-        new_callable=mock.PropertyMock,
-        return_value=Path("/usr/local/bin/npm"),
-    )
     @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
     def test_npm_provider_uninstall_uses_uninstall_command(
         self,
         _mock_load_path,
-        _mock_installer_bin_abspath,
     ):
-        provider = NpmProvider(euid=os.geteuid())
+        provider = NpmProvider(npm_prefix=Path("/tmp/npm"), euid=os.geteuid())
+        provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/pnpm")
         proc = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
 
         with mock.patch.object(NpmProvider, "exec", return_value=proc) as mock_exec:
@@ -1507,14 +1492,186 @@ class TestUpdateAndUninstall(unittest.TestCase):
         self.assertEqual(
             mock_exec.call_args.kwargs["cmd"],
             [
-                "uninstall",
-                "--force",
-                "--no-audit",
-                "--no-fund",
+                "remove",
                 "--loglevel=error",
-                provider.cache_arg,
-                "--global",
+                f"--store-dir={provider.cache_dir}",
+                "--dir=/tmp/npm",
                 "python",
+            ],
+        )
+
+    @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
+    def test_npm_provider_install_bootstraps_pnpm_lazily(self, _mock_load_path):
+        provider = NpmProvider(npm_prefix=Path("/tmp/npm"), euid=os.geteuid())
+        provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/npm")
+        proc = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+        calls = []
+
+        def fake_exec(*args, **kwargs):
+            calls.append((Path(kwargs["bin_name"]).name, kwargs["cmd"]))
+            if kwargs["cmd"][-1] == "pnpm":
+                provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/pnpm")
+            return proc
+
+        with mock.patch.object(NpmProvider, "exec", side_effect=fake_exec):
+            provider.default_install_handler("python", install_args=["python"])
+
+        self.assertEqual(
+            calls,
+            [
+                (
+                    "npm",
+                    [
+                        "install",
+                        "--force",
+                        "--no-audit",
+                        "--no-fund",
+                        "--loglevel=error",
+                        provider.cache_arg,
+                        "--prefix=/tmp/npm",
+                        "pnpm",
+                    ],
+                ),
+                (
+                    "pnpm",
+                    [
+                        "add",
+                        "--loglevel=error",
+                        f"--store-dir={provider.cache_dir}",
+                        "--dir=/tmp/npm",
+                        "python",
+                    ],
+                ),
+            ],
+        )
+
+    @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
+    def test_npm_provider_prefers_pnpm_over_npm(self, _mock_load_path):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            pnpm_bin = temp_path / "pnpm"
+            npm_bin = temp_path / "npm"
+            pnpm_bin.write_text("#!/bin/sh\n")
+            npm_bin.write_text("#!/bin/sh\n")
+            pnpm_bin.chmod(0o755)
+            npm_bin.chmod(0o755)
+
+            with mock.patch(
+                "abx_pkg.binprovider_npm.bin_abspath",
+                side_effect=lambda name, PATH=None: (
+                    str(pnpm_bin)
+                    if name == "pnpm"
+                    else str(npm_bin)
+                    if name == "npm"
+                    else None
+                ),
+            ):
+                provider = NpmProvider(euid=os.geteuid())
+                installer_abspath = provider.INSTALLER_BIN_ABSPATH
+                assert installer_abspath is not None
+                self.assertEqual(
+                    Path(installer_abspath).resolve(),
+                    pnpm_bin.resolve(),
+                )
+
+    @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
+    def test_npm_provider_respects_absolute_env_override_over_pnpm(
+        self,
+        _mock_load_path,
+    ):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            pnpm_bin = temp_path / "pnpm"
+            npm_bin = temp_path / "npm"
+            custom_bin = temp_path / "custom-npm"
+            for bin_path in (pnpm_bin, npm_bin, custom_bin):
+                bin_path.write_text("#!/bin/sh\n")
+                bin_path.chmod(0o755)
+
+            with (
+                mock.patch.dict(os.environ, {"NPM_BINARY": str(custom_bin)}),
+                mock.patch(
+                    "abx_pkg.binprovider_npm.bin_abspath",
+                    side_effect=lambda name, PATH=None: (
+                        str(pnpm_bin)
+                        if name == "pnpm"
+                        else str(npm_bin)
+                        if name == "npm"
+                        else None
+                    ),
+                ),
+            ):
+                provider = NpmProvider(euid=os.geteuid())
+                self.assertEqual(provider.INSTALLER_BIN_ABSPATH, custom_bin.resolve())
+
+    @mock.patch.object(
+        BinProvider,
+        "INSTALLER_BIN_ABSPATH",
+        new_callable=mock.PropertyMock,
+        return_value=Path("/usr/local/bin/pip"),
+    )
+    @mock.patch(
+        "abx_pkg.binprovider_pip.PipProvider.load_PATH_from_pip_sitepackages",
+        lambda self: self,
+    )
+    @mock.patch(
+        "abx_pkg.binprovider_pip.shutil.which",
+        side_effect=lambda name, **kwargs: (
+            "/usr/local/bin/uv"
+            if name == "uv"
+            else "/usr/local/bin/pip"
+            if name == "pip"
+            else None
+        ),
+    )
+    def test_pip_provider_setup_bootstraps_uv(
+        self,
+        _mock_which,
+        _mock_installer_bin_abspath,
+    ):
+        provider = PipProvider(euid=os.geteuid())
+        proc = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pip_venv = Path(temp_dir) / "venv"
+            provider.pip_venv = pip_venv
+
+            def fake_venv_create(path, **kwargs):
+                python_path = Path(path) / "bin" / "python"
+                python_path.parent.mkdir(parents=True, exist_ok=True)
+                python_path.touch()
+                python_path.chmod(0o755)
+                pip_path = Path(path) / "bin" / "pip"
+                pip_path.touch()
+                pip_path.chmod(0o755)
+
+            with (
+                mock.patch("venv.create", side_effect=fake_venv_create) as mock_create,
+                mock.patch.object(PipProvider, "exec", return_value=proc) as mock_exec,
+            ):
+                provider._pip_setup_venv(pip_venv)
+
+        mock_create.assert_called_once_with(
+            str(pip_venv),
+            system_site_packages=False,
+            clear=True,
+            symlinks=True,
+            with_pip=True,
+            upgrade_deps=True,
+        )
+        self.assertEqual(
+            mock_exec.call_args.kwargs["cmd"],
+            [
+                "pip",
+                "install",
+                "--quiet",
+                "--python",
+                str(pip_venv / "bin" / "python"),
+                provider.cache_arg,
+                "--upgrade",
+                "pip",
+                "setuptools",
+                "uv",
             ],
         )
 
@@ -1528,8 +1685,19 @@ class TestUpdateAndUninstall(unittest.TestCase):
         "abx_pkg.binprovider_pip.PipProvider.load_PATH_from_pip_sitepackages",
         lambda self: self,
     )
+    @mock.patch(
+        "abx_pkg.binprovider_pip.shutil.which",
+        side_effect=lambda name, **kwargs: (
+            "/usr/local/bin/uv"
+            if name == "uv"
+            else "/usr/local/bin/pip"
+            if name == "pip"
+            else None
+        ),
+    )
     def test_pip_provider_update_uses_install_upgrade(
         self,
+        _mock_which,
         _mock_installer_bin_abspath,
     ):
         provider = PipProvider(euid=os.geteuid())
@@ -1537,6 +1705,11 @@ class TestUpdateAndUninstall(unittest.TestCase):
 
         with (
             mock.patch.object(PipProvider, "exec", return_value=proc) as mock_exec,
+            mock.patch.object(
+                PipProvider,
+                "_uv_pip_target_args",
+                return_value=["--python", "/tmp/python"],
+            ),
             mock.patch.object(
                 PipProvider,
                 "get_abspath",
@@ -1554,10 +1727,12 @@ class TestUpdateAndUninstall(unittest.TestCase):
         self.assertEqual(
             mock_exec.call_args.kwargs["cmd"],
             [
+                "pip",
                 "install",
-                "--no-input",
+                "--quiet",
+                "--python",
+                "/tmp/python",
                 provider.cache_arg,
-                *provider.pip_install_args,
                 "--upgrade",
                 "python",
             ],
@@ -1573,20 +1748,124 @@ class TestUpdateAndUninstall(unittest.TestCase):
         "abx_pkg.binprovider_pip.PipProvider.load_PATH_from_pip_sitepackages",
         lambda self: self,
     )
+    @mock.patch(
+        "abx_pkg.binprovider_pip.shutil.which",
+        side_effect=lambda name, **kwargs: (
+            "/usr/local/bin/uv"
+            if name == "uv"
+            else "/usr/local/bin/pip"
+            if name == "pip"
+            else None
+        ),
+    )
     def test_pip_provider_uninstall_uses_uninstall_command(
         self,
+        _mock_which,
         _mock_installer_bin_abspath,
     ):
         provider = PipProvider(euid=os.geteuid())
         proc = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
 
-        with mock.patch.object(PipProvider, "exec", return_value=proc) as mock_exec:
+        with (
+            mock.patch.object(PipProvider, "exec", return_value=proc) as mock_exec,
+            mock.patch.object(
+                PipProvider,
+                "_uv_pip_target_args",
+                return_value=["--python", "/tmp/python"],
+            ),
+        ):
             result = provider.uninstall("python")
 
         self.assertTrue(result)
         self.assertEqual(
             mock_exec.call_args.kwargs["cmd"],
-            ["uninstall", "--yes", "python"],
+            ["pip", "uninstall", "--python", "/tmp/python", "python"],
+        )
+
+    @mock.patch.object(
+        BinProvider,
+        "INSTALLER_BIN_ABSPATH",
+        new_callable=mock.PropertyMock,
+        return_value=Path("/usr/local/bin/pip"),
+    )
+    @mock.patch(
+        "abx_pkg.binprovider_pip.PipProvider.load_PATH_from_pip_sitepackages",
+        lambda self: self,
+    )
+    @mock.patch(
+        "abx_pkg.binprovider_pip.shutil.which",
+        side_effect=lambda name, **kwargs: (
+            "/usr/local/bin/uv"
+            if name == "uv"
+            else "/usr/local/bin/pip"
+            if name == "pip"
+            else None
+        ),
+    )
+    def test_pip_provider_show_uses_uv_pip_show(
+        self,
+        _mock_which,
+        _mock_installer_bin_abspath,
+    ):
+        provider = PipProvider(euid=os.geteuid())
+        proc = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="Name: python\nVersion: 3.11.0\n",
+            stderr="",
+        )
+
+        with (
+            mock.patch.object(PipProvider, "exec", return_value=proc) as mock_exec,
+            mock.patch.object(
+                PipProvider,
+                "_uv_pip_target_args",
+                return_value=["--python", "/tmp/python"],
+            ),
+        ):
+            provider._pip(["show", "--no-input", "python"], quiet=True)
+
+        self.assertEqual(
+            mock_exec.call_args.kwargs["cmd"],
+            ["pip", "show", "--quiet", "--python", "/tmp/python", "python"],
+        )
+
+    @mock.patch(
+        "abx_pkg.binprovider_pip.PipProvider.load_PATH_from_pip_sitepackages",
+        lambda self: self,
+    )
+    @mock.patch(
+        "abx_pkg.binprovider_pip.shutil.which",
+        side_effect=lambda name, **kwargs: (
+            "/usr/local/bin/uv" if name == "uv" else None
+        ),
+    )
+    def test_pip_provider_respects_explicit_pip_binary_abspath(
+        self,
+        _mock_which,
+    ):
+        proc = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            custom_pip = Path(temp_dir) / "pip"
+            custom_pip.touch()
+            custom_pip.chmod(0o755)
+
+            with (
+                mock.patch.dict(
+                    os.environ,
+                    {"PIP_BINARY": str(custom_pip)},
+                    clear=False,
+                ),
+                mock.patch.object(PipProvider, "exec", return_value=proc) as mock_exec,
+            ):
+                provider = PipProvider(euid=os.geteuid())
+                provider._pip(["install", "--no-input", "python"])
+
+        self.assertEqual(mock_exec.call_args.kwargs["bin_name"], custom_pip)
+        self.assertEqual(
+            mock_exec.call_args.kwargs["cmd"],
+            ["install", "--no-input", "python"],
         )
 
     @mock.patch.object(
@@ -2517,6 +2796,49 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             binary = Binary(name="black", binproviders=[provider])
             self.assert_binary_lifecycle(binary)
 
+    def test_pip_provider_live_venv_setup_respects_explicit_pip_binary_failure(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            pip_venv = temp_path / "venv"
+            custom_pip = temp_path / "custom-pip"
+            pip_used_flag = temp_path / "custom-pip-used"
+            custom_pip.write_text(
+                "#!/bin/sh\n"
+                'touch "$CUSTOM_PIP_MARKER"\n'
+                "echo 'custom pip was invoked for pip_venv setup' >&2\n"
+                "exit 99\n",
+            )
+            custom_pip.chmod(0o755)
+
+            old_pip_binary = os.environ.get("PIP_BINARY")
+            old_pip_marker = os.environ.get("CUSTOM_PIP_MARKER")
+            try:
+                os.environ["PIP_BINARY"] = str(custom_pip)
+                os.environ["CUSTOM_PIP_MARKER"] = str(pip_used_flag)
+
+                provider = PipProvider(pip_venv=pip_venv)
+                with self.assertRaises(Exception) as err:
+                    provider.setup()
+            finally:
+                if old_pip_binary is None:
+                    os.environ.pop("PIP_BINARY", None)
+                else:
+                    os.environ["PIP_BINARY"] = old_pip_binary
+                if old_pip_marker is None:
+                    os.environ.pop("CUSTOM_PIP_MARKER", None)
+                else:
+                    os.environ["CUSTOM_PIP_MARKER"] = old_pip_marker
+
+            self.assertTrue(
+                pip_used_flag.exists(),
+                "pip_venv setup did not invoke explicit PIP_BINARY",
+            )
+            self.assertIn(
+                "custom pip was invoked for pip_venv setup",
+                str(err.exception),
+            )
+            self.assertFalse((pip_venv / "bin" / "uv").exists())
+
     def test_npm_provider_live_update_and_uninstall(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = NpmProvider(npm_prefix=Path(temp_dir) / "npm")
@@ -2765,11 +3087,40 @@ class InstallTest(unittest.TestCase):
         pipprovider.install(bin_name="doesnotexist")
         mock_run.assert_not_called()
 
+    @mock.patch("sys.stderr")
+    @mock.patch(
+        "subprocess.run",
+        return_value=subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="",
+            stderr="",
+        ),
+    )
+    def test_env_dry_run_doesnt_exec(self, mock_run, _mock_stderr):
+        with mock.patch.dict(os.environ, {"DRY_RUN": "1"}, clear=False):
+            PipProvider().install(bin_name="doesnotexist")
+        mock_run.assert_not_called()
+
     def test_dry_run_logs_info(self):
         pipprovider = PipProvider()
         binary = Binary(name="doesnotexist", binproviders=[pipprovider])
         with capture_abx_logs(logging.INFO) as records:
             binary.install(dry_run=True)
+
+        messages = [record.getMessage() for record in records]
+        self.assertTrue(
+            any(message.startswith("DRY RUN (PipProvider): ") for message in messages),
+        )
+
+    def test_env_dry_run_logs_info(self):
+        pipprovider = PipProvider()
+        binary = Binary(name="doesnotexist", binproviders=[pipprovider])
+        with (
+            mock.patch.dict(os.environ, {"DRY_RUN": "1"}, clear=False),
+            capture_abx_logs(logging.INFO) as records,
+        ):
+            binary.install()
 
         messages = [record.getMessage() for record in records]
         self.assertTrue(
