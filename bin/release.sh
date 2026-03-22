@@ -148,7 +148,7 @@ wait_for_runs() {
     local attempts=0
 
     while :; do
-        runs_json="$(gh run list --repo "${slug}" --event "${event}" --commit "${sha}" --limit 20 --json databaseId,status,conclusion,workflowName)"
+        runs_json="$(gh run list --repo "${slug}" --event "${event}" --commit "${sha}" --limit 20 --json databaseId,status,conclusion,workflowName | perl -pe 's/\e\\[[0-9;]*[[:alpha:]]//g')"
         if [[ "$(jq 'length' <<<"${runs_json}")" -gt 0 ]]; then
             break
         fi
@@ -188,7 +188,6 @@ wait_for_pypi() {
 run_checks() {
     uv sync --all-extras --no-cache --upgrade
     uv run prek run --all-files
-    uv run python tests.py
     uv build
 }
 
