@@ -27,13 +27,12 @@ jobs:
 
       - run: uv sync --all-extras --no-cache --upgrade
       - run: uv build
-      - name: Publish package
-        env:
-          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_PAT_SECRET }}
-        run: |
-          if [[ -n "${UV_PUBLISH_TOKEN:-}" ]]; then
-            uv publish
-          else
-            env -u UV_PUBLISH_USERNAME -u UV_PUBLISH_PASSWORD -u TWINE_USERNAME -u TWINE_PASSWORD \
-              uv publish --trusted-publishing always
-          fi
+      - name: Publish package with token
+        if: ${{ secrets.PYPI_PAT_SECRET != '' }}
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_PAT_SECRET }}
+
+      - name: Publish package with trusted publishing
+        if: ${{ secrets.PYPI_PAT_SECRET == '' }}
+        uses: pypa/gh-action-pypi-publish@release/v1
