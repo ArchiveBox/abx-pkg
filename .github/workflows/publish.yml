@@ -12,6 +12,8 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    env:
+      UV_PUBLISH_TOKEN: ${{ secrets.PYPI_PAT_SECRET }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -28,11 +30,11 @@ jobs:
       - run: uv sync --all-extras --no-cache --upgrade
       - run: uv build
       - name: Publish package with token
-        if: ${{ secrets.PYPI_PAT_SECRET != '' }}
+        if: ${{ env.UV_PUBLISH_TOKEN != '' }}
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          password: ${{ secrets.PYPI_PAT_SECRET }}
+          password: ${{ env.UV_PUBLISH_TOKEN }}
 
       - name: Publish package with trusted publishing
-        if: ${{ secrets.PYPI_PAT_SECRET == '' }}
+        if: ${{ env.UV_PUBLISH_TOKEN == '' }}
         uses: pypa/gh-action-pypi-publish@release/v1
