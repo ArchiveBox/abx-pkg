@@ -1608,7 +1608,7 @@ class TestUpdateAndUninstall(unittest.TestCase):
         BinProvider,
         "INSTALLER_BIN_ABSPATH",
         new_callable=mock.PropertyMock,
-        return_value=Path("/usr/local/bin/pip"),
+        return_value=Path(sys.executable),
     )
     @mock.patch(
         "abx_pkg.binprovider_pip.PipProvider.load_PATH_from_pip_sitepackages",
@@ -1679,7 +1679,7 @@ class TestUpdateAndUninstall(unittest.TestCase):
         BinProvider,
         "INSTALLER_BIN_ABSPATH",
         new_callable=mock.PropertyMock,
-        return_value=Path("/usr/local/bin/pip"),
+        return_value=Path(sys.executable),
     )
     @mock.patch(
         "abx_pkg.binprovider_pip.PipProvider.load_PATH_from_pip_sitepackages",
@@ -1742,7 +1742,7 @@ class TestUpdateAndUninstall(unittest.TestCase):
         BinProvider,
         "INSTALLER_BIN_ABSPATH",
         new_callable=mock.PropertyMock,
-        return_value=Path("/usr/local/bin/pip"),
+        return_value=Path(sys.executable),
     )
     @mock.patch(
         "abx_pkg.binprovider_pip.PipProvider.load_PATH_from_pip_sitepackages",

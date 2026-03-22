@@ -188,6 +188,7 @@ class NpmProvider(BinProvider):
         bootstrap_pnpm: bool = False,
     ) -> subprocess.CompletedProcess:
         global _CACHED_GLOBAL_NPM_PREFIX
+        env = os.environ.copy()
 
         npm_abspath = self.INSTALLER_BIN_ABSPATH
         if not npm_abspath:
@@ -221,6 +222,19 @@ class NpmProvider(BinProvider):
         subcommand, *npm_args = npm_cmd
         cmd = npm_cmd
         if Path(npm_abspath).name == "pnpm":
+            pnpm_home = Path(
+                env.get("PNPM_HOME")
+                or (
+                    self.npm_prefix / "node_modules/.bin"
+                    if self.npm_prefix
+                    else self.cache_dir / "pnpm-home"
+                ),
+            )
+            pnpm_home.mkdir(parents=True, exist_ok=True)
+            env["PNPM_HOME"] = str(pnpm_home)
+            path_entries = [entry for entry in env.get("PATH", "").split(":") if entry]
+            if str(pnpm_home) not in path_entries:
+                env["PATH"] = ":".join([str(pnpm_home), *path_entries])
             cmd = [
                 {
                     "install": "add",
@@ -244,6 +258,7 @@ class NpmProvider(BinProvider):
             cmd=cmd,
             quiet=quiet,
             timeout=timeout,
+            env=env,
         )
 
     def setup(self) -> None:

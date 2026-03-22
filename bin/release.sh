@@ -231,6 +231,22 @@ create_release() {
         --generate-notes
 }
 
+publish_artifacts() {
+    local version="$1"
+    local pypi_token="${UV_PUBLISH_TOKEN:-${PYPI_TOKEN:-${PYPI_PAT_SECRET:-}}}"
+
+    if [[ -n "${pypi_token}" ]]; then
+        UV_PUBLISH_TOKEN="${pypi_token}" uv publish --username=__token__ dist/*
+    elif [[ -n "${GITHUB_ACTIONS:-}" ]]; then
+        uv publish --trusted-publishing always dist/*
+    else
+        echo "Missing PyPI credentials: set UV_PUBLISH_TOKEN or PYPI_TOKEN" >&2
+        return 1
+    fi
+
+    wait_for_pypi "${PYPI_PACKAGE}" "${version}"
+}
+
 main() {
     local slug branch version latest relation
 
@@ -257,9 +273,8 @@ main() {
 
     wait_for_runs "${slug}" push "$(git rev-parse HEAD)" "push"
 
+    publish_artifacts "${version}"
     create_release "${slug}" "${version}"
-    wait_for_runs "${slug}" release "$(git rev-parse HEAD)" "release"
-    wait_for_pypi "${PYPI_PACKAGE}" "${version}"
 
     latest="$(latest_release_version "${slug}")"
     relation="$(compare_versions "${latest}" "${version}")"
