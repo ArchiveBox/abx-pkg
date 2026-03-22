@@ -3,6 +3,7 @@ name: Publish to PyPI
 on:
   release:
     types: [published]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -33,5 +34,6 @@ jobs:
           if [[ -n "${UV_PUBLISH_TOKEN:-}" ]]; then
             uv publish
           else
-            uv publish --trusted-publishing always
+            env -u UV_PUBLISH_USERNAME -u UV_PUBLISH_PASSWORD -u TWINE_USERNAME -u TWINE_PASSWORD \
+              uv publish --trusted-publishing always
           fi

@@ -45,7 +45,17 @@ PY
 }
 
 default_branch() {
-    git symbolic-ref refs/remotes/origin/HEAD | sed 's#^refs/remotes/origin/##'
+    if git symbolic-ref refs/remotes/origin/HEAD >/dev/null 2>&1; then
+        git symbolic-ref refs/remotes/origin/HEAD | sed 's#^refs/remotes/origin/##'
+        return 0
+    fi
+
+    if command -v gh >/dev/null 2>&1; then
+        gh repo view "$(repo_slug)" --json defaultBranchRef --jq '.defaultBranchRef.name'
+        return 0
+    fi
+
+    git remote show origin | sed -n 's/.*HEAD branch: //p'
 }
 
 current_version() {
