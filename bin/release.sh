@@ -45,6 +45,10 @@ PY
 }
 
 default_branch() {
+    if [[ -n "${DEFAULT_BRANCH:-}" ]]; then
+        echo "${DEFAULT_BRANCH}"
+        return 0
+    fi
     if git symbolic-ref refs/remotes/origin/HEAD >/dev/null 2>&1; then
         git symbolic-ref refs/remotes/origin/HEAD | sed 's#^refs/remotes/origin/##'
         return 0
@@ -148,7 +152,7 @@ wait_for_runs() {
     local attempts=0
 
     while :; do
-        runs_json="$(gh run list --repo "${slug}" --event "${event}" --commit "${sha}" --limit 20 --json databaseId,status,conclusion,workflowName | perl -pe 's/\e\\[[0-9;]*[[:alpha:]]//g')"
+        runs_json="$(GH_FORCE_TTY=0 GH_PAGER=cat gh run list --repo "${slug}" --event "${event}" --commit "${sha}" --limit 20 --json databaseId,status,conclusion,workflowName)"
         if [[ "$(jq 'length' <<<"${runs_json}")" -gt 0 ]]; then
             break
         fi
