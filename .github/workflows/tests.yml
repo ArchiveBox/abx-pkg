@@ -44,8 +44,6 @@ jobs:
   build:
     needs: precheck
     runs-on: ${{ matrix.os }}
-    env:
-      PNPM_HOME: ${{ runner.temp }}/pnpm
     strategy:
       fail-fast: true
       matrix:
@@ -82,6 +80,7 @@ jobs:
 
     - name: Setup venv and install pip dependencies
       run: |
+        PNPM_HOME="${RUNNER_TEMP}/pnpm" \
         uv venv --python "${{ matrix.python_version }}" \
         && uv sync --all-extras \
         && uv pip install pip \
@@ -92,14 +91,13 @@ jobs:
 
     - name: Run standard test suite
       run: |
+        export PNPM_HOME="${RUNNER_TEMP}/pnpm" \
         source .venv/bin/activate \
         && export PATH="$PNPM_HOME:$PATH" \
         && python tests.py
 
   live-integration:
     runs-on: ${{ matrix.os }}
-    env:
-      PNPM_HOME: ${{ runner.temp }}/pnpm
     strategy:
       fail-fast: true
       matrix:
@@ -145,6 +143,7 @@ jobs:
 
     - name: Setup venv and install pip dependencies
       run: |
+        PNPM_HOME="${RUNNER_TEMP}/pnpm" \
         uv venv --python "3.12" \
         && uv sync --all-extras \
         && uv pip install pip \
@@ -162,6 +161,7 @@ jobs:
     - name: Run non-root live package lifecycle tests on macOS
       if: runner.os == 'macOS'
       run: |
+        export PNPM_HOME="${RUNNER_TEMP}/pnpm" \
         source .venv/bin/activate \
         && export PATH="$PNPM_HOME:$PATH" \
         && python -m unittest \
@@ -177,6 +177,7 @@ jobs:
     - name: Run non-root live package lifecycle tests on Linux
       if: runner.os == 'Linux'
       run: |
+        export PNPM_HOME="${RUNNER_TEMP}/pnpm" \
         source .venv/bin/activate \
         && export PATH="$PNPM_HOME:$PATH" \
         && python -m unittest \
@@ -191,6 +192,7 @@ jobs:
     - name: Run root-required live package lifecycle tests on Linux
       if: runner.os == 'Linux'
       run: |
+        export PNPM_HOME="${RUNNER_TEMP}/pnpm" \
         sudo env "PATH=$PNPM_HOME:$PATH:/nix/var/nix/profiles/default/bin" ./.venv/bin/python -m unittest \
           tests.LiveUpdateAndUninstallTest.test_apt_provider_live_update_and_uninstall \
           tests.LiveUpdateAndUninstallTest.test_pyinfra_provider_live_update_and_uninstall \
