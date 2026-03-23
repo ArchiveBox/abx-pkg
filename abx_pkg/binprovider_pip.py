@@ -193,7 +193,7 @@ class PipProvider(BinProvider):
 
             # remove any active venv from PATH because we're trying to only get the global system python paths
             if ACTIVE_VENV:
-                pip_bin_dirs.remove(f"{ACTIVE_VENV}/bin")
+                pip_bin_dirs.discard(f"{ACTIVE_VENV}/bin")
 
         for bin_dir in pip_bin_dirs:
             if bin_dir not in PATH:
@@ -294,7 +294,11 @@ class PipProvider(BinProvider):
         uv_cmd = [
             "pip",
             subcommand,
-            *(["--quiet"] if quiet or "--quiet" in pip_args else []),
+            *(
+                ["--quiet"]
+                if subcommand != "show" and (quiet or "--quiet" in pip_args)
+                else []
+            ),
             *(
                 self._uv_pip_target_args()
                 if subcommand in ("install", "show", "uninstall")
@@ -436,7 +440,7 @@ class PipProvider(BinProvider):
         output_lines = (
             self._pip(
                 ["show", "--no-input", str(bin_name)],
-                quiet=True,
+                quiet=False,
                 timeout=self._version_timeout,
             )
             .stdout.strip()
@@ -479,7 +483,7 @@ class PipProvider(BinProvider):
         output_lines = (
             self._pip(
                 ["show", "--no-input", str(bin_name)],
-                quiet=True,
+                quiet=False,
                 timeout=self._version_timeout,
             )
             .stdout.strip()

@@ -1704,6 +1704,7 @@ class TestUpdateAndUninstall(unittest.TestCase):
         proc = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
 
         with (
+            mock.patch("abx_pkg.binprovider_pip.ACTIVE_VENV", None),
             mock.patch.object(PipProvider, "exec", return_value=proc) as mock_exec,
             mock.patch.object(
                 PipProvider,
@@ -1827,8 +1828,62 @@ class TestUpdateAndUninstall(unittest.TestCase):
 
         self.assertEqual(
             mock_exec.call_args.kwargs["cmd"],
-            ["pip", "show", "--quiet", "--python", "/tmp/python", "python"],
+            ["pip", "show", "--python", "/tmp/python", "python"],
         )
+
+    @mock.patch.object(
+        BinProvider,
+        "INSTALLER_BIN_ABSPATH",
+        new_callable=mock.PropertyMock,
+        return_value=Path("/usr/local/bin/pip"),
+    )
+    @mock.patch(
+        "abx_pkg.binprovider_pip.PipProvider.load_PATH_from_pip_sitepackages",
+        lambda self: self,
+    )
+    @mock.patch(
+        "abx_pkg.binprovider_pip.shutil.which",
+        side_effect=lambda name, **kwargs: (
+            "/usr/local/bin/uv"
+            if name == "uv"
+            else "/usr/local/bin/pip"
+            if name == "pip"
+            else None
+        ),
+    )
+    def test_pip_provider_version_falls_back_to_pip_show_when_binary_has_no_version_flag(
+        self,
+        _mock_which,
+        _mock_installer_bin_abspath,
+    ):
+        provider = PipProvider(euid=os.geteuid())
+        proc = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="Name: opendataloader-pdf\nVersion: 2.0.2\n",
+            stderr="",
+        )
+
+        with (
+            mock.patch("abx_pkg.binprovider_pip.ACTIVE_VENV", None),
+            mock.patch.object(
+                BinProvider,
+                "default_version_handler",
+                side_effect=ValueError("no --version support"),
+            ),
+            mock.patch.object(PipProvider, "exec", return_value=proc),
+            mock.patch.object(
+                PipProvider,
+                "_uv_pip_target_args",
+                return_value=["--python", "/tmp/python"],
+            ),
+        ):
+            version = provider.default_version_handler(
+                "opendataloader-pdf",
+                abspath=Path("/tmp/opendataloader-pdf"),
+            )
+
+        self.assertEqual(version, SemVer("2.0.2"))
 
     @mock.patch(
         "abx_pkg.binprovider_pip.PipProvider.load_PATH_from_pip_sitepackages",

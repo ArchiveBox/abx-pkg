@@ -353,7 +353,7 @@ from pydantic import InstanceOf
 from abx_pkg import BinProvider, Binary, SemVer
 from django_pydantic_field import SchemaField
 
-class InstalledBinary(models.Model):
+class Binary(models.Model):
     name = models.CharField(max_length=63)
     binary: Binary = SchemaField()
     binproviders: list[InstanceOf[BinProvider]] = SchemaField(default=[])
@@ -368,7 +368,7 @@ from abx_pkg import Binary, SemVer, env
 curl = Binary(name='curl').load()
 
 # save it to the DB using our new model
-obj = InstalledBinary(
+obj = Binary(
     name='curl',
     binary=curl,                                  # store Binary/BinProvider/SemVer values directly in fields
     binproviders=[env],                           # no need for manual JSON serialization / schema checking
@@ -379,7 +379,7 @@ obj.save()
 
 When fetching it back from the DB, the `Binary` field is auto-deserialized / immediately usable:
 ```
-obj = InstalledBinary.objects.get(name='curl')    # everything is transparently serialized to/from the DB,
+obj = Binary.objects.get(name='curl')    # everything is transparently serialized to/from the DB,
                                                   # and is ready to go immediately after querying:
 assert obj.binary.abspath == curl.abspath
 print(obj.binary.abspath)                         #   Path('/usr/local/bin/curl')
