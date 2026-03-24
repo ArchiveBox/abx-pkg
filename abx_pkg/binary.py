@@ -152,12 +152,7 @@ class Binary(ShallowBinary):
     @computed_field
     @property
     def is_valid(self) -> bool:
-        if not (
-            self.name
-            and self.loaded_abspath
-            and self.loaded_version
-            and (self.is_executable or self.is_script)
-        ):
+        if not (self.name and self.loaded_abspath and self.loaded_version):
             return False
         if self.min_version and self.loaded_version < self.min_version:
             return False
@@ -199,6 +194,29 @@ class Binary(ShallowBinary):
             err,
         )
 
+    def _validated_loaded_copy(
+        self,
+        provider: BinProvider,
+        *,
+        abspath: HostBinPath | None,
+        version: SemVer | None,
+        sha256: str | None,
+    ) -> Self:
+        result = self.model_copy(
+            deep=True,
+            update={
+                "loaded_binprovider": provider,
+                "loaded_abspath": abspath,
+                "loaded_version": version,
+                "loaded_sha256": sha256,
+            },
+        )
+        if not result.is_valid:
+            raise ValueError(
+                f"{provider.name} resolved {self.name} with version {result.loaded_version} which does not satisfy min_version {self.min_version}",
+            )
+        return result
+
     @validate_call
     @log_method_call(include_result=True)
     def install(
@@ -231,14 +249,11 @@ class Binary(ShallowBinary):
                 installed_bin = provider.install(self.name)
                 if installed_bin is not None and installed_bin.loaded_abspath:
                     # print('INSTALLED', self.name, installed_bin)
-                    return self.model_copy(
-                        deep=True,
-                        update={
-                            "loaded_binprovider": provider,
-                            "loaded_abspath": installed_bin.loaded_abspath,
-                            "loaded_version": installed_bin.loaded_version,
-                            "loaded_sha256": installed_bin.loaded_sha256,
-                        },
+                    return self._validated_loaded_copy(
+                        provider,
+                        abspath=installed_bin.loaded_abspath,
+                        version=installed_bin.loaded_version,
+                        sha256=installed_bin.loaded_sha256,
                     )
             except Exception as err:
                 inner_exc = err
@@ -289,14 +304,11 @@ class Binary(ShallowBinary):
                 installed_bin = provider.load(self.name, nocache=nocache)
                 if installed_bin is not None and installed_bin.loaded_abspath:
                     # print('LOADED', binprovider, self.name, installed_bin)
-                    return self.model_copy(
-                        deep=True,
-                        update={
-                            "loaded_binprovider": provider,
-                            "loaded_abspath": installed_bin.loaded_abspath,
-                            "loaded_version": installed_bin.loaded_version,
-                            "loaded_sha256": installed_bin.loaded_sha256,
-                        },
+                    return self._validated_loaded_copy(
+                        provider,
+                        abspath=installed_bin.loaded_abspath,
+                        version=installed_bin.loaded_version,
+                        sha256=installed_bin.loaded_sha256,
                     )
                 else:
                     continue
@@ -350,14 +362,11 @@ class Binary(ShallowBinary):
                 installed_bin = provider.load_or_install(self.name, nocache=nocache)
                 if installed_bin is not None and installed_bin.loaded_abspath:
                     # print('LOADED_OR_INSTALLED', self.name, installed_bin)
-                    return self.model_copy(
-                        deep=True,
-                        update={
-                            "loaded_binprovider": provider,
-                            "loaded_abspath": installed_bin.loaded_abspath,
-                            "loaded_version": installed_bin.loaded_version,
-                            "loaded_sha256": installed_bin.loaded_sha256,
-                        },
+                    return self._validated_loaded_copy(
+                        provider,
+                        abspath=installed_bin.loaded_abspath,
+                        version=installed_bin.loaded_version,
+                        sha256=installed_bin.loaded_sha256,
                     )
                 else:
                     continue
@@ -403,14 +412,11 @@ class Binary(ShallowBinary):
                 )
                 updated_bin = provider.update(self.name)
                 if updated_bin is not None and updated_bin.loaded_abspath:
-                    return self.model_copy(
-                        deep=True,
-                        update={
-                            "loaded_binprovider": provider,
-                            "loaded_abspath": updated_bin.loaded_abspath,
-                            "loaded_version": updated_bin.loaded_version,
-                            "loaded_sha256": updated_bin.loaded_sha256,
-                        },
+                    return self._validated_loaded_copy(
+                        provider,
+                        abspath=updated_bin.loaded_abspath,
+                        version=updated_bin.loaded_version,
+                        sha256=updated_bin.loaded_sha256,
                     )
             except Exception as err:
                 inner_exc = err

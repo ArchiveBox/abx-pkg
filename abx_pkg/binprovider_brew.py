@@ -92,7 +92,10 @@ class BrewProvider(BinProvider):
         for prefix in self._brew_prefixes():
             for package in package_names:
                 add_path(prefix / "opt" / package / "bin")
+                add_path(prefix / "opt" / package / "libexec" / "bin")
                 for cellar_bin in (prefix / "Cellar" / package).glob("*/bin"):
+                    add_path(cellar_bin)
+                for cellar_bin in (prefix / "Cellar" / package).glob("*/libexec/bin"):
                     add_path(cellar_bin)
 
         for bin_dir in self.PATH.split(":"):
@@ -325,6 +328,27 @@ class BrewProvider(BinProvider):
         if not self.INSTALLER_BIN_ABSPATH:
             return None
 
+        for package in self.get_install_args(str(bin_name)) or [str(bin_name)]:
+            try:
+                paths = (
+                    self.exec(
+                        bin_name=self.INSTALLER_BIN_ABSPATH,
+                        cmd=["list", "--formula", package],
+                        timeout=self._version_timeout,
+                        quiet=True,
+                    )
+                    .stdout.strip()
+                    .split("\n")
+                )
+                for path_str in paths:
+                    path = Path(path_str.strip())
+                    if path.name != str(bin_name):
+                        continue
+                    if path.is_file() and os.access(path, os.X_OK):
+                        return bin_abspath(path)
+            except Exception:
+                pass
+
         # This code works but there's no need, the method above is much faster:
 
         # # try checking filesystem or using brew list to get the Cellar bin path (faster than brew info)
@@ -373,7 +397,9 @@ class BrewProvider(BinProvider):
             version = str(abspath).rsplit(f"/bin/{bin_name}", 1)[0].rsplit("/", 1)[-1]
             if version:
                 try:
-                    return SemVer.parse(version)
+                    parsed = SemVer.parse(version)
+                    if parsed:
+                        return parsed
                 except ValueError:
                     pass
 
@@ -385,7 +411,7 @@ class BrewProvider(BinProvider):
                 **context,
             )
             if version:
-                return SemVer.parse(version)
+                return version if isinstance(version, SemVer) else SemVer.parse(version)
         except ValueError:
             pass
 
@@ -413,15 +439,15 @@ class BrewProvider(BinProvider):
                 cellar_abspath = [
                     line
                     for line in paths
-                    if "/Cellar/" in line and line.endswith(f"/bin/{bin_name}")
+                    if "/Cellar/" in line and line.rstrip("/").endswith(f"/{bin_name}")
                 ][0].strip()
-                # /opt/homebrew/Cellar/curl/8.10.1/bin/curl -> 8.10.1
-                version = cellar_abspath.rsplit(f"/bin/{bin_name}", 1)[0].rsplit(
-                    "/",
-                    1,
-                )[-1]
-                if version:
-                    return SemVer.parse(version)
+                path = Path(cellar_abspath)
+                if "Cellar" in path.parts:
+                    cellar_idx = path.parts.index("Cellar")
+                    if len(path.parts) > cellar_idx + 2:
+                        version = path.parts[cellar_idx + 2]
+                        if version:
+                            return SemVer.parse(version)
             except Exception:
                 pass
 

@@ -14,6 +14,7 @@ from io import StringIO
 from unittest import mock
 from pathlib import Path
 from typing import Optional
+from types import SimpleNamespace
 
 # from rich import print
 
@@ -786,6 +787,102 @@ class TestBinProvider(unittest.TestCase):
 
             self.assertIn(active_java, abspaths)
 
+    def test_brew_provider_resolves_formula_binary_from_openjdk_libexec_bin(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir_path = Path(tmpdir)
+            active_prefix = tmpdir_path / "active"
+            active_brew = active_prefix / "bin" / "brew"
+            active_java = (
+                active_prefix
+                / "opt"
+                / "openjdk"
+                / "libexec"
+                / "openjdk.jdk"
+                / "Contents"
+                / "Home"
+                / "bin"
+                / "java"
+            )
+
+            for path in (active_brew, active_java):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("#!/bin/sh\n", encoding="utf-8")
+                path.chmod(0o755)
+
+            provider = BrewProvider()
+            provider._INSTALLER_BIN_ABSPATH = active_brew
+            provider.PATH = str(active_prefix / "bin")
+            provider.brew_prefix = active_prefix
+
+            with (
+                mock.patch.object(
+                    BrewProvider,
+                    "get_install_args",
+                    return_value=("openjdk",),
+                ),
+                mock.patch.object(
+                    BrewProvider,
+                    "exec",
+                    return_value=subprocess.CompletedProcess(
+                        args=["brew", "list", "--formula", "openjdk"],
+                        returncode=0,
+                        stdout=f"{active_java}\n",
+                        stderr="",
+                    ),
+                ),
+            ):
+                abspath = provider.default_abspath_handler("java")
+
+            self.assertEqual(abspath, active_java)
+
+    def test_brew_provider_get_abspaths_includes_openjdk_libexec_bin(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir_path = Path(tmpdir)
+            active_prefix = tmpdir_path / "active"
+            active_brew = active_prefix / "bin" / "brew"
+            active_java = (
+                active_prefix
+                / "opt"
+                / "openjdk"
+                / "libexec"
+                / "openjdk.jdk"
+                / "Contents"
+                / "Home"
+                / "bin"
+                / "java"
+            )
+
+            for path in (active_brew, active_java):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("#!/bin/sh\n", encoding="utf-8")
+                path.chmod(0o755)
+
+            provider = BrewProvider()
+            provider._INSTALLER_BIN_ABSPATH = active_brew
+            provider.PATH = str(active_prefix / "bin")
+            provider.brew_prefix = active_prefix
+
+            with (
+                mock.patch.object(
+                    BrewProvider,
+                    "get_install_args",
+                    return_value=("openjdk",),
+                ),
+                mock.patch.object(
+                    BrewProvider,
+                    "exec",
+                    return_value=subprocess.CompletedProcess(
+                        args=["brew", "list", "--formula", "openjdk"],
+                        returncode=0,
+                        stdout=f"{active_java}\n",
+                        stderr="",
+                    ),
+                ),
+            ):
+                abspaths = provider.get_abspaths("java", nocache=True)
+
+            self.assertIn(active_java, abspaths)
+
     @mock.patch.object(
         BinProvider,
         "INSTALLER_BIN_ABSPATH",
@@ -1002,6 +1099,111 @@ class TestBinary(unittest.TestCase):
         )
 
         self.assertTrue(binary.is_valid)
+
+    def test_default_version_handler_reads_version_from_stderr(self):
+        provider = BinProvider(name="mock", PATH="/tmp", INSTALLER_BIN="mock")
+        proc = subprocess.CompletedProcess(
+            args=["java", "-version"],
+            returncode=0,
+            stdout="",
+            stderr='openjdk version "25.0.2" 2026-01-20\n',
+        )
+
+        with mock.patch.object(BinProvider, "exec", return_value=proc):
+            version = provider.default_version_handler(
+                "java",
+                abspath=Path("/tmp/java"),
+            )
+
+        self.assertEqual(version, SemVer("25.0.2"))
+
+    def test_load_or_install_skips_provider_below_min_version(self):
+        env_provider = EnvProvider()
+        brew_provider = BrewProvider()
+        binary = Binary(
+            name="java",
+            min_version=SemVer("11.0.0"),
+            binproviders=[env_provider, brew_provider],
+        )
+
+        env_result = SimpleNamespace(
+            loaded_abspath=Path("/usr/bin/java"),
+            loaded_version=SemVer("1.8.0"),
+            loaded_sha256="env-sha",
+        )
+        brew_result = SimpleNamespace(
+            loaded_abspath=Path(
+                "/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home/bin/java"
+            ),
+            loaded_version=SemVer("25.0.2"),
+            loaded_sha256="brew-sha",
+        )
+
+        with (
+            mock.patch.object(
+                Binary,
+                "get_binprovider",
+                side_effect=[env_provider, brew_provider],
+            ),
+            mock.patch.object(
+                EnvProvider,
+                "load_or_install",
+                return_value=env_result,
+            ),
+            mock.patch.object(
+                BrewProvider,
+                "load_or_install",
+                return_value=brew_result,
+            ),
+        ):
+            result = binary.load_or_install()
+
+        self.assertEqual(result.loaded_binprovider.name, "brew")
+        self.assertEqual(result.loaded_version, SemVer("25.0.2"))
+
+    def test_load_or_install_accepts_provider_when_min_version_is_none(self):
+        env_provider = EnvProvider()
+        brew_provider = BrewProvider()
+        binary = Binary(
+            name="java",
+            min_version=None,
+            binproviders=[env_provider, brew_provider],
+        )
+
+        env_result = SimpleNamespace(
+            loaded_abspath=Path("/usr/bin/java"),
+            loaded_version=SemVer("1.8.0"),
+            loaded_sha256="env-sha",
+        )
+        brew_result = SimpleNamespace(
+            loaded_abspath=Path(
+                "/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home/bin/java"
+            ),
+            loaded_version=SemVer("25.0.2"),
+            loaded_sha256="brew-sha",
+        )
+
+        with (
+            mock.patch.object(
+                Binary,
+                "get_binprovider",
+                side_effect=[env_provider, brew_provider],
+            ),
+            mock.patch.object(
+                EnvProvider,
+                "load_or_install",
+                return_value=env_result,
+            ),
+            mock.patch.object(
+                BrewProvider,
+                "load_or_install",
+                return_value=brew_result,
+            ),
+        ):
+            result = binary.load_or_install()
+
+        self.assertEqual(result.loaded_binprovider.name, "env")
+        self.assertEqual(result.loaded_version, SemVer("1.8.0"))
 
     def test_update_uses_matching_provider_and_returns_loaded_binary(self):
         provider = EnvProvider()

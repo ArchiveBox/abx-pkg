@@ -240,10 +240,7 @@ class ShallowBinary(BaseModel):
     @property
     def is_valid(self) -> bool:
         return bool(
-            self.name
-            and self.loaded_abspath
-            and self.loaded_version
-            and (self.is_executable or self.is_script),
+            self.name and self.loaded_abspath and self.loaded_version,
         )
 
     @computed_field
@@ -685,7 +682,10 @@ class BinProvider(BaseModel):
             timeout=self._version_timeout,
             quiet=True,
         )
-        dash_dash_version_out = dash_dash_version_result.stdout.strip()
+        dash_dash_version_out = (
+            dash_dash_version_result.stdout.strip()
+            or dash_dash_version_result.stderr.strip()
+        )
         try:
             version = SemVer.parse(dash_dash_version_out)
             assert version, (
@@ -696,12 +696,15 @@ class BinProvider(BaseModel):
             validation_err = err
 
         # Attempt 2: $ <bin_name> -version
-        dash_version_out = self.exec(
+        dash_version_result = self.exec(
             bin_name=abspath,
             cmd=["-version"],
             timeout=self._version_timeout,
             quiet=True,
-        ).stdout.strip()
+        )
+        dash_version_out = (
+            dash_version_result.stdout.strip() or dash_version_result.stderr.strip()
+        )
         try:
             version = SemVer.parse(dash_version_out)
             assert version, (
@@ -712,12 +715,13 @@ class BinProvider(BaseModel):
             validation_err = validation_err or err
 
         # Attempt 3: $ <bin_name> -v
-        dash_v_out = self.exec(
+        dash_v_result = self.exec(
             bin_name=abspath,
             cmd=["-v"],
             timeout=self._version_timeout,
             quiet=True,
-        ).stdout.strip()
+        )
+        dash_v_out = dash_v_result.stdout.strip() or dash_v_result.stderr.strip()
         try:
             version = SemVer.parse(dash_v_out)
             assert version, (
