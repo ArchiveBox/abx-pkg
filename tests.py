@@ -1798,7 +1798,7 @@ class TestUpdateAndUninstall(unittest.TestCase):
                 self.assertEqual(provider.INSTALLER_BIN_ABSPATH, custom_bin.resolve())
 
     @mock.patch.object(
-        BinProvider,
+        PipProvider,
         "INSTALLER_BIN_ABSPATH",
         new_callable=mock.PropertyMock,
         return_value=Path(sys.executable),
@@ -1869,7 +1869,7 @@ class TestUpdateAndUninstall(unittest.TestCase):
         )
 
     @mock.patch.object(
-        BinProvider,
+        PipProvider,
         "INSTALLER_BIN_ABSPATH",
         new_callable=mock.PropertyMock,
         return_value=Path(sys.executable),
@@ -1933,7 +1933,7 @@ class TestUpdateAndUninstall(unittest.TestCase):
         )
 
     @mock.patch.object(
-        BinProvider,
+        PipProvider,
         "INSTALLER_BIN_ABSPATH",
         new_callable=mock.PropertyMock,
         return_value=Path(sys.executable),
