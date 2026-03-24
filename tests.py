@@ -892,7 +892,7 @@ class TestBinProvider(unittest.TestCase):
             self.assertIn(active_java, abspaths)
 
     @mock.patch.object(
-        BinProvider,
+        PipProvider,
         "INSTALLER_BIN_ABSPATH",
         new_callable=mock.PropertyMock,
         return_value=Path(sys.executable),
