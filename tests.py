@@ -1717,52 +1717,29 @@ class TestUpdateAndUninstall(unittest.TestCase):
         )
 
     @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
-    def test_npm_provider_install_bootstraps_pnpm_lazily(self, _mock_load_path):
+    def test_npm_provider_install_uses_npm_directly(self, _mock_load_path):
         provider = NpmProvider(npm_prefix=Path("/tmp/npm"), euid=os.geteuid())
         provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/npm")
         proc = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-        calls = []
-
-        def fake_exec(*args, **kwargs):
-            calls.append((Path(kwargs["bin_name"]).name, kwargs["cmd"]))
-            if kwargs["cmd"][-1] == "pnpm":
-                provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/pnpm")
-            return proc
-
-        with mock.patch.object(NpmProvider, "exec", side_effect=fake_exec):
+        with mock.patch.object(NpmProvider, "exec", return_value=proc) as mock_exec:
             provider.default_install_handler("python", install_args=["python"])
 
         self.assertEqual(
-            calls,
+            mock_exec.call_args.kwargs["cmd"],
             [
-                (
-                    "npm",
-                    [
-                        "install",
-                        "--force",
-                        "--no-audit",
-                        "--no-fund",
-                        "--loglevel=error",
-                        provider.cache_arg,
-                        "--prefix=/tmp/npm",
-                        "pnpm",
-                    ],
-                ),
-                (
-                    "pnpm",
-                    [
-                        "add",
-                        "--loglevel=error",
-                        f"--store-dir={provider.cache_dir}",
-                        "--dir=/tmp/npm",
-                        "python",
-                    ],
-                ),
+                "install",
+                "--force",
+                "--no-audit",
+                "--no-fund",
+                "--loglevel=error",
+                provider.cache_arg,
+                "--prefix=/tmp/npm",
+                "python",
             ],
         )
 
     @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
-    def test_npm_provider_prefers_pnpm_over_npm(self, _mock_load_path):
+    def test_npm_provider_prefers_npm_over_pnpm(self, _mock_load_path):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
             pnpm_bin = temp_path / "pnpm"
@@ -1787,7 +1764,7 @@ class TestUpdateAndUninstall(unittest.TestCase):
                 assert installer_abspath is not None
                 self.assertEqual(
                     Path(installer_abspath).resolve(),
-                    pnpm_bin.resolve(),
+                    npm_bin.resolve(),
                 )
 
     @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
@@ -1835,7 +1812,7 @@ class TestUpdateAndUninstall(unittest.TestCase):
         side_effect=lambda name, **kwargs: (
             "/usr/local/bin/uv"
             if name == "uv"
-            else "/usr/local/bin/pip"
+            else sys.executable
             if name == "pip"
             else None
         ),
@@ -1906,7 +1883,7 @@ class TestUpdateAndUninstall(unittest.TestCase):
         side_effect=lambda name, **kwargs: (
             "/usr/local/bin/uv"
             if name == "uv"
-            else "/usr/local/bin/pip"
+            else sys.executable
             if name == "pip"
             else None
         ),
@@ -2003,7 +1980,7 @@ class TestUpdateAndUninstall(unittest.TestCase):
         BinProvider,
         "INSTALLER_BIN_ABSPATH",
         new_callable=mock.PropertyMock,
-        return_value=Path("/usr/local/bin/pip"),
+        return_value=Path(sys.executable),
     )
     @mock.patch(
         "abx_pkg.binprovider_pip.PipProvider.load_PATH_from_pip_sitepackages",
@@ -2014,7 +1991,7 @@ class TestUpdateAndUninstall(unittest.TestCase):
         side_effect=lambda name, **kwargs: (
             "/usr/local/bin/uv"
             if name == "uv"
-            else "/usr/local/bin/pip"
+            else sys.executable
             if name == "pip"
             else None
         ),
@@ -2051,7 +2028,7 @@ class TestUpdateAndUninstall(unittest.TestCase):
         BinProvider,
         "INSTALLER_BIN_ABSPATH",
         new_callable=mock.PropertyMock,
-        return_value=Path("/usr/local/bin/pip"),
+        return_value=Path(sys.executable),
     )
     @mock.patch(
         "abx_pkg.binprovider_pip.PipProvider.load_PATH_from_pip_sitepackages",
@@ -2062,7 +2039,7 @@ class TestUpdateAndUninstall(unittest.TestCase):
         side_effect=lambda name, **kwargs: (
             "/usr/local/bin/uv"
             if name == "uv"
-            else "/usr/local/bin/pip"
+            else sys.executable
             if name == "pip"
             else None
         ),

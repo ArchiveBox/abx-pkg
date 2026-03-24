@@ -99,10 +99,10 @@ class NpmProvider(BinProvider):
                 return None
 
         abspath = (
-            bin_abspath("pnpm", PATH=self.PATH)
-            or bin_abspath("pnpm")
-            or bin_abspath(self.INSTALLER_BIN, PATH=self.PATH)
+            bin_abspath(self.INSTALLER_BIN, PATH=self.PATH)
             or bin_abspath(self.INSTALLER_BIN)
+            or bin_abspath("pnpm", PATH=self.PATH)
+            or bin_abspath("pnpm")
         )
         if not abspath:
             return None
@@ -185,7 +185,6 @@ class NpmProvider(BinProvider):
         npm_cmd: list[str],
         quiet: bool = False,
         timeout: int | None = None,
-        bootstrap_pnpm: bool = False,
     ) -> subprocess.CompletedProcess:
         global _CACHED_GLOBAL_NPM_PREFIX
         env = os.environ.copy()
@@ -195,29 +194,6 @@ class NpmProvider(BinProvider):
             raise Exception(
                 f"{self.__class__.__name__} install method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
             )
-
-        manual_binary = os.environ.get("NPM_BINARY")
-        if (
-            bootstrap_pnpm
-            and Path(npm_abspath).name != "pnpm"
-            and not (manual_binary and os.path.isabs(manual_binary))
-        ):
-            npm_cmd_args = [*self.npm_install_args, self.cache_arg]
-            npm_cmd_args.append(
-                f"--prefix={self.npm_prefix}" if self.npm_prefix else "--global",
-            )
-            proc = self.exec(
-                bin_name=npm_abspath,
-                cmd=["install", *npm_cmd_args, "pnpm"],
-                quiet=quiet,
-                timeout=timeout,
-            )
-            if proc.returncode == 0:
-                self._INSTALLER_BIN_ABSPATH = None
-                self._CACHED_LOCAL_NPM_PREFIX = None
-                _CACHED_GLOBAL_NPM_PREFIX = None
-                self.PATH = self._load_PATH()
-                npm_abspath = self.INSTALLER_BIN_ABSPATH or npm_abspath
 
         subcommand, *npm_args = npm_cmd
         cmd = npm_cmd
@@ -307,7 +283,6 @@ class NpmProvider(BinProvider):
                 *npm_cmd_args,
                 *install_args,
             ],
-            bootstrap_pnpm=True,
         )
 
         if proc.returncode != 0:
