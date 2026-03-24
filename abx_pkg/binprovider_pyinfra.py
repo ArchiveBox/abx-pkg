@@ -26,13 +26,21 @@ def pyinfra_package_install(
             "Pyinfra is not installed! To fix:\n    pip install pyinfra",
         )
 
-    from pyinfra.api.config import Config
-    from pyinfra.api.inventory import Inventory
-    from pyinfra.api.state import State
-    from pyinfra.api.connect import connect_all
-    from pyinfra.api.operation import add_op
-    from pyinfra.api.operations import run_ops
-    from pyinfra.api.exceptions import PyinfraError
+    pyinfra_config = importlib.import_module("pyinfra.api.config")
+    pyinfra_inventory = importlib.import_module("pyinfra.api.inventory")
+    pyinfra_state = importlib.import_module("pyinfra.api.state")
+    pyinfra_connect = importlib.import_module("pyinfra.api.connect")
+    pyinfra_operation = importlib.import_module("pyinfra.api.operation")
+    pyinfra_operations = importlib.import_module("pyinfra.api.operations")
+    pyinfra_exceptions = importlib.import_module("pyinfra.api.exceptions")
+
+    Config = pyinfra_config.Config
+    Inventory = pyinfra_inventory.Inventory
+    State = pyinfra_state.State
+    connect_all = pyinfra_connect.connect_all
+    add_op = pyinfra_operation.add_op
+    run_ops = pyinfra_operations.run_ops
+    PyinfraError = pyinfra_exceptions.PyinfraError
 
     config = Config()
     inventory = Inventory((["@local"], {}))

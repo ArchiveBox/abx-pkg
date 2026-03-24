@@ -6,6 +6,7 @@ import sys
 import json
 import shutil
 import tempfile
+import importlib
 import importlib.util
 from pathlib import Path
 from typing import Any
@@ -68,7 +69,9 @@ def ansible_package_install(
             "Ansible is not installed! To fix:\n    pip install ansible ansible-runner",
         )
 
-    from ansible_runner import Runner, RunnerConfig
+    ansible_runner = importlib.import_module("ansible_runner")
+    Runner = ansible_runner.Runner
+    RunnerConfig = ansible_runner.RunnerConfig
 
     if isinstance(pkg_names, str):
         pkg_names = pkg_names.split(" ")

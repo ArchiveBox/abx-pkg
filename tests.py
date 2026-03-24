@@ -1133,7 +1133,7 @@ class TestBinary(unittest.TestCase):
         )
         brew_result = SimpleNamespace(
             loaded_abspath=Path(
-                "/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home/bin/java"
+                "/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home/bin/java",
             ),
             loaded_version=SemVer("25.0.2"),
             loaded_sha256="brew-sha",
@@ -1158,7 +1158,10 @@ class TestBinary(unittest.TestCase):
         ):
             result = binary.load_or_install()
 
-        self.assertEqual(result.loaded_binprovider.name, "brew")
+        loaded_binprovider = result.loaded_binprovider
+        self.assertIsNotNone(loaded_binprovider)
+        assert loaded_binprovider is not None
+        self.assertEqual(loaded_binprovider.name, "brew")
         self.assertEqual(result.loaded_version, SemVer("25.0.2"))
 
     def test_load_or_install_accepts_provider_when_min_version_is_none(self):
@@ -1177,7 +1180,7 @@ class TestBinary(unittest.TestCase):
         )
         brew_result = SimpleNamespace(
             loaded_abspath=Path(
-                "/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home/bin/java"
+                "/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home/bin/java",
             ),
             loaded_version=SemVer("25.0.2"),
             loaded_sha256="brew-sha",
@@ -1202,7 +1205,10 @@ class TestBinary(unittest.TestCase):
         ):
             result = binary.load_or_install()
 
-        self.assertEqual(result.loaded_binprovider.name, "env")
+        loaded_binprovider = result.loaded_binprovider
+        self.assertIsNotNone(loaded_binprovider)
+        assert loaded_binprovider is not None
+        self.assertEqual(loaded_binprovider.name, "env")
         self.assertEqual(result.loaded_version, SemVer("1.8.0"))
 
     def test_update_uses_matching_provider_and_returns_loaded_binary(self):
