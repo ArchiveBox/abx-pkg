@@ -147,25 +147,28 @@ def format_named_value(value: Any) -> str:
 
 
 def summarize_value(value: Any, max_length: int = 200) -> str:
-    if isinstance(value, Path):
-        rendered = str(value)
-    elif isinstance(value, (str, int, float, bool, type(None))):
-        rendered = repr(value)
-    elif isinstance(value, dict):
-        items = ", ".join(
-            f"{summarize_value(key, 40)}: {summarize_value(val, 60)}"
-            for key, val in list(value.items())[:4]
-        )
-        rendered = f"{{{items}}}"
-    elif isinstance(value, (list, tuple, set, frozenset)):
-        rendered_items = ", ".join(
-            summarize_value(item, 40) for item in list(value)[:4]
-        )
-        rendered = f"{type(value).__name__}([{rendered_items}])"
-    elif hasattr(value, "name"):
-        rendered = format_named_value(value)
-    else:
-        rendered = repr(value)
+    try:
+        if isinstance(value, Path):
+            rendered = str(value)
+        elif isinstance(value, (str, int, float, bool, type(None))):
+            rendered = repr(value)
+        elif isinstance(value, dict):
+            items = ", ".join(
+                f"{summarize_value(key, 40)}: {summarize_value(val, 60)}"
+                for key, val in list(value.items())[:4]
+            )
+            rendered = f"{{{items}}}"
+        elif isinstance(value, (list, tuple, set, frozenset)):
+            rendered_items = ", ".join(
+                summarize_value(item, 40) for item in list(value)[:4]
+            )
+            rendered = f"{type(value).__name__}([{rendered_items}])"
+        elif hasattr(value, "name"):
+            rendered = format_named_value(value)
+        else:
+            rendered = repr(value)
+    except Exception:
+        rendered = f"{value.__class__.__name__}(...)"
 
     if len(rendered) > max_length:
         return rendered[: max_length - 3] + "..."

@@ -46,6 +46,7 @@ from abx_pkg import (
 from abx_pkg.binprovider import remap_kwargs
 from abx_pkg.binprovider_ansible import AnsibleProvider
 from abx_pkg.binprovider_pyinfra import PyinfraProvider
+from abx_pkg.logging import summarize_value
 
 REAL_OS_STAT = os.stat
 
@@ -241,6 +242,13 @@ class TestLogging(unittest.TestCase):
         self.assertIn("ERRORS=", messages[0])
         self.assertFalse(any(record.levelno == logging.WARNING for record in records))
 
+    def test_summarize_value_handles_unreprable_objects(self):
+        class BrokenValue:
+            def __repr__(self) -> str:
+                raise RuntimeError("boom")
+
+        self.assertEqual(summarize_value(BrokenValue()), "BrokenValue(...)")
+
     def test_load_or_install_does_not_log_error_for_expected_load_fallback(self):
         class FallbackProvider(BinProvider):
             name: str = "fallback"
@@ -415,8 +423,8 @@ class TestLogging(unittest.TestCase):
         )
         self.assertNotIn("...", message.split("raised ", 1)[-1])
 
-    @unittest.skipUnless(RICH_INSTALLED, "rich not installed")
     def test_configure_rich_logging_if_available(self):
+        self.assertTrue(RICH_INSTALLED, "rich not installed")
         from rich.console import Console
 
         stream = StringIO()
