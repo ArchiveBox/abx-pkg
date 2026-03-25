@@ -84,6 +84,12 @@ class NpmProvider(BinProvider):
     @computed_field
     @property
     def INSTALLER_BIN_ABSPATH(self) -> HostBinPath | None:
+        """Resolve the package manager executable used for npm operations.
+
+        Prefer a real `npm` binary when both `npm` and `pnpm` are available so
+        the default behavior matches the provider name. `pnpm` remains a
+        supported fallback on hosts that do not ship `npm`.
+        """
         if self._INSTALLER_BIN_ABSPATH:
             return self._INSTALLER_BIN_ABSPATH
 
@@ -195,6 +201,9 @@ class NpmProvider(BinProvider):
                 f"{self.__class__.__name__} install method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
             )
 
+        # `pnpm` is close enough to npm for the operations we use, but its CLI
+        # shape differs enough that we normalize subcommands and flags in one
+        # place instead of duplicating that branching in install/update/etc.
         subcommand, *npm_args = npm_cmd
         cmd = npm_cmd
         if Path(npm_abspath).name == "pnpm":

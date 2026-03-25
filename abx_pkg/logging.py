@@ -147,6 +147,13 @@ def format_named_value(value: Any) -> str:
 
 
 def summarize_value(value: Any, max_length: int = 200) -> str:
+    """Render a concise logging-safe representation for arbitrary values.
+
+    Logging must never raise while formatting debug output. Some provider or
+    model objects can have broken `repr()` implementations or properties that
+    raise on access, so this degrades to `ClassName(...)` instead of letting
+    logging itself become the failure.
+    """
     try:
         if isinstance(value, Path):
             rendered = str(value)

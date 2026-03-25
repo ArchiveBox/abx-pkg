@@ -94,6 +94,9 @@ class Binary(ShallowBinary):
 
     @field_validator("min_version", mode="before")
     def parse_min_version(cls, value: Any) -> SemVer | None:
+        # Preserve the semantic difference between "no version floor" and an
+        # actual minimum version. `None` means any discovered version is
+        # acceptable; non-empty values get normalized into SemVer.
         return SemVer(value) if value else None
 
     @field_serializer("overrides", when_used="json")
@@ -202,6 +205,12 @@ class Binary(ShallowBinary):
         version: SemVer | None,
         sha256: str | None,
     ) -> Self:
+        """Return a loaded copy and enforce the Binary-level min_version gate.
+
+        Providers can legitimately resolve a binary that still fails this
+        Binary's declared version floor. Keeping the final validation here makes
+        install/load/load_or_install/update all share one consistent check.
+        """
         result = self.model_copy(
             deep=True,
             update={

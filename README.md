@@ -64,6 +64,8 @@ for binary in dependencies:
     binary.exec(cmd=['--version'])   # curl 7.81.0 (x86_64-apple-darwin23.0) libcurl/7.81.0 ...
 ```
 
+`Binary.min_version` is optional. Leave it as `None` when any discovered version is acceptable, or set it to a `SemVer`/string to enforce a minimum version after load/install.
+
 ```python
 from abx_pkg import Binary, apt, pip
 
@@ -115,6 +117,8 @@ curl.exec(cmd=['--version'])                                        # curl 8.4.0
 
 `DockerProvider` expects image refs as install args, typically via overrides on a `Binary`. It writes a local wrapper script for the binary and executes it via `docker run ...`; the binary version is parsed from the image tag, so semver-like tags work best.
 
+`NpmProvider` prefers a real `npm` executable when both `npm` and `pnpm` are installed. If `npm` is unavailable, it can still drive installs and metadata lookups through `pnpm` using the same provider API.
+
 ---
 
 
@@ -142,6 +146,22 @@ from abx_pkg import PipProvider
 
 custom_pip = PipProvider(abspath_handler={...})
 ```
+
+### Version Floors
+
+`Binary.min_version` is enforced after a provider resolves or installs a binary. Provider discovery can still succeed, but the final `Binary` will be rejected if the loaded version is below your required floor.
+
+```python
+from abx_pkg import Binary, SemVer, env, brew
+
+curl = Binary(
+    name="curl",
+    min_version=SemVer("8.0.0"),
+    binproviders=[env, brew],
+).load_or_install()
+```
+
+Use `min_version=None` to explicitly disable version floor checks.
 
 ### [`BinProvider`](https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/binprovider.py#:~:text=class%20BinProvider)
 
@@ -213,6 +233,7 @@ It can define one or more `BinProvider`s that it supports, along with overrides 
 
 `Binary.install()` and `Binary.update()` return a fresh loaded `Binary`.
 `Binary.uninstall()` returns a `Binary` with `binprovider`, `abspath`, `version`, and `sha256` cleared after removal.
+`Binary.load()`, `Binary.install()`, `Binary.load_or_install()`, and `Binary.update()` all enforce `min_version` consistently.
 
 ```python
 from abx_pkg import BinProvider, Binary, BinProviderName, BinName, ProviderLookupDict, SemVer, BrewProvider
@@ -518,6 +539,8 @@ configure_rich_logging(logging.DEBUG)
 
 python = Binary(name='python', binproviders=[EnvProvider()]).load()
 ```
+
+Debug logging is hardened so logging itself does not become the failure. If a provider/model object has a broken or overly-expensive `repr()`, `abx-pkg` falls back to a short `ClassName(...)` summary instead of raising while formatting log output.
 
 `configure_rich_logging(...)` uses `rich.logging.RichHandler` under the hood, so log levels, paths, arguments, and command lines render with terminal colors when supported.
 
