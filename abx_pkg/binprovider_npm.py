@@ -353,7 +353,10 @@ class NpmProvider(BinProvider):
             # npm uses pkg@>=1.2.3 syntax for version constraints
             install_args = [
                 f"{arg}@>={min_version}"
-                if arg and not arg.startswith("-") and "@" not in arg.split("/")[-1]
+                if arg
+                and not arg.startswith(("-", ".", "/"))
+                and ":" not in arg.split("/")[0]
+                and "@" not in arg.split("/")[-1]
                 else arg
                 for arg in install_args
             ]
@@ -413,7 +416,10 @@ class NpmProvider(BinProvider):
         if min_version:
             install_args = [
                 f"{arg}@>={min_version}"
-                if arg and not arg.startswith("-") and "@" not in arg.split("/")[-1]
+                if arg
+                and not arg.startswith(("-", ".", "/"))
+                and ":" not in arg.split("/")[0]
+                and "@" not in arg.split("/")[-1]
                 else arg
                 for arg in install_args
             ]

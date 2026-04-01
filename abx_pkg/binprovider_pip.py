@@ -374,7 +374,9 @@ class PipProvider(BinProvider):
             # append >=X.Y.Z to each package spec that doesn't already have a version constraint
             install_args = [
                 f"{arg}>={min_version}"
-                if arg and not any(c in arg for c in ">=<!=~")
+                if arg
+                and not arg.startswith("-")
+                and not any(c in arg for c in ">=<!=~")
                 else arg
                 for arg in install_args
             ]
@@ -419,7 +421,9 @@ class PipProvider(BinProvider):
         if min_version:
             install_args = [
                 f"{arg}>={min_version}"
-                if arg and not any(c in arg for c in ">=<!=~")
+                if arg
+                and not arg.startswith("-")
+                and not any(c in arg for c in ">=<!=~")
                 else arg
                 for arg in install_args
             ]
