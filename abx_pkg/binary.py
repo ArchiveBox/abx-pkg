@@ -68,11 +68,14 @@ class Binary(ShallowBinary):
             "Defaults to ABX_PKG_POSTINSTALL_SCRIPTS env var (False if unset)."
         ),
     )
-    min_release_age: int = Field(
+    min_release_age: float = Field(
         default_factory=lambda: (
-            int(v)
-            if (v := os.getenv("ABX_PKG_MIN_RELEASE_AGE", "7")).lstrip("-").isdigit()
-            else 7
+            float(v)
+            if (v := os.getenv("ABX_PKG_MIN_RELEASE_AGE", "7"))
+            .replace(".", "", 1)
+            .lstrip("-")
+            .isdigit()
+            else 7.0
         ),
         description=(
             "Minimum days since publication before a package can be installed. "
@@ -276,7 +279,11 @@ class Binary(ShallowBinary):
                     binprovider_name=binprovider.name,
                     **extra_overrides,
                 )
-                installed_bin = provider.install(self.name)
+                installed_bin = provider.install(
+                    self.name,
+                    postinstall_scripts=self.postinstall_scripts,
+                    min_release_age=self.min_release_age,
+                )
                 if installed_bin is not None and installed_bin.loaded_abspath:
                     # print('INSTALLED', self.name, installed_bin)
                     return self._validated_loaded_copy(
@@ -440,7 +447,11 @@ class Binary(ShallowBinary):
                     binprovider_name=binprovider.name,
                     **extra_overrides,
                 )
-                updated_bin = provider.update(self.name)
+                updated_bin = provider.update(
+                    self.name,
+                    postinstall_scripts=self.postinstall_scripts,
+                    min_release_age=self.min_release_age,
+                )
                 if updated_bin is not None and updated_bin.loaded_abspath:
                     return self._validated_loaded_copy(
                         provider,
@@ -487,7 +498,11 @@ class Binary(ShallowBinary):
                     binprovider_name=binprovider.name,
                     **extra_overrides,
                 )
-                uninstalled = provider.uninstall(self.name)
+                uninstalled = provider.uninstall(
+                    self.name,
+                    postinstall_scripts=self.postinstall_scripts,
+                    min_release_age=self.min_release_age,
+                )
                 if uninstalled:
                     return self.model_copy(
                         deep=True,

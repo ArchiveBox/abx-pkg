@@ -94,19 +94,6 @@ def env_flag_is_true(name: str) -> bool:
 ################## SUPPLY-CHAIN SECURITY HELPERS ######################
 
 
-def _parse_min_release_age_days() -> int:
-    """Parse ABX_PKG_MIN_RELEASE_AGE env var into an integer number of days.
-
-    Returns 7 (default) when the env var is unset or contains an invalid value.
-    Returns 0 when the feature is explicitly disabled.
-    """
-    raw = os.getenv("ABX_PKG_MIN_RELEASE_AGE", "7")
-    try:
-        return int(raw)
-    except (TypeError, ValueError):
-        return 7
-
-
 ################## VALIDATORS #######################################
 
 NEVER_CACHE = (
@@ -1104,6 +1091,8 @@ class BinProvider(BaseModel):
         bin_name: BinName,
         quiet: bool = False,
         nocache: bool = False,
+        postinstall_scripts: bool = False,
+        min_release_age: float = 7.0,
     ) -> ShallowBinary | None:
         self.setup()
 
@@ -1125,6 +1114,8 @@ class BinProvider(BaseModel):
                     handler_type="install",
                     install_args=install_args,
                     packages=install_args,
+                    postinstall_scripts=postinstall_scripts,
+                    min_release_age=min_release_age,
                 ),
             )
         except Exception as err:
@@ -1201,6 +1192,8 @@ class BinProvider(BaseModel):
         bin_name: BinName,
         quiet: bool = False,
         nocache: bool = False,
+        postinstall_scripts: bool = False,
+        min_release_age: float = 7.0,
     ) -> ShallowBinary | None:
         self.setup()
 
@@ -1222,6 +1215,8 @@ class BinProvider(BaseModel):
                     handler_type="update",
                     install_args=install_args,
                     packages=install_args,
+                    postinstall_scripts=postinstall_scripts,
+                    min_release_age=min_release_age,
                 ),
             )
         except Exception as err:
@@ -1290,6 +1285,8 @@ class BinProvider(BaseModel):
         bin_name: BinName,
         quiet: bool = False,
         nocache: bool = False,
+        postinstall_scripts: bool = False,
+        min_release_age: float = 7.0,
     ) -> bool:
         install_args = self.get_install_args(bin_name, quiet=quiet, nocache=nocache)
         logger.info(
@@ -1309,6 +1306,8 @@ class BinProvider(BaseModel):
                     handler_type="uninstall",
                     install_args=install_args,
                     packages=install_args,
+                    postinstall_scripts=postinstall_scripts,
+                    min_release_age=min_release_age,
                 ),
             )
         except Exception:

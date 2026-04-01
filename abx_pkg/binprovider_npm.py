@@ -23,12 +23,7 @@ from .base_types import (
     bin_abspath,
 )
 from .semver import SemVer
-from .binprovider import (
-    BinProvider,
-    remap_kwargs,
-    env_flag_is_true,
-    _parse_min_release_age_days,
-)
+from .binprovider import BinProvider, remap_kwargs
 from .logging import format_subprocess_output, get_logger, log_subprocess_error
 
 logger = get_logger(__name__)
@@ -191,28 +186,24 @@ class NpmProvider(BinProvider):
                 PATH = ":".join([*PATH.split(":"), str(bin_dir)])
         return TypeAdapter(PATHStr).validate_python(PATH)
 
-    def _write_pnpm_workspace_config(self) -> None:
+    def _write_pnpm_workspace_config(self, min_release_age: float = 7.0) -> None:
         """Write/update pnpm-workspace.yaml with minimumReleaseAge if pnpm is the backend.
 
         Called before every install/update/uninstall so the config always
-        reflects the current ``ABX_PKG_MIN_RELEASE_AGE`` value.  When the
-        age is ``0`` (disabled), the ``minimumReleaseAge`` key is *removed*
-        from the file so pnpm reverts to its default behavior.
+        reflects the current Binary.min_release_age value.  When the age is
+        ``0`` (disabled), the ``minimumReleaseAge`` key is *removed* from the
+        file so pnpm reverts to its default behavior.
 
         pnpm's minimumReleaseAge is config-only (no CLI flag).  The value is
-        in **minutes**, converted from ABX_PKG_MIN_RELEASE_AGE which is in days.
-        The file is written into the directory pnpm operates from (npm_prefix
-        when set, otherwise the pnpm home / cache dir).
+        in **minutes**, converted from days.  The file is written into the
+        directory pnpm operates from (npm_prefix when set, otherwise the
+        pnpm home / cache dir).
         """
         npm_abspath = self.INSTALLER_BIN_ABSPATH
         if not npm_abspath or Path(npm_abspath).name != "pnpm":
             return
 
-        raw = os.getenv("ABX_PKG_MIN_RELEASE_AGE", "7")
-        try:
-            days = int(raw)
-        except (TypeError, ValueError):
-            days = 7
+        days = min_release_age
 
         config_dir = self.npm_prefix or self.cache_dir / "pnpm-home"
         config_dir.mkdir(parents=True, exist_ok=True)
@@ -242,7 +233,7 @@ class NpmProvider(BinProvider):
                 logger.debug("Removed minimumReleaseAge from %s", config_path)
             return
 
-        minutes = days * 24 * 60
+        minutes = int(days * 24 * 60)
         new_line = f"minimumReleaseAge: {minutes}"
         if key in existing:
             # Replace existing value
@@ -260,22 +251,6 @@ class NpmProvider(BinProvider):
             )
 
         logger.debug("Wrote %s with minimumReleaseAge=%d", config_path, minutes)
-
-    def _security_args(self, *, include_release_age: bool = True) -> list[str]:
-        """Return npm/pnpm CLI flags for supply-chain security controls.
-
-        - ``--ignore-scripts`` unless ABX_PKG_POSTINSTALL_SCRIPTS is set
-        - ``--min-release-age=<days>`` when *include_release_age* is True
-          (npm only; pnpm uses config-file enforcement via _write_pnpm_workspace_config)
-        """
-        args: list[str] = []
-        if not env_flag_is_true("ABX_PKG_POSTINSTALL_SCRIPTS"):
-            args.append("--ignore-scripts")
-        if include_release_age:
-            days = _parse_min_release_age_days()
-            if days > 0:
-                args.append(f"--min-release-age={days}")
-        return args
 
     def _npm(
         self,
@@ -363,7 +338,9 @@ class NpmProvider(BinProvider):
         **context,
     ) -> str:
         self.setup()
-        self._write_pnpm_workspace_config()
+        postinstall_scripts = context.get("postinstall_scripts", False)
+        min_release_age = context.get("min_release_age", 7.0)
+        self._write_pnpm_workspace_config(min_release_age=min_release_age)
 
         install_args = install_args or self.get_install_args(bin_name)
         if not self.INSTALLER_BIN_ABSPATH:
@@ -371,12 +348,12 @@ class NpmProvider(BinProvider):
                 f"{self.__class__.__name__} install method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
             )
 
-        # print(f'[*] {self.__class__.__name__}: Installing {bin_name}: {self.INSTALLER_BIN_ABSPATH} install {install_args}')
-
+        seconds = int(min_release_age * 86400)
         npm_cmd_args = [
             *self.npm_install_args,
             self.cache_arg,
-            *self._security_args(),
+            *(["--ignore-scripts"] if not postinstall_scripts else []),
+            *([f"--min-release-age={seconds}"] if min_release_age > 0 else []),
         ]
         if self.npm_prefix:
             npm_cmd_args.append(f"--prefix={self.npm_prefix}")
@@ -412,7 +389,9 @@ class NpmProvider(BinProvider):
         **context,
     ) -> str:
         self.setup()
-        self._write_pnpm_workspace_config()
+        postinstall_scripts = context.get("postinstall_scripts", False)
+        min_release_age = context.get("min_release_age", 7.0)
+        self._write_pnpm_workspace_config(min_release_age=min_release_age)
 
         install_args = install_args or self.get_install_args(bin_name)
         if not self.INSTALLER_BIN_ABSPATH:
@@ -420,10 +399,12 @@ class NpmProvider(BinProvider):
                 f"{self.__class__.__name__} update method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
             )
 
+        seconds = int(min_release_age * 86400)
         update_args = [
             *self.npm_install_args,
             self.cache_arg,
-            *self._security_args(),
+            *(["--ignore-scripts"] if not postinstall_scripts else []),
+            *([f"--min-release-age={seconds}"] if min_release_age > 0 else []),
         ]
         if self.npm_prefix:
             update_args.append(f"--prefix={self.npm_prefix}")
@@ -452,7 +433,9 @@ class NpmProvider(BinProvider):
         install_args: InstallArgs | None = None,
         **context,
     ) -> bool:
-        self._write_pnpm_workspace_config()
+        postinstall_scripts = context.get("postinstall_scripts", False)
+        min_release_age = context.get("min_release_age", 7.0)
+        self._write_pnpm_workspace_config(min_release_age=min_release_age)
         install_args = install_args or self.get_install_args(bin_name)
         if not self.INSTALLER_BIN_ABSPATH:
             raise Exception(
@@ -462,7 +445,7 @@ class NpmProvider(BinProvider):
         uninstall_args = [
             *self.npm_install_args,
             self.cache_arg,
-            *self._security_args(include_release_age=False),
+            *(["--ignore-scripts"] if not postinstall_scripts else []),
         ]
         if self.npm_prefix:
             uninstall_args.append(f"--prefix={self.npm_prefix}")

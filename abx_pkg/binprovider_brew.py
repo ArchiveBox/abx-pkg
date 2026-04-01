@@ -18,7 +18,7 @@ from .base_types import (
     bin_abspath,
 )
 from .semver import SemVer
-from .binprovider import BinProvider, remap_kwargs, env_flag_is_true
+from .binprovider import BinProvider, remap_kwargs
 from .logging import format_subprocess_output, get_logger, log_subprocess_error
 
 logger = get_logger(__name__)
@@ -184,15 +184,12 @@ class BrewProvider(BinProvider):
             self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=["update"])
             _LAST_UPDATE_CHECK = time.time()
 
+        postinstall_scripts = context.get("postinstall_scripts", False)
         proc = self.exec(
             bin_name=self.INSTALLER_BIN_ABSPATH,
             cmd=[
                 "install",
-                *(
-                    ["--skip-post-install"]
-                    if not env_flag_is_true("ABX_PKG_POSTINSTALL_SCRIPTS")
-                    else []
-                ),
+                *(["--skip-post-install"] if not postinstall_scripts else []),
                 *install_args,
             ],
         )
@@ -250,15 +247,12 @@ class BrewProvider(BinProvider):
             self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=["update"])
             _LAST_UPDATE_CHECK = time.time()
 
+        postinstall_scripts = context.get("postinstall_scripts", False)
         proc = self.exec(
             bin_name=self.INSTALLER_BIN_ABSPATH,
             cmd=[
                 "upgrade",
-                *(
-                    ["--skip-post-install"]
-                    if not env_flag_is_true("ABX_PKG_POSTINSTALL_SCRIPTS")
-                    else []
-                ),
+                *(["--skip-post-install"] if not postinstall_scripts else []),
                 *install_args,
             ],
         )
