@@ -3004,6 +3004,8 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
         return Binary(
             name=binary.name,
             binproviders=binary.binproviders_supported,
+            postinstall_scripts=True,
+            min_release_age=0,
             overrides={
                 **binary.overrides,
                 provider_name: {
@@ -3049,7 +3051,12 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
     def test_pip_provider_live_update_and_uninstall(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = PipProvider(pip_venv=Path(temp_dir) / "venv")
-            binary = Binary(name="black", binproviders=[provider])
+            binary = Binary(
+                name="black",
+                binproviders=[provider],
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
             self.assert_binary_lifecycle(binary)
 
     def test_pip_provider_live_venv_setup_respects_explicit_pip_binary_failure(self):
@@ -3098,7 +3105,12 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
     def test_npm_provider_live_update_and_uninstall(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = NpmProvider(npm_prefix=Path(temp_dir) / "npm")
-            binary = Binary(name="esbuild", binproviders=[provider])
+            binary = Binary(
+                name="esbuild",
+                binproviders=[provider],
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
             self.assert_binary_lifecycle(binary)
 
     def test_cargo_provider_live_update_and_uninstall(self):
@@ -3110,7 +3122,12 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
                 cargo_root=Path(temp_dir) / "cargo",
                 cargo_home=Path(temp_dir) / "cargo-home",
             )
-            binary = Binary(name="choose", binproviders=[provider])
+            binary = Binary(
+                name="choose",
+                binproviders=[provider],
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
             override_binary = self.make_override_binary(binary, ["choose"])
             self.assert_binary_lifecycle(binary, override_binary=override_binary)
 
@@ -3124,7 +3141,12 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
                 gem_bindir=Path(temp_dir) / "gem-home/bin",
             )
             gem_package = self.pick_missing_gem_package()
-            binary = Binary(name=gem_package, binproviders=[provider])
+            binary = Binary(
+                name=gem_package,
+                binproviders=[provider],
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
             self.assert_binary_lifecycle(
                 binary,
                 override_binary=self.make_override_binary(binary, [gem_package]),
@@ -3142,6 +3164,8 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             binary = Binary(
                 name="shfmt",
                 binproviders=[provider],
+                postinstall_scripts=True,
+                min_release_age=0,
                 overrides={
                     "go_get": {"install_args": ["mvdan.cc/sh/v3/cmd/shfmt@latest"]},
                 },
@@ -3157,7 +3181,12 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
                 nix_profile=Path(temp_dir) / "nix-profile",
                 nix_state_dir=Path(temp_dir) / "nix-state",
             )
-            binary = Binary(name="jq", binproviders=[provider])
+            binary = Binary(
+                name="jq",
+                binproviders=[provider],
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
             self.assert_binary_lifecycle(
                 binary,
                 override_binary=self.make_override_binary(binary, ["nixpkgs#jq"]),
@@ -3172,6 +3201,8 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             binary = Binary(
                 name="shellcheck",
                 binproviders=[provider],
+                postinstall_scripts=True,
+                min_release_age=0,
                 overrides={"docker": {"install_args": ["koalaman/shellcheck:v0.10.0"]}},
             )
             self.assert_binary_lifecycle(binary)
@@ -3181,7 +3212,12 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             raise unittest.SkipTest("brew is not available on this host")
 
         provider = BrewProvider()
-        binary = Binary(name=self.pick_missing_brew_formula(), binproviders=[provider])
+        binary = Binary(
+            name=self.pick_missing_brew_formula(),
+            binproviders=[provider],
+            postinstall_scripts=True,
+            min_release_age=0,
+        )
         self.assert_binary_lifecycle(binary)
 
     def test_pyinfra_provider_live_update_and_uninstall(self):
@@ -3199,6 +3235,8 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             binary = Binary(
                 name=self.pick_missing_apt_package(),
                 binproviders=[provider],
+                postinstall_scripts=True,
+                min_release_age=0,
             )
         elif shutil.which("brew"):
             provider = PyinfraProvider(
@@ -3207,6 +3245,8 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             binary = Binary(
                 name=self.pick_missing_brew_formula(),
                 binproviders=[provider],
+                postinstall_scripts=True,
+                min_release_age=0,
             )
         else:
             raise unittest.SkipTest("Neither apt nor brew is available on this host")
@@ -3226,6 +3266,8 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             binary = Binary(
                 name=self.pick_missing_apt_package(),
                 binproviders=[provider],
+                postinstall_scripts=True,
+                min_release_age=0,
             )
         elif shutil.which("brew"):
             provider = AnsibleProvider(
@@ -3234,6 +3276,8 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             binary = Binary(
                 name=self.pick_missing_brew_formula(),
                 binproviders=[provider],
+                postinstall_scripts=True,
+                min_release_age=0,
             )
         else:
             raise unittest.SkipTest("Neither apt nor brew is available on this host")
@@ -3249,7 +3293,12 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             raise unittest.SkipTest("apt lifecycle tests require root on Linux")
 
         provider = AptProvider()
-        binary = Binary(name=self.pick_missing_apt_package(), binproviders=[provider])
+        binary = Binary(
+            name=self.pick_missing_apt_package(),
+            binproviders=[provider],
+            postinstall_scripts=True,
+            min_release_age=0,
+        )
         self.assert_binary_lifecycle(binary)
 
 
