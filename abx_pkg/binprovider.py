@@ -9,6 +9,7 @@ import hashlib
 import platform
 import subprocess
 import functools
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 from typing import (
@@ -93,8 +94,6 @@ def env_flag_is_true(name: str) -> bool:
 
 ################## SUPPLY-CHAIN SECURITY HELPERS ######################
 
-from datetime import datetime, timedelta, timezone
-
 
 def postinstall_scripts_args(provider_name: str) -> list[str]:
     """Return CLI args to disable post-install scripts for *provider_name*.
@@ -132,7 +131,9 @@ def postinstall_scripts_args(provider_name: str) -> list[str]:
     return []
 
 
-def min_release_age_args(provider_name: str, *, using_uv: bool = False, pip_version: "SemVer | None" = None) -> list[str]:
+def min_release_age_args(
+    provider_name: str, *, using_uv: bool = False, pip_version: "SemVer | None" = None
+) -> list[str]:
     """Return CLI args to enforce a minimum package release age.
 
     Controlled by ``ABX_PKG_MIN_RELEASE_AGE`` env var (default: ``7`` days).
