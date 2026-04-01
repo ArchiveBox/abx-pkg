@@ -18,7 +18,7 @@ from .base_types import (
     bin_abspath,
 )
 from .semver import SemVer
-from .binprovider import BinProvider, remap_kwargs, postinstall_scripts_args
+from .binprovider import BinProvider, remap_kwargs, env_flag_is_true
 from .logging import format_subprocess_output, get_logger, log_subprocess_error
 
 logger = get_logger(__name__)
@@ -186,7 +186,15 @@ class BrewProvider(BinProvider):
 
         proc = self.exec(
             bin_name=self.INSTALLER_BIN_ABSPATH,
-            cmd=["install", *postinstall_scripts_args("brew"), *install_args],
+            cmd=[
+                "install",
+                *(
+                    ["--skip-post-install"]
+                    if not env_flag_is_true("ABX_PKG_POSTINSTALL_SCRIPTS")
+                    else []
+                ),
+                *install_args,
+            ],
         )
         if proc.returncode != 0:
             log_subprocess_error(
@@ -244,7 +252,15 @@ class BrewProvider(BinProvider):
 
         proc = self.exec(
             bin_name=self.INSTALLER_BIN_ABSPATH,
-            cmd=["upgrade", *postinstall_scripts_args("brew"), *install_args],
+            cmd=[
+                "upgrade",
+                *(
+                    ["--skip-post-install"]
+                    if not env_flag_is_true("ABX_PKG_POSTINSTALL_SCRIPTS")
+                    else []
+                ),
+                *install_args,
+            ],
         )
         if proc.returncode != 0:
             log_subprocess_error(

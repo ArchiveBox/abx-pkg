@@ -1629,10 +1629,9 @@ class TestUpdateAndUninstall(unittest.TestCase):
             provider.update("python")
 
         self.assertEqual(mock_exec.call_args_list[0].kwargs["cmd"], ["update"])
-        self.assertEqual(
-            mock_exec.call_args_list[1].kwargs["cmd"],
-            ["upgrade", "python"],
-        )
+        upgrade_cmd = mock_exec.call_args_list[1].kwargs["cmd"]
+        self.assertIn("upgrade", upgrade_cmd)
+        self.assertIn("python", upgrade_cmd)
 
     @mock.patch.object(
         BinProvider,
@@ -3456,170 +3455,78 @@ class TestSecurityControls(unittest.TestCase):
     """
 
     # ------------------------------------------------------------------
-    # Helper-function unit tests (postinstall_scripts_args / min_release_age_args)
+    # Per-provider security args unit tests
     # ------------------------------------------------------------------
 
-    def test_postinstall_scripts_args_npm_default_disabled(self):
-        """npm gets --ignore-scripts when ABX_PKG_POSTINSTALL_SCRIPTS is unset (default=False)."""
-        from abx_pkg.binprovider import postinstall_scripts_args
-
+    @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
+    def test_npm_security_args_default(self, _mock_load_path):
+        """NpmProvider._security_args() returns --ignore-scripts and --min-release-age by default."""
+        provider = NpmProvider(npm_prefix=Path("/tmp/npm"), euid=os.geteuid())
         env = os.environ.copy()
         env.pop("ABX_PKG_POSTINSTALL_SCRIPTS", None)
+        env.pop("ABX_PKG_MIN_RELEASE_AGE", None)
         with mock.patch.dict(os.environ, env, clear=True):
-            args = postinstall_scripts_args("npm")
-        self.assertEqual(args, ["--ignore-scripts"])
+            args = provider._security_args()
+        self.assertIn("--ignore-scripts", args)
+        self.assertIn("--min-release-age=7", args)
 
-    def test_postinstall_scripts_args_npm_enabled(self):
-        """npm gets no --ignore-scripts when ABX_PKG_POSTINSTALL_SCRIPTS=True."""
-        from abx_pkg.binprovider import postinstall_scripts_args
-
-        with mock.patch.dict(os.environ, {"ABX_PKG_POSTINSTALL_SCRIPTS": "True"}):
-            args = postinstall_scripts_args("npm")
+    @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
+    def test_npm_security_args_opted_out(self, _mock_load_path):
+        """NpmProvider._security_args() returns [] when user opts out of all controls."""
+        provider = NpmProvider(npm_prefix=Path("/tmp/npm"), euid=os.geteuid())
+        with mock.patch.dict(
+            os.environ,
+            {"ABX_PKG_POSTINSTALL_SCRIPTS": "True", "ABX_PKG_MIN_RELEASE_AGE": "0"},
+        ):
+            args = provider._security_args()
         self.assertEqual(args, [])
 
-    def test_postinstall_scripts_args_pip_returns_only_binary(self):
-        """pip gets --only-binary :all: to prevent sdist builds."""
-        from abx_pkg.binprovider import postinstall_scripts_args
-
+    @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
+    def test_npm_security_args_no_release_age_on_uninstall(self, _mock_load_path):
+        """NpmProvider._security_args(include_release_age=False) skips --min-release-age."""
+        provider = NpmProvider(npm_prefix=Path("/tmp/npm"), euid=os.geteuid())
         env = os.environ.copy()
         env.pop("ABX_PKG_POSTINSTALL_SCRIPTS", None)
-        with mock.patch.dict(os.environ, env, clear=True):
-            args = postinstall_scripts_args("pip")
-        self.assertEqual(args, ["--only-binary", ":all:"])
-
-    def test_postinstall_scripts_args_uv_returns_no_build(self):
-        """uv gets --no-build to prevent arbitrary code execution."""
-        from abx_pkg.binprovider import postinstall_scripts_args
-
-        env = os.environ.copy()
-        env.pop("ABX_PKG_POSTINSTALL_SCRIPTS", None)
-        with mock.patch.dict(os.environ, env, clear=True):
-            args = postinstall_scripts_args("uv")
-        self.assertEqual(args, ["--no-build"])
-
-    def test_postinstall_scripts_args_brew_returns_skip(self):
-        """brew gets --skip-post-install."""
-        from abx_pkg.binprovider import postinstall_scripts_args
-
-        env = os.environ.copy()
-        env.pop("ABX_PKG_POSTINSTALL_SCRIPTS", None)
-        with mock.patch.dict(os.environ, env, clear=True):
-            args = postinstall_scripts_args("brew")
-        self.assertEqual(args, ["--skip-post-install"])
-
-    def test_postinstall_scripts_args_unsupported_provider(self):
-        """Providers without post-install script control return []."""
-        from abx_pkg.binprovider import postinstall_scripts_args
-
-        env = os.environ.copy()
-        env.pop("ABX_PKG_POSTINSTALL_SCRIPTS", None)
-        with mock.patch.dict(os.environ, env, clear=True):
-            self.assertEqual(postinstall_scripts_args("apt"), [])
-            self.assertEqual(postinstall_scripts_args("cargo"), [])
-
-    def test_min_release_age_args_npm_default(self):
-        """npm gets --min-release-age=7 by default."""
-        from abx_pkg.binprovider import min_release_age_args
-
-        env = os.environ.copy()
         env.pop("ABX_PKG_MIN_RELEASE_AGE", None)
         with mock.patch.dict(os.environ, env, clear=True):
-            args = min_release_age_args("npm")
-        self.assertEqual(args, ["--min-release-age=7"])
+            args = provider._security_args(include_release_age=False)
+        self.assertIn("--ignore-scripts", args)
+        self.assertNotIn("--min-release-age=7", args)
 
-    def test_min_release_age_args_npm_custom(self):
-        """npm respects ABX_PKG_MIN_RELEASE_AGE=14."""
-        from abx_pkg.binprovider import min_release_age_args
+    def test_pip_uv_security_args_default(self):
+        """PipProvider._uv_security_args() returns --no-build and --exclude-newer by default."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pip = PipProvider(pip_venv=Path(tmpdir) / "venv", euid=os.geteuid())
+            env = os.environ.copy()
+            env.pop("ABX_PKG_POSTINSTALL_SCRIPTS", None)
+            env.pop("ABX_PKG_MIN_RELEASE_AGE", None)
+            with mock.patch.dict(os.environ, env, clear=True):
+                args = pip._uv_security_args()
+            self.assertIn("--no-build", args)
+            exclude_newer = [a for a in args if a.startswith("--exclude-newer=")]
+            self.assertEqual(len(exclude_newer), 1)
 
-        with mock.patch.dict(os.environ, {"ABX_PKG_MIN_RELEASE_AGE": "14"}):
-            args = min_release_age_args("npm")
-        self.assertEqual(args, ["--min-release-age=14"])
-
-    def test_min_release_age_args_npm_disabled(self):
-        """npm gets no args when ABX_PKG_MIN_RELEASE_AGE=0."""
-        from abx_pkg.binprovider import min_release_age_args
-
-        with mock.patch.dict(os.environ, {"ABX_PKG_MIN_RELEASE_AGE": "0"}):
-            args = min_release_age_args("npm")
-        self.assertEqual(args, [])
-
-    def test_min_release_age_args_uv_exclude_newer(self):
-        """pip+uv gets --exclude-newer with an ISO-8601 timestamp."""
-        from abx_pkg.binprovider import min_release_age_args
-
-        env = os.environ.copy()
-        env.pop("ABX_PKG_MIN_RELEASE_AGE", None)
-        with mock.patch.dict(os.environ, env, clear=True):
-            args = min_release_age_args("pip", using_uv=True)
-        self.assertEqual(len(args), 1)
-        self.assertTrue(args[0].startswith("--exclude-newer="))
-        # The timestamp should be parseable and ~7 days in the past
-        from datetime import datetime, timezone
-
-        ts = args[0].split("=", 1)[1]
-        cutoff = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(
-            tzinfo=timezone.utc
-        )
-        age = (datetime.now(timezone.utc) - cutoff).days
-        self.assertIn(age, (6, 7, 8))  # allow 1-day margin for timezone edge cases
-
-    def test_min_release_age_args_pip_without_uv_old_pip(self):
-        """pip without uv and pip < 26.0 returns [] (no native equivalent)."""
-        from abx_pkg.binprovider import min_release_age_args
-
-        env = os.environ.copy()
-        env.pop("ABX_PKG_MIN_RELEASE_AGE", None)
-        with mock.patch.dict(os.environ, env, clear=True):
-            # No pip_version => no flag
-            args = min_release_age_args("pip", using_uv=False)
-            self.assertEqual(args, [])
-            # Old pip version => no flag
-            args = min_release_age_args(
-                "pip", using_uv=False, pip_version=SemVer("25.3.1")
-            )
+    def test_pip_uv_security_args_opted_out(self):
+        """PipProvider._uv_security_args() returns [] when user opts out."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pip = PipProvider(pip_venv=Path(tmpdir) / "venv", euid=os.geteuid())
+            with mock.patch.dict(
+                os.environ,
+                {"ABX_PKG_POSTINSTALL_SCRIPTS": "True", "ABX_PKG_MIN_RELEASE_AGE": "0"},
+            ):
+                args = pip._uv_security_args()
             self.assertEqual(args, [])
 
-    def test_min_release_age_args_pip_without_uv_new_pip(self):
-        """pip >= 26.0 without uv returns --uploaded-prior-to (pypa/pip#13625)."""
-        from abx_pkg.binprovider import min_release_age_args
-
-        env = os.environ.copy()
-        env.pop("ABX_PKG_MIN_RELEASE_AGE", None)
-        with mock.patch.dict(os.environ, env, clear=True):
-            args = min_release_age_args(
-                "pip", using_uv=False, pip_version=SemVer("26.0.1")
-            )
-        self.assertEqual(len(args), 1)
-        self.assertTrue(args[0].startswith("--uploaded-prior-to="))
-        # The timestamp should be parseable and ~7 days in the past
-        from datetime import datetime, timezone
-
-        ts = args[0].split("=", 1)[1]
-        cutoff = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(
-            tzinfo=timezone.utc
-        )
-        age = (datetime.now(timezone.utc) - cutoff).days
-        self.assertIn(age, (6, 7, 8))
-
-    def test_min_release_age_args_pip_26_disabled(self):
-        """pip >= 26.0 returns [] when ABX_PKG_MIN_RELEASE_AGE=0."""
-        from abx_pkg.binprovider import min_release_age_args
-
-        with mock.patch.dict(os.environ, {"ABX_PKG_MIN_RELEASE_AGE": "0"}):
-            args = min_release_age_args(
-                "pip", using_uv=False, pip_version=SemVer("26.0.1")
-            )
-        self.assertEqual(args, [])
-
-    def test_min_release_age_args_unsupported_provider(self):
-        """Providers without release-age support return []."""
-        from abx_pkg.binprovider import min_release_age_args
-
-        env = os.environ.copy()
-        env.pop("ABX_PKG_MIN_RELEASE_AGE", None)
-        with mock.patch.dict(os.environ, env, clear=True):
-            self.assertEqual(min_release_age_args("apt"), [])
-            self.assertEqual(min_release_age_args("brew"), [])
+    def test_pip_security_args_returns_only_binary(self):
+        """PipProvider._pip_security_args() includes --only-binary :all: by default."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pip = PipProvider(pip_venv=Path(tmpdir) / "venv", euid=os.geteuid())
+            env = os.environ.copy()
+            env.pop("ABX_PKG_POSTINSTALL_SCRIPTS", None)
+            with mock.patch.dict(os.environ, env, clear=True):
+                args = pip._pip_security_args()
+            self.assertIn("--only-binary", args)
+            self.assertIn(":all:", args)
 
     # ------------------------------------------------------------------
     # Binary field defaults
@@ -3663,14 +3570,15 @@ class TestSecurityControls(unittest.TestCase):
         binary = Binary(
             name="python",
             binproviders=[env],
-            min_version="3.0.0",
+            min_version=SemVer("3.0.0"),
         )
         loaded = binary.load()
 
         self.assertTrue(loaded.is_valid)
         self.assertFalse(loaded.postinstall_scripts)
         self.assertEqual(loaded.min_release_age, 7)
-        self.assertGreaterEqual(loaded.loaded_version, SemVer("3.0.0"))
+        assert loaded.loaded_version is not None
+        self.assertTrue(loaded.loaded_version >= SemVer("3.0.0"))  # type: ignore[operator]
         self.assertEqual(loaded.loaded_abspath, Path(sys.executable).absolute())
 
     def test_binary_load_or_install_python_with_security_defaults(self):

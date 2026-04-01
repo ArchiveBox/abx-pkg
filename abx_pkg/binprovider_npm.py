@@ -26,8 +26,8 @@ from .semver import SemVer
 from .binprovider import (
     BinProvider,
     remap_kwargs,
-    postinstall_scripts_args,
-    min_release_age_args,
+    env_flag_is_true,
+    _parse_min_release_age_days,
 )
 from .logging import format_subprocess_output, get_logger, log_subprocess_error
 
@@ -261,6 +261,22 @@ class NpmProvider(BinProvider):
 
         logger.debug("Wrote %s with minimumReleaseAge=%d", config_path, minutes)
 
+    def _security_args(self, *, include_release_age: bool = True) -> list[str]:
+        """Return npm/pnpm CLI flags for supply-chain security controls.
+
+        - ``--ignore-scripts`` unless ABX_PKG_POSTINSTALL_SCRIPTS is set
+        - ``--min-release-age=<days>`` when *include_release_age* is True
+          (npm only; pnpm uses config-file enforcement via _write_pnpm_workspace_config)
+        """
+        args: list[str] = []
+        if not env_flag_is_true("ABX_PKG_POSTINSTALL_SCRIPTS"):
+            args.append("--ignore-scripts")
+        if include_release_age:
+            days = _parse_min_release_age_days()
+            if days > 0:
+                args.append(f"--min-release-age={days}")
+        return args
+
     def _npm(
         self,
         npm_cmd: list[str],
@@ -360,8 +376,7 @@ class NpmProvider(BinProvider):
         npm_cmd_args = [
             *self.npm_install_args,
             self.cache_arg,
-            *postinstall_scripts_args("npm"),
-            *min_release_age_args("npm"),
+            *self._security_args(),
         ]
         if self.npm_prefix:
             npm_cmd_args.append(f"--prefix={self.npm_prefix}")
@@ -408,8 +423,7 @@ class NpmProvider(BinProvider):
         update_args = [
             *self.npm_install_args,
             self.cache_arg,
-            *postinstall_scripts_args("npm"),
-            *min_release_age_args("npm"),
+            *self._security_args(),
         ]
         if self.npm_prefix:
             update_args.append(f"--prefix={self.npm_prefix}")
@@ -448,7 +462,7 @@ class NpmProvider(BinProvider):
         uninstall_args = [
             *self.npm_install_args,
             self.cache_arg,
-            *postinstall_scripts_args("npm"),
+            *self._security_args(include_release_age=False),
         ]
         if self.npm_prefix:
             uninstall_args.append(f"--prefix={self.npm_prefix}")
