@@ -247,7 +247,7 @@ class NpmProvider(BinProvider):
             config_path.write_text(
                 existing.rstrip("\n") + f"\n{new_line}\n"
                 if existing
-                else f"{new_line}\n"
+                else f"{new_line}\n",
             )
 
         logger.debug("Wrote %s with minimumReleaseAge=%d", config_path, minutes)

@@ -3549,7 +3549,7 @@ class TestSecurityControls(unittest.TestCase):
                     )
                 ):
                     self.skipTest(
-                        "cowsay install blocked by security controls (expected if only sdist available)"
+                        "cowsay install blocked by security controls (expected if only sdist available)",
                     )
                     return
                 raise
@@ -3630,7 +3630,8 @@ class TestSecurityControls(unittest.TestCase):
 
     @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
     def test_pnpm_setup_writes_workspace_config_with_min_release_age(
-        self, _mock_load_path
+        self,
+        _mock_load_path,
     ):
         """NpmProvider.setup() writes pnpm-workspace.yaml with minimumReleaseAge when pnpm is the backend."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -3670,7 +3671,7 @@ class TestSecurityControls(unittest.TestCase):
             config_path = prefix / "pnpm-workspace.yaml"
             # Pre-populate with an existing minimumReleaseAge value
             config_path.write_text(
-                "packages:\n  - 'apps/*'\nminimumReleaseAge: 10080\n"
+                "packages:\n  - 'apps/*'\nminimumReleaseAge: 10080\n",
             )
 
             provider = NpmProvider(npm_prefix=prefix, euid=os.geteuid())
@@ -3727,7 +3728,9 @@ class TestSecurityControls(unittest.TestCase):
             cache_dir = Path(tmpdir) / "npm-cache"
             cache_dir.mkdir()
             provider = NpmProvider(
-                npm_prefix=None, cache_dir=cache_dir, euid=os.geteuid()
+                npm_prefix=None,
+                cache_dir=cache_dir,
+                euid=os.geteuid(),
             )
             provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/pnpm")
 
@@ -3750,7 +3753,10 @@ class TestSecurityControls(unittest.TestCase):
             provider = NpmProvider(npm_prefix=prefix, euid=os.geteuid())
             provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/pnpm")
             proc = subprocess.CompletedProcess(
-                args=[], returncode=0, stdout="", stderr=""
+                args=[],
+                returncode=0,
+                stdout="",
+                stderr="",
             )
 
             with mock.patch.object(NpmProvider, "exec", return_value=proc) as mock_exec:
@@ -3785,7 +3791,10 @@ class TestSecurityControls(unittest.TestCase):
             provider = NpmProvider(npm_prefix=prefix, euid=os.geteuid())
             provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/pnpm")
             proc = subprocess.CompletedProcess(
-                args=[], returncode=0, stdout="", stderr=""
+                args=[],
+                returncode=0,
+                stdout="",
+                stderr="",
             )
             config_path = prefix / "pnpm-workspace.yaml"
 
