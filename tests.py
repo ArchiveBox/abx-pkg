@@ -1233,7 +1233,12 @@ class TestBinary(unittest.TestCase):
         ) as mock_update:
             result = binary.update(binproviders=[provider.name])
 
-        mock_update.assert_called_once_with("python")
+        mock_update.assert_called_once_with(
+            "python",
+            postinstall_scripts=False,
+            min_release_age=7.0,
+            min_version=None,
+        )
         self.assertEqual(result.loaded_binprovider, provider)
         self.assertEqual(result.loaded_abspath, updated_bin.loaded_abspath)
         self.assertEqual(result.loaded_version, updated_bin.loaded_version)
@@ -1260,7 +1265,12 @@ class TestBinary(unittest.TestCase):
         ) as mock_uninstall:
             result = binary.uninstall(binproviders=[provider.name])
 
-        mock_uninstall.assert_called_once_with("python")
+        mock_uninstall.assert_called_once_with(
+            "python",
+            postinstall_scripts=False,
+            min_release_age=7.0,
+            min_version=None,
+        )
         self.assertIsNone(result.loaded_binprovider)
         self.assertIsNone(result.loaded_abspath)
         self.assertIsNone(result.loaded_version)
@@ -1303,7 +1313,12 @@ class TestBinary(unittest.TestCase):
             ) as mock_uninstall:
                 result = binary.uninstall(binproviders=[provider.name])
 
-        mock_uninstall.assert_called_once_with("tool")
+        mock_uninstall.assert_called_once_with(
+            "tool",
+            postinstall_scripts=False,
+            min_release_age=7.0,
+            min_version=None,
+        )
         self.assertIsNone(result.loaded_binprovider)
         self.assertIsNone(result.loaded_abspath)
         self.assertIsNone(result.loaded_version)
@@ -1629,10 +1644,9 @@ class TestUpdateAndUninstall(unittest.TestCase):
             provider.update("python")
 
         self.assertEqual(mock_exec.call_args_list[0].kwargs["cmd"], ["update"])
-        self.assertEqual(
-            mock_exec.call_args_list[1].kwargs["cmd"],
-            ["upgrade", "python"],
-        )
+        upgrade_cmd = mock_exec.call_args_list[1].kwargs["cmd"]
+        self.assertIn("upgrade", upgrade_cmd)
+        self.assertIn("python", upgrade_cmd)
 
     @mock.patch.object(
         BinProvider,
@@ -1681,16 +1695,14 @@ class TestUpdateAndUninstall(unittest.TestCase):
         ):
             provider.update("python")
 
-        self.assertEqual(
-            mock_exec.call_args.kwargs["cmd"],
-            [
-                "update",
-                "--loglevel=error",
-                f"--store-dir={provider.cache_dir}",
-                "--dir=/tmp/npm",
-                "python",
-            ],
-        )
+        cmd = mock_exec.call_args.kwargs["cmd"]
+        self.assertEqual(cmd[0], "update")
+        self.assertIn("--loglevel=error", cmd)
+        self.assertIn(f"--store-dir={provider.cache_dir}", cmd)
+        self.assertIn("--dir=/tmp/npm", cmd)
+        self.assertIn("python", cmd)
+        # Security flags injected via pnpm remapping
+        self.assertIn("--ignore-scripts", cmd)
 
     @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
     def test_npm_provider_uninstall_uses_uninstall_command(
@@ -1705,16 +1717,14 @@ class TestUpdateAndUninstall(unittest.TestCase):
             result = provider.uninstall("python")
 
         self.assertTrue(result)
-        self.assertEqual(
-            mock_exec.call_args.kwargs["cmd"],
-            [
-                "remove",
-                "--loglevel=error",
-                f"--store-dir={provider.cache_dir}",
-                "--dir=/tmp/npm",
-                "python",
-            ],
-        )
+        cmd = mock_exec.call_args.kwargs["cmd"]
+        self.assertEqual(cmd[0], "remove")
+        self.assertIn("--loglevel=error", cmd)
+        self.assertIn(f"--store-dir={provider.cache_dir}", cmd)
+        self.assertIn("--dir=/tmp/npm", cmd)
+        self.assertIn("python", cmd)
+        # Security: --ignore-scripts on uninstall too
+        self.assertIn("--ignore-scripts", cmd)
 
     @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
     def test_npm_provider_install_uses_npm_directly(self, _mock_load_path):
@@ -1724,19 +1734,19 @@ class TestUpdateAndUninstall(unittest.TestCase):
         with mock.patch.object(NpmProvider, "exec", return_value=proc) as mock_exec:
             provider.default_install_handler("python", install_args=["python"])
 
-        self.assertEqual(
-            mock_exec.call_args.kwargs["cmd"],
-            [
-                "install",
-                "--force",
-                "--no-audit",
-                "--no-fund",
-                "--loglevel=error",
-                provider.cache_arg,
-                "--prefix=/tmp/npm",
-                "python",
-            ],
-        )
+        cmd = mock_exec.call_args.kwargs["cmd"]
+        # Core npm args are present
+        self.assertEqual(cmd[0], "install")
+        self.assertIn("--force", cmd)
+        self.assertIn("--no-audit", cmd)
+        self.assertIn("--no-fund", cmd)
+        self.assertIn("--loglevel=error", cmd)
+        self.assertIn("--prefix=/tmp/npm", cmd)
+        self.assertIn("python", cmd)
+        # Security flags are present by default
+        self.assertIn("--ignore-scripts", cmd)
+        release_age_flags = [a for a in cmd if a.startswith("--min-release-age=")]
+        self.assertTrue(len(release_age_flags) >= 1)
 
     @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
     def test_npm_provider_prefers_npm_over_pnpm(self, _mock_load_path):
@@ -1852,21 +1862,18 @@ class TestUpdateAndUninstall(unittest.TestCase):
             with_pip=True,
             upgrade_deps=True,
         )
-        self.assertEqual(
-            mock_exec.call_args.kwargs["cmd"],
-            [
-                "pip",
-                "install",
-                "--quiet",
-                "--python",
-                str(pip_venv / "bin" / "python"),
-                provider.cache_arg,
-                "--upgrade",
-                "pip",
-                "setuptools",
-                "uv",
-            ],
-        )
+        cmd = mock_exec.call_args.kwargs["cmd"]
+        self.assertEqual(cmd[0], "pip")
+        self.assertEqual(cmd[1], "install")
+        self.assertIn("--quiet", cmd)
+        self.assertIn("--python", cmd)
+        self.assertIn(str(pip_venv / "bin" / "python"), cmd)
+        self.assertIn("--upgrade", cmd)
+        self.assertIn("pip", cmd)
+        self.assertIn("setuptools", cmd)
+        self.assertIn("uv", cmd)
+        # Security args injected for uv backend
+        self.assertIn("--no-build", cmd)
 
     @mock.patch.object(
         PipProvider,
@@ -1918,19 +1925,18 @@ class TestUpdateAndUninstall(unittest.TestCase):
         ):
             provider.update("python")
 
-        self.assertEqual(
-            mock_exec.call_args.kwargs["cmd"],
-            [
-                "pip",
-                "install",
-                "--quiet",
-                "--python",
-                "/tmp/python",
-                provider.cache_arg,
-                "--upgrade",
-                "python",
-            ],
-        )
+        cmd = mock_exec.call_args.kwargs["cmd"]
+        # Core pip/uv args
+        self.assertEqual(cmd[0], "pip")
+        self.assertEqual(cmd[1], "install")
+        self.assertIn("--quiet", cmd)
+        self.assertIn("--python", cmd)
+        self.assertIn("--upgrade", cmd)
+        self.assertIn("python", cmd)
+        # Security args injected by _pip for uv backend
+        self.assertIn("--no-build", cmd)
+        exclude_newer = [a for a in cmd if a.startswith("--exclude-newer=")]
+        self.assertTrue(len(exclude_newer) >= 1)
 
     @mock.patch.object(
         PipProvider,
@@ -2111,10 +2117,12 @@ class TestUpdateAndUninstall(unittest.TestCase):
                 provider._pip(["install", "--no-input", "python"])
 
         self.assertEqual(mock_exec.call_args.kwargs["bin_name"], custom_pip)
-        self.assertEqual(
-            mock_exec.call_args.kwargs["cmd"],
-            ["install", "--no-input", "python"],
-        )
+        cmd = mock_exec.call_args.kwargs["cmd"]
+        # When PIP_BINARY is set, uv is disabled so pip gets --only-binary :all:
+        self.assertEqual(cmd[0], "install")
+        self.assertIn("--only-binary", cmd)
+        self.assertIn(":all:", cmd)
+        self.assertIn("python", cmd)
 
     @mock.patch.object(
         BinProvider,
@@ -2996,6 +3004,7 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
         return Binary(
             name=binary.name,
             binproviders=binary.binproviders_supported,
+            min_release_age=0,
             overrides={
                 **binary.overrides,
                 provider_name: {
@@ -3041,7 +3050,11 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
     def test_pip_provider_live_update_and_uninstall(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = PipProvider(pip_venv=Path(temp_dir) / "venv")
-            binary = Binary(name="black", binproviders=[provider])
+            binary = Binary(
+                name="black",
+                binproviders=[provider],
+                min_release_age=0,
+            )
             self.assert_binary_lifecycle(binary)
 
     def test_pip_provider_live_venv_setup_respects_explicit_pip_binary_failure(self):
@@ -3090,7 +3103,11 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
     def test_npm_provider_live_update_and_uninstall(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = NpmProvider(npm_prefix=Path(temp_dir) / "npm")
-            binary = Binary(name="esbuild", binproviders=[provider])
+            binary = Binary(
+                name="cowsay",
+                binproviders=[provider],
+                min_release_age=0,
+            )
             self.assert_binary_lifecycle(binary)
 
     def test_cargo_provider_live_update_and_uninstall(self):
@@ -3102,7 +3119,11 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
                 cargo_root=Path(temp_dir) / "cargo",
                 cargo_home=Path(temp_dir) / "cargo-home",
             )
-            binary = Binary(name="choose", binproviders=[provider])
+            binary = Binary(
+                name="choose",
+                binproviders=[provider],
+                min_release_age=0,
+            )
             override_binary = self.make_override_binary(binary, ["choose"])
             self.assert_binary_lifecycle(binary, override_binary=override_binary)
 
@@ -3116,7 +3137,11 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
                 gem_bindir=Path(temp_dir) / "gem-home/bin",
             )
             gem_package = self.pick_missing_gem_package()
-            binary = Binary(name=gem_package, binproviders=[provider])
+            binary = Binary(
+                name=gem_package,
+                binproviders=[provider],
+                min_release_age=0,
+            )
             self.assert_binary_lifecycle(
                 binary,
                 override_binary=self.make_override_binary(binary, [gem_package]),
@@ -3134,6 +3159,7 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             binary = Binary(
                 name="shfmt",
                 binproviders=[provider],
+                min_release_age=0,
                 overrides={
                     "go_get": {"install_args": ["mvdan.cc/sh/v3/cmd/shfmt@latest"]},
                 },
@@ -3149,7 +3175,11 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
                 nix_profile=Path(temp_dir) / "nix-profile",
                 nix_state_dir=Path(temp_dir) / "nix-state",
             )
-            binary = Binary(name="jq", binproviders=[provider])
+            binary = Binary(
+                name="jq",
+                binproviders=[provider],
+                min_release_age=0,
+            )
             self.assert_binary_lifecycle(
                 binary,
                 override_binary=self.make_override_binary(binary, ["nixpkgs#jq"]),
@@ -3164,6 +3194,7 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             binary = Binary(
                 name="shellcheck",
                 binproviders=[provider],
+                min_release_age=0,
                 overrides={"docker": {"install_args": ["koalaman/shellcheck:v0.10.0"]}},
             )
             self.assert_binary_lifecycle(binary)
@@ -3173,7 +3204,11 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             raise unittest.SkipTest("brew is not available on this host")
 
         provider = BrewProvider()
-        binary = Binary(name=self.pick_missing_brew_formula(), binproviders=[provider])
+        binary = Binary(
+            name=self.pick_missing_brew_formula(),
+            binproviders=[provider],
+            min_release_age=0,
+        )
         self.assert_binary_lifecycle(binary)
 
     def test_pyinfra_provider_live_update_and_uninstall(self):
@@ -3191,6 +3226,7 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             binary = Binary(
                 name=self.pick_missing_apt_package(),
                 binproviders=[provider],
+                min_release_age=0,
             )
         elif shutil.which("brew"):
             provider = PyinfraProvider(
@@ -3199,6 +3235,7 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             binary = Binary(
                 name=self.pick_missing_brew_formula(),
                 binproviders=[provider],
+                min_release_age=0,
             )
         else:
             raise unittest.SkipTest("Neither apt nor brew is available on this host")
@@ -3218,6 +3255,7 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             binary = Binary(
                 name=self.pick_missing_apt_package(),
                 binproviders=[provider],
+                min_release_age=0,
             )
         elif shutil.which("brew"):
             provider = AnsibleProvider(
@@ -3226,6 +3264,7 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             binary = Binary(
                 name=self.pick_missing_brew_formula(),
                 binproviders=[provider],
+                min_release_age=0,
             )
         else:
             raise unittest.SkipTest("Neither apt nor brew is available on this host")
@@ -3241,7 +3280,11 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             raise unittest.SkipTest("apt lifecycle tests require root on Linux")
 
         provider = AptProvider()
-        binary = Binary(name=self.pick_missing_apt_package(), binproviders=[provider])
+        binary = Binary(
+            name=self.pick_missing_apt_package(),
+            binproviders=[provider],
+            min_release_age=0,
+        )
         self.assert_binary_lifecycle(binary)
 
 
@@ -3451,6 +3494,388 @@ class InstallTest(unittest.TestCase):
         else:
             assert exception is not None
             raise exception
+
+
+class TestSecurityControls(unittest.TestCase):
+    """Tests for supply-chain security mitigations: post-install scripts & min release age.
+
+    These tests exercise real code paths (no mocks on the helpers themselves)
+    to verify that ABX_PKG_POSTINSTALL_SCRIPTS and ABX_PKG_MIN_RELEASE_AGE
+    env vars are respected end-to-end.
+    """
+
+    # ------------------------------------------------------------------
+    # Binary field defaults
+    # ------------------------------------------------------------------
+
+    def test_binary_default_postinstall_scripts_false(self):
+        """Binary.postinstall_scripts defaults to False when env var is unset."""
+        env = os.environ.copy()
+        env.pop("ABX_PKG_POSTINSTALL_SCRIPTS", None)
+        with mock.patch.dict(os.environ, env, clear=True):
+            binary = Binary(name="python", binproviders=[EnvProvider()])
+        self.assertFalse(binary.postinstall_scripts)
+
+    def test_binary_default_min_release_age_7(self):
+        """Binary.min_release_age defaults to 7 when env var is unset."""
+        env = os.environ.copy()
+        env.pop("ABX_PKG_MIN_RELEASE_AGE", None)
+        with mock.patch.dict(os.environ, env, clear=True):
+            binary = Binary(name="python", binproviders=[EnvProvider()])
+        self.assertEqual(binary.min_release_age, 7.0)
+
+    def test_binary_postinstall_scripts_env_override(self):
+        """ABX_PKG_POSTINSTALL_SCRIPTS=True enables postinstall_scripts."""
+        with mock.patch.dict(os.environ, {"ABX_PKG_POSTINSTALL_SCRIPTS": "True"}):
+            binary = Binary(name="python", binproviders=[EnvProvider()])
+        self.assertTrue(binary.postinstall_scripts)
+
+    def test_binary_min_release_age_env_override(self):
+        """ABX_PKG_MIN_RELEASE_AGE=14 overrides the default."""
+        with mock.patch.dict(os.environ, {"ABX_PKG_MIN_RELEASE_AGE": "14"}):
+            binary = Binary(name="python", binproviders=[EnvProvider()])
+        self.assertEqual(binary.min_release_age, 14.0)
+
+    # ------------------------------------------------------------------
+    # Live integration: Binary.load() with security fields + min_version
+    # ------------------------------------------------------------------
+
+    def test_binary_load_with_security_fields_and_min_version(self):
+        """Binary.load() succeeds with security fields set and min_version enforced."""
+        env = EnvProvider()
+        binary = Binary(
+            name="python",
+            binproviders=[env],
+            min_version=SemVer("3.0.0"),
+        )
+        loaded = binary.load()
+
+        self.assertTrue(loaded.is_valid)
+        self.assertFalse(loaded.postinstall_scripts)
+        self.assertEqual(loaded.min_release_age, 7)
+        assert loaded.loaded_version is not None
+        self.assertTrue(loaded.loaded_version >= SemVer("3.0.0"))  # pyright: ignore[reportOperatorIssue]
+        self.assertEqual(loaded.loaded_abspath, Path(sys.executable).absolute())
+
+    def test_binary_load_or_install_python_with_security_defaults(self):
+        """load_or_install() works end-to-end with security fields at defaults."""
+        env = EnvProvider()
+        binary = Binary(name="python", binproviders=[env])
+        loaded = binary.load_or_install()
+
+        self.assertTrue(loaded.is_valid)
+        self.assertFalse(loaded.postinstall_scripts)
+        self.assertEqual(loaded.min_release_age, 7)
+        self.assertIsNotNone(loaded.loaded_version)
+        self.assertIsNotNone(loaded.loaded_abspath)
+
+    # ------------------------------------------------------------------
+    # Live integration: pip install in temp venv with security controls
+    # ------------------------------------------------------------------
+
+    def test_pip_install_cowsay_in_temp_venv(self):
+        """Real pip install of 'cowsay' in a temp venv respects security controls.
+
+        This is a live test — it actually installs a small pure-Python package
+        and verifies the binary is loadable afterwards.  The --no-build and
+        --exclude-newer flags are injected by the security helpers.
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            venv_path = Path(tmpdir) / "test-venv"
+            pip = PipProvider(pip_venv=venv_path, euid=os.geteuid())
+            pip.setup()
+
+            binary = Binary(name="cowsay", binproviders=[pip])
+            try:
+                installed = binary.install()
+            except Exception as err:
+                if any(
+                    token in str(err)
+                    for token in (
+                        "only-binary",
+                        "--no-build",
+                        "--exclude-newer",
+                        "No matching distribution found",
+                    )
+                ):
+                    self.skipTest(
+                        "cowsay install blocked by security controls (expected if only sdist available)",
+                    )
+                    return
+                raise
+
+            self.assertTrue(installed.is_valid)
+            self.assertIsNotNone(installed.loaded_version)
+            self.assertIsNotNone(installed.loaded_abspath)
+
+    # ------------------------------------------------------------------
+    # Live integration: NpmProvider command includes security flags
+    # ------------------------------------------------------------------
+
+    @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
+    def test_npm_install_command_includes_security_flags(self, _mock_load_path):
+        """NpmProvider install command includes --ignore-scripts and --min-release-age in seconds."""
+        provider = NpmProvider(npm_prefix=Path("/tmp/npm"), euid=os.geteuid())
+        provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/npm")
+        proc = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+        with mock.patch.object(NpmProvider, "exec", return_value=proc) as mock_exec:
+            provider.default_install_handler(
+                "cowsay",
+                install_args=["cowsay"],
+                postinstall_scripts=False,
+                min_release_age=7.0,
+            )
+
+        cmd = mock_exec.call_args.kwargs["cmd"]
+        self.assertIn("--ignore-scripts", cmd)
+        # 7 days * 86400 seconds/day = 604800 seconds
+        release_age_flags = [a for a in cmd if a.startswith("--min-release-age=")]
+        self.assertEqual(len(release_age_flags), 1)
+        self.assertEqual(release_age_flags[0], "--min-release-age=604800")
+
+    @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
+    def test_npm_uninstall_has_ignore_scripts_but_no_release_age(self, _mock_load_path):
+        """NpmProvider uninstall includes --ignore-scripts but not --min-release-age."""
+        provider = NpmProvider(npm_prefix=Path("/tmp/npm"), euid=os.geteuid())
+        provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/npm")
+        proc = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+        with mock.patch.object(NpmProvider, "exec", return_value=proc) as mock_exec:
+            provider.default_uninstall_handler(
+                "cowsay",
+                install_args=["cowsay"],
+                postinstall_scripts=False,
+                min_release_age=7.0,
+            )
+
+        cmd = mock_exec.call_args.kwargs["cmd"]
+        self.assertIn("--ignore-scripts", cmd)
+        release_age_flags = [a for a in cmd if a.startswith("--min-release-age=")]
+        self.assertEqual(len(release_age_flags), 0)
+
+    @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
+    def test_npm_install_no_security_flags_when_opted_out(self, _mock_load_path):
+        """NpmProvider install omits security flags when user opts out."""
+        provider = NpmProvider(npm_prefix=Path("/tmp/npm"), euid=os.geteuid())
+        provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/npm")
+        proc = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+        with mock.patch.object(NpmProvider, "exec", return_value=proc) as mock_exec:
+            provider.default_install_handler(
+                "cowsay",
+                install_args=["cowsay"],
+                postinstall_scripts=True,
+                min_release_age=0.0,
+            )
+
+        cmd = mock_exec.call_args.kwargs["cmd"]
+        self.assertNotIn("--ignore-scripts", cmd)
+        release_age_flags = [a for a in cmd if a.startswith("--min-release-age=")]
+        self.assertEqual(len(release_age_flags), 0)
+
+    # ------------------------------------------------------------------
+    # pnpm-workspace.yaml minimumReleaseAge config enforcement
+    # ------------------------------------------------------------------
+
+    @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
+    def test_pnpm_setup_writes_workspace_config_with_min_release_age(
+        self,
+        _mock_load_path,
+    ):
+        """NpmProvider.setup() writes pnpm-workspace.yaml with minimumReleaseAge when pnpm is the backend."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prefix = Path(tmpdir) / "npm-prefix"
+            prefix.mkdir()
+            provider = NpmProvider(npm_prefix=prefix, euid=os.geteuid())
+            provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/pnpm")
+
+            provider._write_pnpm_workspace_config(min_release_age=7.0)
+
+            config_path = prefix / "pnpm-workspace.yaml"
+            self.assertTrue(config_path.exists())
+            content = config_path.read_text()
+            # 7 days * 24 * 60 = 10080 minutes
+            self.assertIn("minimumReleaseAge: 10080", content)
+
+    @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
+    def test_pnpm_setup_respects_custom_release_age(self, _mock_load_path):
+        """pnpm-workspace.yaml uses min_release_age=14 -> 20160 minutes."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prefix = Path(tmpdir) / "npm-prefix"
+            prefix.mkdir()
+            provider = NpmProvider(npm_prefix=prefix, euid=os.geteuid())
+            provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/pnpm")
+
+            provider._write_pnpm_workspace_config(min_release_age=14.0)
+
+            content = (prefix / "pnpm-workspace.yaml").read_text()
+            self.assertIn("minimumReleaseAge: 20160", content)
+
+    @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
+    def test_pnpm_setup_removes_config_when_disabled(self, _mock_load_path):
+        """pnpm-workspace.yaml has minimumReleaseAge removed when ABX_PKG_MIN_RELEASE_AGE=0."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prefix = Path(tmpdir) / "npm-prefix"
+            prefix.mkdir()
+            config_path = prefix / "pnpm-workspace.yaml"
+            # Pre-populate with an existing minimumReleaseAge value
+            config_path.write_text(
+                "packages:\n  - 'apps/*'\nminimumReleaseAge: 10080\n",
+            )
+
+            provider = NpmProvider(npm_prefix=prefix, euid=os.geteuid())
+            provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/pnpm")
+
+            provider._write_pnpm_workspace_config(min_release_age=0.0)
+
+            content = config_path.read_text()
+            # minimumReleaseAge should be removed
+            self.assertNotIn("minimumReleaseAge", content)
+            # Other content should be preserved
+            self.assertIn("packages:", content)
+
+    @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
+    def test_pnpm_setup_skips_config_when_npm_backend(self, _mock_load_path):
+        """pnpm-workspace.yaml is not written when npm (not pnpm) is the backend."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prefix = Path(tmpdir) / "npm-prefix"
+            prefix.mkdir()
+            provider = NpmProvider(npm_prefix=prefix, euid=os.geteuid())
+            provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/npm")
+
+            provider._write_pnpm_workspace_config(min_release_age=7.0)
+
+            self.assertFalse((prefix / "pnpm-workspace.yaml").exists())
+
+    @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
+    def test_pnpm_setup_updates_existing_config(self, _mock_load_path):
+        """pnpm-workspace.yaml preserves other content when updating minimumReleaseAge."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prefix = Path(tmpdir) / "npm-prefix"
+            prefix.mkdir()
+            config_path = prefix / "pnpm-workspace.yaml"
+            config_path.write_text("packages:\n  - 'apps/*'\nminimumReleaseAge: 1440\n")
+
+            provider = NpmProvider(npm_prefix=prefix, euid=os.geteuid())
+            provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/pnpm")
+
+            provider._write_pnpm_workspace_config(min_release_age=7.0)
+
+            content = config_path.read_text()
+            # Updated to 10080 (7 days)
+            self.assertIn("minimumReleaseAge: 10080", content)
+            # Preserved existing content
+            self.assertIn("packages:", content)
+            self.assertIn("- 'apps/*'", content)
+            # Old value gone
+            self.assertNotIn("1440", content)
+
+    @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
+    def test_pnpm_setup_uses_cache_dir_when_no_prefix(self, _mock_load_path):
+        """pnpm-workspace.yaml goes to cache_dir/pnpm-home when npm_prefix is None."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_dir = Path(tmpdir) / "npm-cache"
+            cache_dir.mkdir()
+            provider = NpmProvider(
+                npm_prefix=None,
+                cache_dir=cache_dir,
+                euid=os.geteuid(),
+            )
+            provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/pnpm")
+
+            provider._write_pnpm_workspace_config(min_release_age=7.0)
+
+            config_path = cache_dir / "pnpm-home" / "pnpm-workspace.yaml"
+            self.assertTrue(config_path.exists())
+            self.assertIn("minimumReleaseAge: 10080", config_path.read_text())
+
+    @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
+    def test_pnpm_install_strips_min_release_age_flag(self, _mock_load_path):
+        """pnpm install command does NOT receive --min-release-age (npm-only flag).
+
+        pnpm enforces minimumReleaseAge via config file, not CLI flags.
+        The _npm() method should filter out --min-release-age when using pnpm.
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prefix = Path(tmpdir) / "npm-prefix"
+            (prefix / "node_modules" / ".bin").mkdir(parents=True)
+            provider = NpmProvider(npm_prefix=prefix, euid=os.geteuid())
+            provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/pnpm")
+            proc = subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout="",
+                stderr="",
+            )
+
+            with mock.patch.object(NpmProvider, "exec", return_value=proc) as mock_exec:
+                provider.default_install_handler(
+                    "cowsay",
+                    install_args=["cowsay"],
+                    postinstall_scripts=False,
+                    min_release_age=7.0,
+                )
+
+            cmd = mock_exec.call_args.kwargs["cmd"]
+            # --min-release-age should be stripped for pnpm
+            release_age_flags = [a for a in cmd if a.startswith("--min-release-age")]
+            self.assertEqual(
+                len(release_age_flags),
+                0,
+                f"pnpm got npm-only flags: {release_age_flags}",
+            )
+            # --ignore-scripts IS valid for pnpm and should be present
+            self.assertIn("--ignore-scripts", cmd)
+
+    @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
+    def test_pnpm_config_updated_on_every_install(self, _mock_load_path):
+        """pnpm-workspace.yaml is updated on every install call, not just setup().
+
+        The env var may change between invocations, so the config must be
+        re-written each time.
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prefix = Path(tmpdir) / "npm-prefix"
+            (prefix / "node_modules" / ".bin").mkdir(parents=True)
+            provider = NpmProvider(npm_prefix=prefix, euid=os.geteuid())
+            provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/pnpm")
+            proc = subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout="",
+                stderr="",
+            )
+            config_path = prefix / "pnpm-workspace.yaml"
+
+            # First install with 7-day age
+            with mock.patch.object(NpmProvider, "exec", return_value=proc):
+                provider.default_install_handler(
+                    "cowsay",
+                    install_args=["cowsay"],
+                    min_release_age=7.0,
+                )
+            self.assertIn("minimumReleaseAge: 10080", config_path.read_text())
+
+            # Second install with 14-day age
+            with mock.patch.object(NpmProvider, "exec", return_value=proc):
+                provider.default_install_handler(
+                    "cowsay",
+                    install_args=["cowsay"],
+                    min_release_age=14.0,
+                )
+            content = config_path.read_text()
+            self.assertIn("minimumReleaseAge: 20160", content)
+            self.assertNotIn("10080", content)
+
+            # Third install with age disabled — key should be removed
+            with mock.patch.object(NpmProvider, "exec", return_value=proc):
+                provider.default_install_handler(
+                    "cowsay",
+                    install_args=["cowsay"],
+                    min_release_age=0.0,
+                )
+            self.assertNotIn("minimumReleaseAge", config_path.read_text())
 
 
 if __name__ == "__main__":

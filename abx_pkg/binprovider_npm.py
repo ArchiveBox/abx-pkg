@@ -186,6 +186,72 @@ class NpmProvider(BinProvider):
                 PATH = ":".join([*PATH.split(":"), str(bin_dir)])
         return TypeAdapter(PATHStr).validate_python(PATH)
 
+    def _write_pnpm_workspace_config(self, min_release_age: float = 7.0) -> None:
+        """Write/update pnpm-workspace.yaml with minimumReleaseAge if pnpm is the backend.
+
+        Called before every install/update/uninstall so the config always
+        reflects the current Binary.min_release_age value.  When the age is
+        ``0`` (disabled), the ``minimumReleaseAge`` key is *removed* from the
+        file so pnpm reverts to its default behavior.
+
+        pnpm's minimumReleaseAge is config-only (no CLI flag).  The value is
+        in **minutes**, converted from days.  The file is written into the
+        directory pnpm operates from (npm_prefix when set, otherwise the
+        pnpm home / cache dir).
+        """
+        npm_abspath = self.INSTALLER_BIN_ABSPATH
+        if not npm_abspath or Path(npm_abspath).name != "pnpm":
+            return
+
+        days = min_release_age
+
+        config_dir = self.npm_prefix or self.cache_dir / "pnpm-home"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        config_path = config_dir / "pnpm-workspace.yaml"
+
+        # Preserve any existing content and only update/remove minimumReleaseAge
+        try:
+            existing = config_path.read_text()
+        except FileNotFoundError:
+            existing = ""
+
+        key = "minimumReleaseAge:"
+
+        if days <= 0:
+            # Remove the key from the config if present
+            if key in existing:
+                lines = [
+                    line
+                    for line in existing.splitlines()
+                    if not line.strip().startswith(key)
+                ]
+                content = "\n".join(lines).strip()
+                if content:
+                    config_path.write_text(content + "\n")
+                elif config_path.exists():
+                    config_path.write_text("")
+                logger.debug("Removed minimumReleaseAge from %s", config_path)
+            return
+
+        minutes = int(days * 24 * 60)
+        new_line = f"minimumReleaseAge: {minutes}"
+        if key in existing:
+            # Replace existing value
+            lines = [
+                new_line if line.strip().startswith(key) else line
+                for line in existing.splitlines()
+            ]
+            config_path.write_text("\n".join(lines) + "\n")
+        else:
+            # Append to file
+            config_path.write_text(
+                existing.rstrip("\n") + f"\n{new_line}\n"
+                if existing
+                else f"{new_line}\n",
+            )
+
+        logger.debug("Wrote %s with minimumReleaseAge=%d", config_path, minutes)
+
     def _npm(
         self,
         npm_cmd: list[str],
@@ -235,6 +301,7 @@ class NpmProvider(BinProvider):
                     else arg
                     for arg in npm_args
                     if arg not in ("--force", "--no-audit", "--no-fund")
+                    and not arg.startswith("--min-release-age")
                 ),
             ]
 
@@ -271,6 +338,9 @@ class NpmProvider(BinProvider):
         **context,
     ) -> str:
         self.setup()
+        postinstall_scripts = context.get("postinstall_scripts", False)
+        min_release_age = context.get("min_release_age", 7.0)
+        self._write_pnpm_workspace_config(min_release_age=min_release_age)
 
         install_args = install_args or self.get_install_args(bin_name)
         if not self.INSTALLER_BIN_ABSPATH:
@@ -278,9 +348,26 @@ class NpmProvider(BinProvider):
                 f"{self.__class__.__name__} install method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
             )
 
-        # print(f'[*] {self.__class__.__name__}: Installing {bin_name}: {self.INSTALLER_BIN_ABSPATH} install {install_args}')
+        min_version = context.get("min_version")
+        if min_version:
+            # npm uses pkg@>=1.2.3 syntax for version constraints
+            install_args = [
+                f"{arg}@>={min_version}"
+                if arg
+                and not arg.startswith(("-", ".", "/"))
+                and ":" not in arg.split("/")[0]
+                and "@" not in arg.split("/")[-1]
+                else arg
+                for arg in install_args
+            ]
 
-        npm_cmd_args = [*self.npm_install_args, self.cache_arg]
+        seconds = int(min_release_age * 86400)
+        npm_cmd_args = [
+            *self.npm_install_args,
+            self.cache_arg,
+            *(["--ignore-scripts"] if not postinstall_scripts else []),
+            *([f"--min-release-age={seconds}"] if min_release_age > 0 else []),
+        ]
         if self.npm_prefix:
             npm_cmd_args.append(f"--prefix={self.npm_prefix}")
         else:
@@ -315,6 +402,9 @@ class NpmProvider(BinProvider):
         **context,
     ) -> str:
         self.setup()
+        postinstall_scripts = context.get("postinstall_scripts", False)
+        min_release_age = context.get("min_release_age", 7.0)
+        self._write_pnpm_workspace_config(min_release_age=min_release_age)
 
         install_args = install_args or self.get_install_args(bin_name)
         if not self.INSTALLER_BIN_ABSPATH:
@@ -322,7 +412,25 @@ class NpmProvider(BinProvider):
                 f"{self.__class__.__name__} update method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
             )
 
-        update_args = [*self.npm_install_args, self.cache_arg]
+        min_version = context.get("min_version")
+        if min_version:
+            install_args = [
+                f"{arg}@>={min_version}"
+                if arg
+                and not arg.startswith(("-", ".", "/"))
+                and ":" not in arg.split("/")[0]
+                and "@" not in arg.split("/")[-1]
+                else arg
+                for arg in install_args
+            ]
+
+        seconds = int(min_release_age * 86400)
+        update_args = [
+            *self.npm_install_args,
+            self.cache_arg,
+            *(["--ignore-scripts"] if not postinstall_scripts else []),
+            *([f"--min-release-age={seconds}"] if min_release_age > 0 else []),
+        ]
         if self.npm_prefix:
             update_args.append(f"--prefix={self.npm_prefix}")
         else:
@@ -350,13 +458,20 @@ class NpmProvider(BinProvider):
         install_args: InstallArgs | None = None,
         **context,
     ) -> bool:
+        postinstall_scripts = context.get("postinstall_scripts", False)
+        min_release_age = context.get("min_release_age", 7.0)
+        self._write_pnpm_workspace_config(min_release_age=min_release_age)
         install_args = install_args or self.get_install_args(bin_name)
         if not self.INSTALLER_BIN_ABSPATH:
             raise Exception(
                 f"{self.__class__.__name__} uninstall method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
             )
 
-        uninstall_args = [*self.npm_install_args, self.cache_arg]
+        uninstall_args = [
+            *self.npm_install_args,
+            self.cache_arg,
+            *(["--ignore-scripts"] if not postinstall_scripts else []),
+        ]
         if self.npm_prefix:
             uninstall_args.append(f"--prefix={self.npm_prefix}")
         else:

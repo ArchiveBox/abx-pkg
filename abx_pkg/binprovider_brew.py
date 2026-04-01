@@ -184,9 +184,14 @@ class BrewProvider(BinProvider):
             self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=["update"])
             _LAST_UPDATE_CHECK = time.time()
 
+        postinstall_scripts = context.get("postinstall_scripts", False)
         proc = self.exec(
             bin_name=self.INSTALLER_BIN_ABSPATH,
-            cmd=["install", *install_args],
+            cmd=[
+                "install",
+                *(["--skip-post-install"] if not postinstall_scripts else []),
+                *install_args,
+            ],
         )
         if proc.returncode != 0:
             log_subprocess_error(
@@ -242,9 +247,14 @@ class BrewProvider(BinProvider):
             self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=["update"])
             _LAST_UPDATE_CHECK = time.time()
 
+        postinstall_scripts = context.get("postinstall_scripts", False)
         proc = self.exec(
             bin_name=self.INSTALLER_BIN_ABSPATH,
-            cmd=["upgrade", *install_args],
+            cmd=[
+                "upgrade",
+                *(["--skip-post-install"] if not postinstall_scripts else []),
+                *install_args,
+            ],
         )
         if proc.returncode != 0:
             log_subprocess_error(

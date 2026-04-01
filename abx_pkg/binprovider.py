@@ -91,6 +91,9 @@ def env_flag_is_true(name: str) -> bool:
     return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+################## SUPPLY-CHAIN SECURITY HELPERS ######################
+
+
 ################## VALIDATORS #######################################
 
 NEVER_CACHE = (
@@ -1088,6 +1091,9 @@ class BinProvider(BaseModel):
         bin_name: BinName,
         quiet: bool = False,
         nocache: bool = False,
+        postinstall_scripts: bool = False,
+        min_release_age: float = 7.0,
+        min_version: SemVer | None = None,
     ) -> ShallowBinary | None:
         self.setup()
 
@@ -1109,6 +1115,9 @@ class BinProvider(BaseModel):
                     handler_type="install",
                     install_args=install_args,
                     packages=install_args,
+                    postinstall_scripts=postinstall_scripts,
+                    min_release_age=min_release_age,
+                    min_version=min_version,
                 ),
             )
         except Exception as err:
@@ -1185,6 +1194,9 @@ class BinProvider(BaseModel):
         bin_name: BinName,
         quiet: bool = False,
         nocache: bool = False,
+        postinstall_scripts: bool = False,
+        min_release_age: float = 7.0,
+        min_version: SemVer | None = None,
     ) -> ShallowBinary | None:
         self.setup()
 
@@ -1206,6 +1218,9 @@ class BinProvider(BaseModel):
                     handler_type="update",
                     install_args=install_args,
                     packages=install_args,
+                    postinstall_scripts=postinstall_scripts,
+                    min_release_age=min_release_age,
+                    min_version=min_version,
                 ),
             )
         except Exception as err:
@@ -1274,6 +1289,9 @@ class BinProvider(BaseModel):
         bin_name: BinName,
         quiet: bool = False,
         nocache: bool = False,
+        postinstall_scripts: bool = False,
+        min_release_age: float = 7.0,
+        min_version: SemVer | None = None,
     ) -> bool:
         install_args = self.get_install_args(bin_name, quiet=quiet, nocache=nocache)
         logger.info(
@@ -1293,6 +1311,9 @@ class BinProvider(BaseModel):
                     handler_type="uninstall",
                     install_args=install_args,
                     packages=install_args,
+                    postinstall_scripts=postinstall_scripts,
+                    min_release_age=min_release_age,
+                    min_version=min_version,
                 ),
             )
         except Exception:
@@ -1359,6 +1380,9 @@ class BinProvider(BaseModel):
         bin_name: BinName,
         quiet: bool = False,
         nocache: bool = False,
+        postinstall_scripts: bool = False,
+        min_release_age: float = 7.0,
+        min_version: SemVer | None = None,
     ) -> ShallowBinary | None:
         logger.info("Loading or installing %s via provider %s", bin_name, self.name)
         try:
@@ -1366,7 +1390,14 @@ class BinProvider(BaseModel):
         except Exception:
             installed = None
         if not installed:
-            installed = self.install(bin_name=bin_name, quiet=quiet, nocache=nocache)
+            installed = self.install(
+                bin_name=bin_name,
+                quiet=quiet,
+                nocache=nocache,
+                postinstall_scripts=postinstall_scripts,
+                min_release_age=min_release_age,
+                min_version=min_version,
+            )
         return installed
 
 

@@ -137,9 +137,12 @@ class GemProvider(BinProvider):
                 f"{self.__class__.__name__} install method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
             )
 
+        min_version = context.get("min_version")
+        version_args = ["--version", f">={min_version}"] if min_version else []
+
         proc = self.exec(
             bin_name=self.INSTALLER_BIN_ABSPATH,
-            cmd=["install", *self._gem_install_args(), *install_args],
+            cmd=["install", *self._gem_install_args(), *version_args, *install_args],
             env=self._gem_env(),
         )
         if proc.returncode != 0:
@@ -171,9 +174,12 @@ class GemProvider(BinProvider):
                 f"{self.__class__.__name__} update method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
             )
 
+        min_version = context.get("min_version")
+        version_args = ["--version", f">={min_version}"] if min_version else []
+
         proc = self.exec(
             bin_name=self.INSTALLER_BIN_ABSPATH,
-            cmd=["update", *self._gem_install_args(), *install_args],
+            cmd=["update", *self._gem_install_args(), *version_args, *install_args],
             env=self._gem_env(),
         )
         if proc.returncode != 0:

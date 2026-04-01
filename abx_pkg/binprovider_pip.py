@@ -26,7 +26,11 @@ from .base_types import (
     bin_abspaths,
 )
 from .semver import SemVer
-from .binprovider import BinProvider, DEFAULT_ENV_PATH, remap_kwargs
+from .binprovider import (
+    BinProvider,
+    DEFAULT_ENV_PATH,
+    remap_kwargs,
+)
 from .logging import format_subprocess_output, get_logger, log_subprocess_error
 
 logger = get_logger(__name__)
@@ -279,6 +283,8 @@ class PipProvider(BinProvider):
         pip_cmd: list[str],
         quiet: bool = False,
         timeout: int | None = None,
+        postinstall_scripts: bool = False,
+        min_release_age: float = 7.0,
     ) -> subprocess.CompletedProcess:
         pip_abspath = self.INSTALLER_BIN_ABSPATH
         if not pip_abspath:
@@ -291,6 +297,18 @@ class PipProvider(BinProvider):
         if pip_binary and Path(pip_binary).expanduser().is_absolute():
             uv_abspath = None
         subcommand, *pip_args = pip_cmd
+        is_install = subcommand == "install"
+
+        # supply-chain security: compute ISO-8601 cutoff once, used by both uv and pip
+        if is_install and min_release_age > 0:
+            from datetime import datetime, timedelta, timezone
+
+            cutoff = (
+                datetime.now(timezone.utc) - timedelta(days=min_release_age)
+            ).strftime("%Y-%m-%dT%H:%M:%SZ")
+        else:
+            cutoff = ""
+
         uv_cmd = [
             "pip",
             subcommand,
@@ -304,6 +322,10 @@ class PipProvider(BinProvider):
                 if subcommand in ("install", "show", "uninstall")
                 else []
             ),
+            # supply-chain security: --no-build prevents arbitrary code execution,
+            # --exclude-newer rejects packages published too recently
+            *(["--no-build"] if is_install and not postinstall_scripts else []),
+            *([f"--exclude-newer={cutoff}"] if is_install and cutoff else []),
             *(
                 arg
                 for arg in pip_args
@@ -311,6 +333,24 @@ class PipProvider(BinProvider):
                 not in ("--no-input", "--disable-pip-version-check", "--quiet", "--yes")
             ),
         ]
+        # supply-chain security for plain pip (no uv): --only-binary :all:
+        # prevents sdist builds, --uploaded-prior-to enforces min release age
+        # (pip >= 26.0 only, see pypa/pip#13625)
+        if is_install and not uv_abspath:
+            installer = self.INSTALLER_BINARY
+            pip_ver = installer.loaded_version if installer else None
+            if pip_ver and pip_ver == SemVer((999, 999, 999)):
+                pip_ver = None
+            pip_cmd = [
+                subcommand,
+                *(["--only-binary", ":all:"] if not postinstall_scripts else []),
+                *(
+                    [f"--uploaded-prior-to={cutoff}"]
+                    if cutoff and pip_ver is not None and pip_ver >= SemVer((26, 0, 0))  # pyright: ignore[reportOperatorIssue]
+                    else []
+                ),
+                *pip_args,
+            ]
         return self.exec(
             bin_name=uv_abspath or pip_abspath,
             cmd=uv_cmd if uv_abspath else pip_cmd,
@@ -329,10 +369,18 @@ class PipProvider(BinProvider):
             self.setup()
 
         install_args = install_args or self.get_install_args(bin_name)
+        min_version = context.get("min_version")
+        if min_version:
+            # append >=X.Y.Z to each package spec that doesn't already have a version constraint
+            install_args = [
+                f"{arg}>={min_version}"
+                if arg
+                and not arg.startswith("-")
+                and not any(c in arg for c in ">=<!=~")
+                else arg
+                for arg in install_args
+            ]
 
-        # print(f'[*] {self.__class__.__name__}: Installing {bin_name}: {self.INSTALLER_BIN_ABSPATH} install {install_args}')
-
-        # pip install --no-input --cache-dir=<cache_dir> <extra_pip_args> <install_args>
         proc = self._pip(
             [
                 "install",
@@ -341,6 +389,8 @@ class PipProvider(BinProvider):
                 *self.pip_install_args,
                 *install_args,
             ],
+            postinstall_scripts=context.get("postinstall_scripts", False),
+            min_release_age=context.get("min_release_age", 7.0),
         )
 
         if proc.returncode != 0:
@@ -367,6 +417,16 @@ class PipProvider(BinProvider):
             self.setup()
 
         install_args = install_args or self.get_install_args(bin_name)
+        min_version = context.get("min_version")
+        if min_version:
+            install_args = [
+                f"{arg}>={min_version}"
+                if arg
+                and not arg.startswith("-")
+                and not any(c in arg for c in ">=<!=~")
+                else arg
+                for arg in install_args
+            ]
 
         proc = self._pip(
             [
@@ -377,6 +437,8 @@ class PipProvider(BinProvider):
                 "--upgrade",
                 *install_args,
             ],
+            postinstall_scripts=context.get("postinstall_scripts", False),
+            min_release_age=context.get("min_release_age", 7.0),
         )
 
         if proc.returncode != 0:

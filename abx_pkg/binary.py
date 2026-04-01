@@ -1,5 +1,6 @@
 __package__ = "abx_pkg"
 
+import os
 from typing import Any
 from typing import Self
 
@@ -16,7 +17,7 @@ from pydantic import (
 
 from .semver import SemVer
 from .shallowbinary import ShallowBinary
-from .binprovider import BinProvider, EnvProvider, BinaryOverrides
+from .binprovider import BinProvider, EnvProvider, BinaryOverrides, env_flag_is_true
 from .logging import format_exception_with_output, get_logger, log_method_call
 from .exceptions import (
     BinaryInstallError,
@@ -59,6 +60,29 @@ class Binary(ShallowBinary):
     overrides: BinaryOverrides = Field(default_factory=dict)
 
     min_version: SemVer | None = None
+
+    postinstall_scripts: bool = Field(
+        default_factory=lambda: env_flag_is_true("ABX_PKG_POSTINSTALL_SCRIPTS"),
+        description=(
+            "Allow post-install scripts during package installation. "
+            "Defaults to ABX_PKG_POSTINSTALL_SCRIPTS env var (False if unset)."
+        ),
+    )
+    min_release_age: float = Field(
+        default_factory=lambda: (
+            float(v)
+            if (v := os.getenv("ABX_PKG_MIN_RELEASE_AGE", "7"))
+            .replace(".", "", 1)
+            .lstrip("-")
+            .isdigit()
+            else 7.0
+        ),
+        description=(
+            "Minimum days since publication before a package can be installed. "
+            "Defaults to ABX_PKG_MIN_RELEASE_AGE env var (7 if unset). "
+            "Set to 0 to disable."
+        ),
+    )
 
     # bin_filename:  see below
     # is_executable: see below
@@ -255,7 +279,12 @@ class Binary(ShallowBinary):
                     binprovider_name=binprovider.name,
                     **extra_overrides,
                 )
-                installed_bin = provider.install(self.name)
+                installed_bin = provider.install(
+                    self.name,
+                    postinstall_scripts=self.postinstall_scripts,
+                    min_release_age=self.min_release_age,
+                    min_version=self.min_version,
+                )
                 if installed_bin is not None and installed_bin.loaded_abspath:
                     # print('INSTALLED', self.name, installed_bin)
                     return self._validated_loaded_copy(
@@ -368,7 +397,13 @@ class Binary(ShallowBinary):
                     binprovider_name=binprovider.name,
                     **extra_overrides,
                 )
-                installed_bin = provider.load_or_install(self.name, nocache=nocache)
+                installed_bin = provider.load_or_install(
+                    self.name,
+                    nocache=nocache,
+                    postinstall_scripts=self.postinstall_scripts,
+                    min_release_age=self.min_release_age,
+                    min_version=self.min_version,
+                )
                 if installed_bin is not None and installed_bin.loaded_abspath:
                     # print('LOADED_OR_INSTALLED', self.name, installed_bin)
                     return self._validated_loaded_copy(
@@ -419,7 +454,12 @@ class Binary(ShallowBinary):
                     binprovider_name=binprovider.name,
                     **extra_overrides,
                 )
-                updated_bin = provider.update(self.name)
+                updated_bin = provider.update(
+                    self.name,
+                    postinstall_scripts=self.postinstall_scripts,
+                    min_release_age=self.min_release_age,
+                    min_version=self.min_version,
+                )
                 if updated_bin is not None and updated_bin.loaded_abspath:
                     return self._validated_loaded_copy(
                         provider,
@@ -466,7 +506,12 @@ class Binary(ShallowBinary):
                     binprovider_name=binprovider.name,
                     **extra_overrides,
                 )
-                uninstalled = provider.uninstall(self.name)
+                uninstalled = provider.uninstall(
+                    self.name,
+                    postinstall_scripts=self.postinstall_scripts,
+                    min_release_age=self.min_release_age,
+                    min_version=self.min_version,
+                )
                 if uninstalled:
                     return self.model_copy(
                         deep=True,
