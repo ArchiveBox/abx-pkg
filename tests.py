@@ -3004,7 +3004,6 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
         return Binary(
             name=binary.name,
             binproviders=binary.binproviders_supported,
-            postinstall_scripts=True,
             min_release_age=0,
             overrides={
                 **binary.overrides,
@@ -3054,7 +3053,6 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             binary = Binary(
                 name="black",
                 binproviders=[provider],
-                postinstall_scripts=True,
                 min_release_age=0,
             )
             self.assert_binary_lifecycle(binary)
@@ -3106,9 +3104,8 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = NpmProvider(npm_prefix=Path(temp_dir) / "npm")
             binary = Binary(
-                name="esbuild",
+                name="cowsay",
                 binproviders=[provider],
-                postinstall_scripts=True,
                 min_release_age=0,
             )
             self.assert_binary_lifecycle(binary)
@@ -3125,7 +3122,6 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             binary = Binary(
                 name="choose",
                 binproviders=[provider],
-                postinstall_scripts=True,
                 min_release_age=0,
             )
             override_binary = self.make_override_binary(binary, ["choose"])
@@ -3144,7 +3140,6 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             binary = Binary(
                 name=gem_package,
                 binproviders=[provider],
-                postinstall_scripts=True,
                 min_release_age=0,
             )
             self.assert_binary_lifecycle(
@@ -3164,7 +3159,6 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             binary = Binary(
                 name="shfmt",
                 binproviders=[provider],
-                postinstall_scripts=True,
                 min_release_age=0,
                 overrides={
                     "go_get": {"install_args": ["mvdan.cc/sh/v3/cmd/shfmt@latest"]},
@@ -3184,7 +3178,6 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             binary = Binary(
                 name="jq",
                 binproviders=[provider],
-                postinstall_scripts=True,
                 min_release_age=0,
             )
             self.assert_binary_lifecycle(
@@ -3201,7 +3194,6 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             binary = Binary(
                 name="shellcheck",
                 binproviders=[provider],
-                postinstall_scripts=True,
                 min_release_age=0,
                 overrides={"docker": {"install_args": ["koalaman/shellcheck:v0.10.0"]}},
             )
@@ -3215,7 +3207,6 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
         binary = Binary(
             name=self.pick_missing_brew_formula(),
             binproviders=[provider],
-            postinstall_scripts=True,
             min_release_age=0,
         )
         self.assert_binary_lifecycle(binary)
@@ -3235,7 +3226,6 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             binary = Binary(
                 name=self.pick_missing_apt_package(),
                 binproviders=[provider],
-                postinstall_scripts=True,
                 min_release_age=0,
             )
         elif shutil.which("brew"):
@@ -3245,7 +3235,6 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             binary = Binary(
                 name=self.pick_missing_brew_formula(),
                 binproviders=[provider],
-                postinstall_scripts=True,
                 min_release_age=0,
             )
         else:
@@ -3266,7 +3255,6 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             binary = Binary(
                 name=self.pick_missing_apt_package(),
                 binproviders=[provider],
-                postinstall_scripts=True,
                 min_release_age=0,
             )
         elif shutil.which("brew"):
@@ -3276,7 +3264,6 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             binary = Binary(
                 name=self.pick_missing_brew_formula(),
                 binproviders=[provider],
-                postinstall_scripts=True,
                 min_release_age=0,
             )
         else:
@@ -3296,7 +3283,6 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
         binary = Binary(
             name=self.pick_missing_apt_package(),
             binproviders=[provider],
-            postinstall_scripts=True,
             min_release_age=0,
         )
         self.assert_binary_lifecycle(binary)
