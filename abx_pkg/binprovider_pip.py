@@ -255,20 +255,6 @@ class PipProvider(BinProvider):
                     f"{self.__class__.__name__}: setup got returncode {proc.returncode} while bootstrapping {self.pip_bootstrap_packages}\n{format_subprocess_output(proc.stdout, proc.stderr)}".strip(),
                 )
 
-    def _get_pip_version(self) -> "SemVer | None":
-        """Return the SemVer of the pip binary, or None if it can't be detected."""
-        try:
-            proc = self.exec(
-                bin_name=self.INSTALLER_BIN_ABSPATH,
-                cmd=["--version"],
-                quiet=True,
-                timeout=self._version_timeout,
-            )
-            # e.g. "pip 26.0.1 from /usr/lib/python3/dist-packages/pip (python 3.11)"
-            return SemVer.parse(proc.stdout.strip())
-        except Exception:
-            return None
-
     def _uv_pip_target_args(self) -> list[str]:
         if self.pip_venv:
             return ["--python", str(self.pip_venv / "bin" / "python")]
@@ -334,7 +320,8 @@ class PipProvider(BinProvider):
         # prevents sdist builds, --uploaded-prior-to enforces min release age
         # (pip >= 26.0 only, see pypa/pip#13625)
         if is_install and not uv_abspath:
-            pip_ver = self._get_pip_version()
+            installer = self.INSTALLER_BINARY
+            pip_ver = installer.loaded_version if installer else None
             pip_cmd = [
                 subcommand,
                 *postinstall_scripts_args("pip"),
