@@ -283,6 +283,7 @@ class Binary(ShallowBinary):
                     self.name,
                     postinstall_scripts=self.postinstall_scripts,
                     min_release_age=self.min_release_age,
+                    min_version=self.min_version,
                 )
                 if installed_bin is not None and installed_bin.loaded_abspath:
                     # print('INSTALLED', self.name, installed_bin)
@@ -401,6 +402,7 @@ class Binary(ShallowBinary):
                     nocache=nocache,
                     postinstall_scripts=self.postinstall_scripts,
                     min_release_age=self.min_release_age,
+                    min_version=self.min_version,
                 )
                 if installed_bin is not None and installed_bin.loaded_abspath:
                     # print('LOADED_OR_INSTALLED', self.name, installed_bin)
@@ -456,6 +458,7 @@ class Binary(ShallowBinary):
                     self.name,
                     postinstall_scripts=self.postinstall_scripts,
                     min_release_age=self.min_release_age,
+                    min_version=self.min_version,
                 )
                 if updated_bin is not None and updated_bin.loaded_abspath:
                     return self._validated_loaded_copy(
@@ -507,6 +510,7 @@ class Binary(ShallowBinary):
                     self.name,
                     postinstall_scripts=self.postinstall_scripts,
                     min_release_age=self.min_release_age,
+                    min_version=self.min_version,
                 )
                 if uninstalled:
                     return self.model_copy(

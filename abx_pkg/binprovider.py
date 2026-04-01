@@ -1093,6 +1093,7 @@ class BinProvider(BaseModel):
         nocache: bool = False,
         postinstall_scripts: bool = False,
         min_release_age: float = 7.0,
+        min_version: SemVer | None = None,
     ) -> ShallowBinary | None:
         self.setup()
 
@@ -1116,6 +1117,7 @@ class BinProvider(BaseModel):
                     packages=install_args,
                     postinstall_scripts=postinstall_scripts,
                     min_release_age=min_release_age,
+                    min_version=min_version,
                 ),
             )
         except Exception as err:
@@ -1194,6 +1196,7 @@ class BinProvider(BaseModel):
         nocache: bool = False,
         postinstall_scripts: bool = False,
         min_release_age: float = 7.0,
+        min_version: SemVer | None = None,
     ) -> ShallowBinary | None:
         self.setup()
 
@@ -1217,6 +1220,7 @@ class BinProvider(BaseModel):
                     packages=install_args,
                     postinstall_scripts=postinstall_scripts,
                     min_release_age=min_release_age,
+                    min_version=min_version,
                 ),
             )
         except Exception as err:
@@ -1287,6 +1291,7 @@ class BinProvider(BaseModel):
         nocache: bool = False,
         postinstall_scripts: bool = False,
         min_release_age: float = 7.0,
+        min_version: SemVer | None = None,
     ) -> bool:
         install_args = self.get_install_args(bin_name, quiet=quiet, nocache=nocache)
         logger.info(
@@ -1308,6 +1313,7 @@ class BinProvider(BaseModel):
                     packages=install_args,
                     postinstall_scripts=postinstall_scripts,
                     min_release_age=min_release_age,
+                    min_version=min_version,
                 ),
             )
         except Exception:
@@ -1376,6 +1382,7 @@ class BinProvider(BaseModel):
         nocache: bool = False,
         postinstall_scripts: bool = False,
         min_release_age: float = 7.0,
+        min_version: SemVer | None = None,
     ) -> ShallowBinary | None:
         logger.info("Loading or installing %s via provider %s", bin_name, self.name)
         try:
@@ -1389,6 +1396,7 @@ class BinProvider(BaseModel):
                 nocache=nocache,
                 postinstall_scripts=postinstall_scripts,
                 min_release_age=min_release_age,
+                min_version=min_version,
             )
         return installed
 

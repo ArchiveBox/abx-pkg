@@ -1237,6 +1237,7 @@ class TestBinary(unittest.TestCase):
             "python",
             postinstall_scripts=False,
             min_release_age=7.0,
+            min_version=None,
         )
         self.assertEqual(result.loaded_binprovider, provider)
         self.assertEqual(result.loaded_abspath, updated_bin.loaded_abspath)
@@ -1268,6 +1269,7 @@ class TestBinary(unittest.TestCase):
             "python",
             postinstall_scripts=False,
             min_release_age=7.0,
+            min_version=None,
         )
         self.assertIsNone(result.loaded_binprovider)
         self.assertIsNone(result.loaded_abspath)
@@ -1315,6 +1317,7 @@ class TestBinary(unittest.TestCase):
             "tool",
             postinstall_scripts=False,
             min_release_age=7.0,
+            min_version=None,
         )
         self.assertIsNone(result.loaded_binprovider)
         self.assertIsNone(result.loaded_abspath)

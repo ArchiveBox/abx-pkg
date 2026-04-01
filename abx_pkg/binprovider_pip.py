@@ -369,6 +369,15 @@ class PipProvider(BinProvider):
             self.setup()
 
         install_args = install_args or self.get_install_args(bin_name)
+        min_version = context.get("min_version")
+        if min_version:
+            # append >=X.Y.Z to each package spec that doesn't already have a version constraint
+            install_args = [
+                f"{arg}>={min_version}"
+                if arg and not any(c in arg for c in ">=<!=~")
+                else arg
+                for arg in install_args
+            ]
 
         proc = self._pip(
             [
@@ -406,6 +415,14 @@ class PipProvider(BinProvider):
             self.setup()
 
         install_args = install_args or self.get_install_args(bin_name)
+        min_version = context.get("min_version")
+        if min_version:
+            install_args = [
+                f"{arg}>={min_version}"
+                if arg and not any(c in arg for c in ">=<!=~")
+                else arg
+                for arg in install_args
+            ]
 
         proc = self._pip(
             [

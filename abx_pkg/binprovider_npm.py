@@ -348,6 +348,16 @@ class NpmProvider(BinProvider):
                 f"{self.__class__.__name__} install method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
             )
 
+        min_version = context.get("min_version")
+        if min_version:
+            # npm uses pkg@>=1.2.3 syntax for version constraints
+            install_args = [
+                f"{arg}@>={min_version}"
+                if arg and not arg.startswith("-") and "@" not in arg.split("/")[-1]
+                else arg
+                for arg in install_args
+            ]
+
         seconds = int(min_release_age * 86400)
         npm_cmd_args = [
             *self.npm_install_args,
@@ -398,6 +408,15 @@ class NpmProvider(BinProvider):
             raise Exception(
                 f"{self.__class__.__name__} update method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
             )
+
+        min_version = context.get("min_version")
+        if min_version:
+            install_args = [
+                f"{arg}@>={min_version}"
+                if arg and not arg.startswith("-") and "@" not in arg.split("/")[-1]
+                else arg
+                for arg in install_args
+            ]
 
         seconds = int(min_release_age * 86400)
         update_args = [
