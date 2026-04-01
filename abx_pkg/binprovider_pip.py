@@ -317,7 +317,7 @@ class PipProvider(BinProvider):
             # falsely satisfy the pip >= 26.0 check
             if pip_ver and pip_ver == SemVer((999, 999, 999)):
                 pip_ver = None
-            if pip_ver is not None and pip_ver >= SemVer((26, 0, 0)):  # type: ignore[operator]
+            if pip_ver is not None and pip_ver >= SemVer((26, 0, 0)):  # pyright: ignore[reportOperatorIssue]
                 from datetime import datetime, timedelta, timezone
 
                 cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime(

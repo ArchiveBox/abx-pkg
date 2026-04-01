@@ -3578,7 +3578,7 @@ class TestSecurityControls(unittest.TestCase):
         self.assertFalse(loaded.postinstall_scripts)
         self.assertEqual(loaded.min_release_age, 7)
         assert loaded.loaded_version is not None
-        self.assertTrue(loaded.loaded_version >= SemVer("3.0.0"))  # type: ignore[operator]
+        self.assertTrue(loaded.loaded_version >= SemVer("3.0.0"))  # pyright: ignore[reportOperatorIssue]
         self.assertEqual(loaded.loaded_abspath, Path(sys.executable).absolute())
 
     def test_binary_load_or_install_python_with_security_defaults(self):
