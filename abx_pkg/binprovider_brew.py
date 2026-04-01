@@ -244,7 +244,7 @@ class BrewProvider(BinProvider):
 
         proc = self.exec(
             bin_name=self.INSTALLER_BIN_ABSPATH,
-            cmd=["upgrade", *install_args],
+            cmd=["upgrade", *postinstall_scripts_args("brew"), *install_args],
         )
         if proc.returncode != 0:
             log_subprocess_error(

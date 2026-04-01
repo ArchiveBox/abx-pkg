@@ -322,6 +322,10 @@ class PipProvider(BinProvider):
         if is_install and not uv_abspath:
             installer = self.INSTALLER_BINARY
             pip_ver = installer.loaded_version if installer else None
+            # Guard against UNKNOWN_VERSION sentinel (999.999.999) which would
+            # falsely satisfy the pip >= 26.0 check in min_release_age_args
+            if pip_ver and pip_ver >= SemVer((999, 0, 0)):
+                pip_ver = None
             pip_cmd = [
                 subcommand,
                 *postinstall_scripts_args("pip"),

@@ -3692,14 +3692,13 @@ class TestSecurityControls(unittest.TestCase):
             binary = Binary(name="cowsay", binproviders=[pip])
             try:
                 installed = binary.install()
-            except Exception:
-                # If --no-build or --exclude-newer blocks this particular
-                # version (e.g. only sdist available), that's the security
-                # controls working as intended.  Skip rather than fail.
-                self.skipTest(
-                    "cowsay install blocked by security controls (expected if only sdist available)"
-                )
-                return
+            except Exception as err:
+                if any(token in str(err) for token in ("only-binary", "--no-build", "--exclude-newer", "No matching distribution found")):
+                    self.skipTest(
+                        "cowsay install blocked by security controls (expected if only sdist available)"
+                    )
+                    return
+                raise
 
             self.assertTrue(installed.is_valid)
             self.assertIsNotNone(installed.loaded_version)
@@ -3746,9 +3745,14 @@ class TestSecurityControls(unittest.TestCase):
 
         with (
             mock.patch.dict(os.environ, env, clear=True),
-            mock.patch.object(NpmProvider, "exec", return_value=proc),
+            mock.patch.object(NpmProvider, "exec", return_value=proc) as mock_exec,
         ):
             provider.default_uninstall_handler("cowsay", install_args=["cowsay"])
+
+        cmd = mock_exec.call_args.kwargs["cmd"]
+        self.assertIn("--ignore-scripts", cmd)
+        release_age_flags = [a for a in cmd if a.startswith("--min-release-age=")]
+        self.assertEqual(len(release_age_flags), 0)
 
     @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
     def test_npm_install_no_security_flags_when_opted_out(self, _mock_load_path):
