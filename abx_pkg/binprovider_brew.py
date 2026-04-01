@@ -18,7 +18,7 @@ from .base_types import (
     bin_abspath,
 )
 from .semver import SemVer
-from .binprovider import BinProvider, remap_kwargs
+from .binprovider import BinProvider, remap_kwargs, postinstall_scripts_args
 from .logging import format_subprocess_output, get_logger, log_subprocess_error
 
 logger = get_logger(__name__)
@@ -186,7 +186,7 @@ class BrewProvider(BinProvider):
 
         proc = self.exec(
             bin_name=self.INSTALLER_BIN_ABSPATH,
-            cmd=["install", *install_args],
+            cmd=["install", *postinstall_scripts_args("brew"), *install_args],
         )
         if proc.returncode != 0:
             log_subprocess_error(

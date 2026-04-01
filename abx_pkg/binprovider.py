@@ -91,6 +91,82 @@ def env_flag_is_true(name: str) -> bool:
     return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+################## SUPPLY-CHAIN SECURITY HELPERS ######################
+
+from datetime import datetime, timedelta, timezone
+
+
+def postinstall_scripts_args(provider_name: str) -> list[str]:
+    """Return CLI args to disable post-install scripts for *provider_name*.
+
+    Controlled by ``ABX_PKG_POSTINSTALL_SCRIPTS`` env var (default: ``False``).
+    When scripts are disallowed the helper emits the correct flag for each
+    package manager that supports it:
+
+    - **npm** ``--ignore-scripts`` (install / update / uninstall)
+    - **pnpm** ``--ignore-scripts`` (same semantics; pnpm ≥10 already blocks
+      dependency scripts by default, but the flag still suppresses project-
+      level hooks)
+    - **pip** ``--only-binary :all:`` (prevents source-distribution builds
+      that execute ``setup.py`` or PEP 517 backends)
+    - **uv** ``--no-build`` (prevents running *any* Python code during
+      resolution / install)
+    - **brew** ``--skip-post-install`` (skips post-install steps)
+
+    Providers without an equivalent flag (apt, cargo, …) receive ``[]``.
+    """
+    if env_flag_is_true("ABX_PKG_POSTINSTALL_SCRIPTS"):
+        return []  # user explicitly opted-in to post-install scripts
+
+    if provider_name == "npm":
+        # works for both npm and pnpm (pnpm also accepts --ignore-scripts)
+        return ["--ignore-scripts"]
+    if provider_name == "pip":
+        # --only-binary :all: for pip, --no-build for uv
+        # (the caller decides which to inject based on whether uv is active)
+        return ["--only-binary", ":all:"]
+    if provider_name == "uv":
+        return ["--no-build"]
+    if provider_name == "brew":
+        return ["--skip-post-install"]
+    return []
+
+
+def min_release_age_args(provider_name: str, *, using_uv: bool = False) -> list[str]:
+    """Return CLI args to enforce a minimum package release age.
+
+    Controlled by ``ABX_PKG_MIN_RELEASE_AGE`` env var (default: ``7`` days).
+    Setting it to ``0`` disables the check.  The helper emits the correct flag
+    for each package manager that supports it:
+
+    - **npm** ``--min-release-age=<days>`` (npm ≥ 11.10)
+    - **pip / uv** ``--exclude-newer=<ISO-8601>`` (only when the uv backend is
+      active; plain pip has no equivalent)
+    - **pnpm** config-only ``minimumReleaseAge`` in minutes — **no CLI arg**,
+      so we cannot enforce it per-invocation and return ``[]``.
+
+    Providers without an equivalent flag receive ``[]``.
+    """
+    raw = os.getenv("ABX_PKG_MIN_RELEASE_AGE", "7")
+    try:
+        days = int(raw)
+    except (TypeError, ValueError):
+        days = 7
+    if days <= 0:
+        return []
+
+    if provider_name == "npm":
+        return [f"--min-release-age={days}"]
+
+    if provider_name == "pip" and using_uv:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ",
+        )
+        return [f"--exclude-newer={cutoff}"]
+
+    return []
+
+
 ################## VALIDATORS #######################################
 
 NEVER_CACHE = (

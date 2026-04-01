@@ -45,6 +45,8 @@ from .binprovider import (
     HandlerValue,
     HandlerDict,
     HandlerReturnValue,
+    postinstall_scripts_args,
+    min_release_age_args,
 )
 from .binary import Binary
 
@@ -143,6 +145,9 @@ __all__ = [
     "DEFAULT_PATH",
     "DEFAULT_ENV_PATH",
     "PYTHON_BIN_DIR",
+    # Security helpers
+    "postinstall_scripts_args",
+    "min_release_age_args",
     # BinProviders (classes)
     "EnvProvider",
     "AptProvider",

@@ -1,5 +1,6 @@
 __package__ = "abx_pkg"
 
+import os
 from typing import Any
 from typing import Self
 
@@ -16,7 +17,7 @@ from pydantic import (
 
 from .semver import SemVer
 from .shallowbinary import ShallowBinary
-from .binprovider import BinProvider, EnvProvider, BinaryOverrides
+from .binprovider import BinProvider, EnvProvider, BinaryOverrides, env_flag_is_true
 from .logging import format_exception_with_output, get_logger, log_method_call
 from .exceptions import (
     BinaryInstallError,
@@ -59,6 +60,22 @@ class Binary(ShallowBinary):
     overrides: BinaryOverrides = Field(default_factory=dict)
 
     min_version: SemVer | None = None
+
+    postinstall_scripts: bool = Field(
+        default_factory=lambda: env_flag_is_true("ABX_PKG_POSTINSTALL_SCRIPTS"),
+        description=(
+            "Allow post-install scripts during package installation. "
+            "Defaults to ABX_PKG_POSTINSTALL_SCRIPTS env var (False if unset)."
+        ),
+    )
+    min_release_age: int = Field(
+        default_factory=lambda: int(os.getenv("ABX_PKG_MIN_RELEASE_AGE", "7")),
+        description=(
+            "Minimum days since publication before a package can be installed. "
+            "Defaults to ABX_PKG_MIN_RELEASE_AGE env var (7 if unset). "
+            "Set to 0 to disable."
+        ),
+    )
 
     # bin_filename:  see below
     # is_executable: see below

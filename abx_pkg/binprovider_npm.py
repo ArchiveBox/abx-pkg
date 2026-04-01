@@ -23,7 +23,7 @@ from .base_types import (
     bin_abspath,
 )
 from .semver import SemVer
-from .binprovider import BinProvider, remap_kwargs
+from .binprovider import BinProvider, remap_kwargs, postinstall_scripts_args, min_release_age_args
 from .logging import format_subprocess_output, get_logger, log_subprocess_error
 
 logger = get_logger(__name__)
@@ -280,7 +280,12 @@ class NpmProvider(BinProvider):
 
         # print(f'[*] {self.__class__.__name__}: Installing {bin_name}: {self.INSTALLER_BIN_ABSPATH} install {install_args}')
 
-        npm_cmd_args = [*self.npm_install_args, self.cache_arg]
+        npm_cmd_args = [
+            *self.npm_install_args,
+            self.cache_arg,
+            *postinstall_scripts_args("npm"),
+            *min_release_age_args("npm"),
+        ]
         if self.npm_prefix:
             npm_cmd_args.append(f"--prefix={self.npm_prefix}")
         else:
@@ -322,7 +327,12 @@ class NpmProvider(BinProvider):
                 f"{self.__class__.__name__} update method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
             )
 
-        update_args = [*self.npm_install_args, self.cache_arg]
+        update_args = [
+            *self.npm_install_args,
+            self.cache_arg,
+            *postinstall_scripts_args("npm"),
+            *min_release_age_args("npm"),
+        ]
         if self.npm_prefix:
             update_args.append(f"--prefix={self.npm_prefix}")
         else:
@@ -356,7 +366,11 @@ class NpmProvider(BinProvider):
                 f"{self.__class__.__name__} uninstall method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
             )
 
-        uninstall_args = [*self.npm_install_args, self.cache_arg]
+        uninstall_args = [
+            *self.npm_install_args,
+            self.cache_arg,
+            *postinstall_scripts_args("npm"),
+        ]
         if self.npm_prefix:
             uninstall_args.append(f"--prefix={self.npm_prefix}")
         else:

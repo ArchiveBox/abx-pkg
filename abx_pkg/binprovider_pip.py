@@ -26,7 +26,7 @@ from .base_types import (
     bin_abspaths,
 )
 from .semver import SemVer
-from .binprovider import BinProvider, DEFAULT_ENV_PATH, remap_kwargs
+from .binprovider import BinProvider, DEFAULT_ENV_PATH, remap_kwargs, postinstall_scripts_args, min_release_age_args
 from .logging import format_subprocess_output, get_logger, log_subprocess_error
 
 logger = get_logger(__name__)
@@ -291,6 +291,7 @@ class PipProvider(BinProvider):
         if pip_binary and Path(pip_binary).expanduser().is_absolute():
             uv_abspath = None
         subcommand, *pip_args = pip_cmd
+        is_install = subcommand == "install"
         uv_cmd = [
             "pip",
             subcommand,
@@ -304,6 +305,10 @@ class PipProvider(BinProvider):
                 if subcommand in ("install", "show", "uninstall")
                 else []
             ),
+            # supply-chain security: --no-build prevents arbitrary code execution
+            *(postinstall_scripts_args("uv") if is_install else []),
+            # supply-chain security: --exclude-newer rejects very recent releases
+            *(min_release_age_args("pip", using_uv=True) if is_install else []),
             *(
                 arg
                 for arg in pip_args
@@ -311,6 +316,9 @@ class PipProvider(BinProvider):
                 not in ("--no-input", "--disable-pip-version-check", "--quiet", "--yes")
             ),
         ]
+        # supply-chain security: --only-binary :all: prevents sdist builds for plain pip
+        if is_install and not uv_abspath:
+            pip_cmd = [subcommand, *postinstall_scripts_args("pip"), *pip_args]
         return self.exec(
             bin_name=uv_abspath or pip_abspath,
             cmd=uv_cmd if uv_abspath else pip_cmd,
