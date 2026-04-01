@@ -132,7 +132,7 @@ def postinstall_scripts_args(provider_name: str) -> list[str]:
     return []
 
 
-def min_release_age_args(provider_name: str, *, using_uv: bool = False) -> list[str]:
+def min_release_age_args(provider_name: str, *, using_uv: bool = False, pip_version: "SemVer | None" = None) -> list[str]:
     """Return CLI args to enforce a minimum package release age.
 
     Controlled by ``ABX_PKG_MIN_RELEASE_AGE`` env var (default: ``7`` days).
@@ -140,8 +140,9 @@ def min_release_age_args(provider_name: str, *, using_uv: bool = False) -> list[
     for each package manager that supports it:
 
     - **npm** ``--min-release-age=<days>`` (npm ≥ 11.10)
-    - **pip / uv** ``--exclude-newer=<ISO-8601>`` (only when the uv backend is
-      active; plain pip has no equivalent)
+    - **uv** ``--exclude-newer=<ISO-8601>`` (when the uv backend is active)
+    - **pip** ``--uploaded-prior-to=<ISO-8601>`` (pip ≥ 26.0, added Jan 2026;
+      older pip versions get ``[]`` because they lack an equivalent flag)
     - **pnpm** config-only ``minimumReleaseAge`` in minutes — **no CLI arg**,
       so we cannot enforce it per-invocation and return ``[]``.
 
@@ -158,11 +159,16 @@ def min_release_age_args(provider_name: str, *, using_uv: bool = False) -> list[
     if provider_name == "npm":
         return [f"--min-release-age={days}"]
 
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ",
+    )
+
     if provider_name == "pip" and using_uv:
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime(
-            "%Y-%m-%dT%H:%M:%SZ",
-        )
         return [f"--exclude-newer={cutoff}"]
+
+    if provider_name == "pip" and pip_version and pip_version >= SemVer((26, 0, 0)):
+        # pip 26.0+ supports --uploaded-prior-to (pypa/pip#13625)
+        return [f"--uploaded-prior-to={cutoff}"]
 
     return []
 

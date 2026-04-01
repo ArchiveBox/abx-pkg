@@ -255,6 +255,20 @@ class PipProvider(BinProvider):
                     f"{self.__class__.__name__}: setup got returncode {proc.returncode} while bootstrapping {self.pip_bootstrap_packages}\n{format_subprocess_output(proc.stdout, proc.stderr)}".strip(),
                 )
 
+    def _get_pip_version(self) -> "SemVer | None":
+        """Return the SemVer of the pip binary, or None if it can't be detected."""
+        try:
+            proc = self.exec(
+                bin_name=self.INSTALLER_BIN_ABSPATH,
+                cmd=["--version"],
+                quiet=True,
+                timeout=self._version_timeout,
+            )
+            # e.g. "pip 26.0.1 from /usr/lib/python3/dist-packages/pip (python 3.11)"
+            return SemVer.parse(proc.stdout.strip())
+        except Exception:
+            return None
+
     def _uv_pip_target_args(self) -> list[str]:
         if self.pip_venv:
             return ["--python", str(self.pip_venv / "bin" / "python")]
@@ -316,9 +330,17 @@ class PipProvider(BinProvider):
                 not in ("--no-input", "--disable-pip-version-check", "--quiet", "--yes")
             ),
         ]
-        # supply-chain security: --only-binary :all: prevents sdist builds for plain pip
+        # supply-chain security for plain pip (no uv): --only-binary :all:
+        # prevents sdist builds, --uploaded-prior-to enforces min release age
+        # (pip >= 26.0 only, see pypa/pip#13625)
         if is_install and not uv_abspath:
-            pip_cmd = [subcommand, *postinstall_scripts_args("pip"), *pip_args]
+            pip_ver = self._get_pip_version()
+            pip_cmd = [
+                subcommand,
+                *postinstall_scripts_args("pip"),
+                *min_release_age_args("pip", pip_version=pip_ver),
+                *pip_args,
+            ]
         return self.exec(
             bin_name=uv_abspath or pip_abspath,
             cmd=uv_cmd if uv_abspath else pip_cmd,

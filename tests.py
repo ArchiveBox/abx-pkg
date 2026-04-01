@@ -3560,14 +3560,43 @@ class TestSecurityControls(unittest.TestCase):
         age = (datetime.now(timezone.utc) - cutoff).days
         self.assertIn(age, (6, 7, 8))  # allow 1-day margin for timezone edge cases
 
-    def test_min_release_age_args_pip_without_uv(self):
-        """pip without uv returns [] (no native equivalent)."""
+    def test_min_release_age_args_pip_without_uv_old_pip(self):
+        """pip without uv and pip < 26.0 returns [] (no native equivalent)."""
         from abx_pkg.binprovider import min_release_age_args
 
         env = os.environ.copy()
         env.pop("ABX_PKG_MIN_RELEASE_AGE", None)
         with mock.patch.dict(os.environ, env, clear=True):
+            # No pip_version => no flag
             args = min_release_age_args("pip", using_uv=False)
+            self.assertEqual(args, [])
+            # Old pip version => no flag
+            args = min_release_age_args("pip", using_uv=False, pip_version=SemVer("25.3.1"))
+            self.assertEqual(args, [])
+
+    def test_min_release_age_args_pip_without_uv_new_pip(self):
+        """pip >= 26.0 without uv returns --uploaded-prior-to (pypa/pip#13625)."""
+        from abx_pkg.binprovider import min_release_age_args
+
+        env = os.environ.copy()
+        env.pop("ABX_PKG_MIN_RELEASE_AGE", None)
+        with mock.patch.dict(os.environ, env, clear=True):
+            args = min_release_age_args("pip", using_uv=False, pip_version=SemVer("26.0.1"))
+        self.assertEqual(len(args), 1)
+        self.assertTrue(args[0].startswith("--uploaded-prior-to="))
+        # The timestamp should be parseable and ~7 days in the past
+        from datetime import datetime, timezone
+        ts = args[0].split("=", 1)[1]
+        cutoff = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        age = (datetime.now(timezone.utc) - cutoff).days
+        self.assertIn(age, (6, 7, 8))
+
+    def test_min_release_age_args_pip_26_disabled(self):
+        """pip >= 26.0 returns [] when ABX_PKG_MIN_RELEASE_AGE=0."""
+        from abx_pkg.binprovider import min_release_age_args
+
+        with mock.patch.dict(os.environ, {"ABX_PKG_MIN_RELEASE_AGE": "0"}):
+            args = min_release_age_args("pip", using_uv=False, pip_version=SemVer("26.0.1"))
         self.assertEqual(args, [])
 
     def test_min_release_age_args_unsupported_provider(self):
