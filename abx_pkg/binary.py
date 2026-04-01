@@ -396,7 +396,12 @@ class Binary(ShallowBinary):
                     binprovider_name=binprovider.name,
                     **extra_overrides,
                 )
-                installed_bin = provider.load_or_install(self.name, nocache=nocache)
+                installed_bin = provider.load_or_install(
+                    self.name,
+                    nocache=nocache,
+                    postinstall_scripts=self.postinstall_scripts,
+                    min_release_age=self.min_release_age,
+                )
                 if installed_bin is not None and installed_bin.loaded_abspath:
                     # print('LOADED_OR_INSTALLED', self.name, installed_bin)
                     return self._validated_loaded_copy(

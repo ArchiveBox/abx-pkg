@@ -1374,6 +1374,8 @@ class BinProvider(BaseModel):
         bin_name: BinName,
         quiet: bool = False,
         nocache: bool = False,
+        postinstall_scripts: bool = False,
+        min_release_age: float = 7.0,
     ) -> ShallowBinary | None:
         logger.info("Loading or installing %s via provider %s", bin_name, self.name)
         try:
@@ -1381,7 +1383,13 @@ class BinProvider(BaseModel):
         except Exception:
             installed = None
         if not installed:
-            installed = self.install(bin_name=bin_name, quiet=quiet, nocache=nocache)
+            installed = self.install(
+                bin_name=bin_name,
+                quiet=quiet,
+                nocache=nocache,
+                postinstall_scripts=postinstall_scripts,
+                min_release_age=min_release_age,
+            )
         return installed
 
 

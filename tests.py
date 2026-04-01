@@ -1233,7 +1233,11 @@ class TestBinary(unittest.TestCase):
         ) as mock_update:
             result = binary.update(binproviders=[provider.name])
 
-        mock_update.assert_called_once_with("python")
+        mock_update.assert_called_once_with(
+            "python",
+            postinstall_scripts=False,
+            min_release_age=7.0,
+        )
         self.assertEqual(result.loaded_binprovider, provider)
         self.assertEqual(result.loaded_abspath, updated_bin.loaded_abspath)
         self.assertEqual(result.loaded_version, updated_bin.loaded_version)
@@ -1260,7 +1264,11 @@ class TestBinary(unittest.TestCase):
         ) as mock_uninstall:
             result = binary.uninstall(binproviders=[provider.name])
 
-        mock_uninstall.assert_called_once_with("python")
+        mock_uninstall.assert_called_once_with(
+            "python",
+            postinstall_scripts=False,
+            min_release_age=7.0,
+        )
         self.assertIsNone(result.loaded_binprovider)
         self.assertIsNone(result.loaded_abspath)
         self.assertIsNone(result.loaded_version)
@@ -1303,7 +1311,11 @@ class TestBinary(unittest.TestCase):
             ) as mock_uninstall:
                 result = binary.uninstall(binproviders=[provider.name])
 
-        mock_uninstall.assert_called_once_with("tool")
+        mock_uninstall.assert_called_once_with(
+            "tool",
+            postinstall_scripts=False,
+            min_release_age=7.0,
+        )
         self.assertIsNone(result.loaded_binprovider)
         self.assertIsNone(result.loaded_abspath)
         self.assertIsNone(result.loaded_version)
