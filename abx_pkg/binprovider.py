@@ -144,7 +144,8 @@ def min_release_age_args(provider_name: str, *, using_uv: bool = False, pip_vers
     - **pip** ``--uploaded-prior-to=<ISO-8601>`` (pip ≥ 26.0, added Jan 2026;
       older pip versions get ``[]`` because they lack an equivalent flag)
     - **pnpm** config-only ``minimumReleaseAge`` in minutes — **no CLI arg**,
-      so we cannot enforce it per-invocation and return ``[]``.
+      so we return ``[]`` here.  Enforcement happens via a
+      ``pnpm-workspace.yaml`` written by ``NpmProvider.setup()``.
 
     Providers without an equivalent flag receive ``[]``.
     """

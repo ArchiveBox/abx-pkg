@@ -3771,6 +3771,202 @@ class TestSecurityControls(unittest.TestCase):
         release_age_flags = [a for a in cmd if a.startswith("--min-release-age=")]
         self.assertEqual(len(release_age_flags), 0)
 
+    # ------------------------------------------------------------------
+    # pnpm-workspace.yaml minimumReleaseAge config enforcement
+    # ------------------------------------------------------------------
+
+    @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
+    def test_pnpm_setup_writes_workspace_config_with_min_release_age(self, _mock_load_path):
+        """NpmProvider.setup() writes pnpm-workspace.yaml with minimumReleaseAge when pnpm is the backend."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prefix = Path(tmpdir) / "npm-prefix"
+            prefix.mkdir()
+            provider = NpmProvider(npm_prefix=prefix, euid=os.geteuid())
+            provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/pnpm")
+
+            env = os.environ.copy()
+            env.pop("ABX_PKG_MIN_RELEASE_AGE", None)
+            with mock.patch.dict(os.environ, env, clear=True):
+                provider._write_pnpm_workspace_config()
+
+            config_path = prefix / "pnpm-workspace.yaml"
+            self.assertTrue(config_path.exists())
+            content = config_path.read_text()
+            # 7 days * 24 * 60 = 10080 minutes
+            self.assertIn("minimumReleaseAge: 10080", content)
+
+    @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
+    def test_pnpm_setup_respects_custom_release_age(self, _mock_load_path):
+        """pnpm-workspace.yaml uses ABX_PKG_MIN_RELEASE_AGE=14 -> 20160 minutes."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prefix = Path(tmpdir) / "npm-prefix"
+            prefix.mkdir()
+            provider = NpmProvider(npm_prefix=prefix, euid=os.geteuid())
+            provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/pnpm")
+
+            with mock.patch.dict(os.environ, {"ABX_PKG_MIN_RELEASE_AGE": "14"}):
+                provider._write_pnpm_workspace_config()
+
+            content = (prefix / "pnpm-workspace.yaml").read_text()
+            self.assertIn("minimumReleaseAge: 20160", content)
+
+    @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
+    def test_pnpm_setup_removes_config_when_disabled(self, _mock_load_path):
+        """pnpm-workspace.yaml has minimumReleaseAge removed when ABX_PKG_MIN_RELEASE_AGE=0."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prefix = Path(tmpdir) / "npm-prefix"
+            prefix.mkdir()
+            config_path = prefix / "pnpm-workspace.yaml"
+            # Pre-populate with an existing minimumReleaseAge value
+            config_path.write_text("packages:\n  - 'apps/*'\nminimumReleaseAge: 10080\n")
+
+            provider = NpmProvider(npm_prefix=prefix, euid=os.geteuid())
+            provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/pnpm")
+
+            with mock.patch.dict(os.environ, {"ABX_PKG_MIN_RELEASE_AGE": "0"}):
+                provider._write_pnpm_workspace_config()
+
+            content = config_path.read_text()
+            # minimumReleaseAge should be removed
+            self.assertNotIn("minimumReleaseAge", content)
+            # Other content should be preserved
+            self.assertIn("packages:", content)
+
+    @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
+    def test_pnpm_setup_skips_config_when_npm_backend(self, _mock_load_path):
+        """pnpm-workspace.yaml is not written when npm (not pnpm) is the backend."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prefix = Path(tmpdir) / "npm-prefix"
+            prefix.mkdir()
+            provider = NpmProvider(npm_prefix=prefix, euid=os.geteuid())
+            provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/npm")
+
+            env = os.environ.copy()
+            env.pop("ABX_PKG_MIN_RELEASE_AGE", None)
+            with mock.patch.dict(os.environ, env, clear=True):
+                provider._write_pnpm_workspace_config()
+
+            self.assertFalse((prefix / "pnpm-workspace.yaml").exists())
+
+    @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
+    def test_pnpm_setup_updates_existing_config(self, _mock_load_path):
+        """pnpm-workspace.yaml preserves other content when updating minimumReleaseAge."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prefix = Path(tmpdir) / "npm-prefix"
+            prefix.mkdir()
+            config_path = prefix / "pnpm-workspace.yaml"
+            config_path.write_text("packages:\n  - 'apps/*'\nminimumReleaseAge: 1440\n")
+
+            provider = NpmProvider(npm_prefix=prefix, euid=os.geteuid())
+            provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/pnpm")
+
+            env = os.environ.copy()
+            env.pop("ABX_PKG_MIN_RELEASE_AGE", None)
+            with mock.patch.dict(os.environ, env, clear=True):
+                provider._write_pnpm_workspace_config()
+
+            content = config_path.read_text()
+            # Updated to 10080 (7 days)
+            self.assertIn("minimumReleaseAge: 10080", content)
+            # Preserved existing content
+            self.assertIn("packages:", content)
+            self.assertIn("- 'apps/*'", content)
+            # Old value gone
+            self.assertNotIn("1440", content)
+
+    @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
+    def test_pnpm_setup_uses_cache_dir_when_no_prefix(self, _mock_load_path):
+        """pnpm-workspace.yaml goes to cache_dir/pnpm-home when npm_prefix is None."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_dir = Path(tmpdir) / "npm-cache"
+            cache_dir.mkdir()
+            provider = NpmProvider(npm_prefix=None, cache_dir=cache_dir, euid=os.geteuid())
+            provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/pnpm")
+
+            env = os.environ.copy()
+            env.pop("ABX_PKG_MIN_RELEASE_AGE", None)
+            with mock.patch.dict(os.environ, env, clear=True):
+                provider._write_pnpm_workspace_config()
+
+            config_path = cache_dir / "pnpm-home" / "pnpm-workspace.yaml"
+            self.assertTrue(config_path.exists())
+            self.assertIn("minimumReleaseAge: 10080", config_path.read_text())
+
+
+    @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
+    def test_pnpm_install_strips_min_release_age_flag(self, _mock_load_path):
+        """pnpm install command does NOT receive --min-release-age (npm-only flag).
+
+        pnpm enforces minimumReleaseAge via config file, not CLI flags.
+        The _npm() method should filter out --min-release-age when using pnpm.
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prefix = Path(tmpdir) / "npm-prefix"
+            (prefix / "node_modules" / ".bin").mkdir(parents=True)
+            provider = NpmProvider(npm_prefix=prefix, euid=os.geteuid())
+            provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/pnpm")
+            proc = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+            env = os.environ.copy()
+            env.pop("ABX_PKG_POSTINSTALL_SCRIPTS", None)
+            env.pop("ABX_PKG_MIN_RELEASE_AGE", None)
+
+            with (
+                mock.patch.dict(os.environ, env, clear=True),
+                mock.patch.object(NpmProvider, "exec", return_value=proc) as mock_exec,
+            ):
+                provider.default_install_handler("cowsay", install_args=["cowsay"])
+
+            cmd = mock_exec.call_args.kwargs["cmd"]
+            # --min-release-age should be stripped for pnpm
+            release_age_flags = [a for a in cmd if a.startswith("--min-release-age")]
+            self.assertEqual(len(release_age_flags), 0, f"pnpm got npm-only flags: {release_age_flags}")
+            # --ignore-scripts IS valid for pnpm and should be present
+            self.assertIn("--ignore-scripts", cmd)
+
+    @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
+    def test_pnpm_config_updated_on_every_install(self, _mock_load_path):
+        """pnpm-workspace.yaml is updated on every install call, not just setup().
+
+        The env var may change between invocations, so the config must be
+        re-written each time.
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prefix = Path(tmpdir) / "npm-prefix"
+            (prefix / "node_modules" / ".bin").mkdir(parents=True)
+            provider = NpmProvider(npm_prefix=prefix, euid=os.geteuid())
+            provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/pnpm")
+            proc = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+            config_path = prefix / "pnpm-workspace.yaml"
+
+            # First install with 7-day age
+            env1 = os.environ.copy()
+            env1.pop("ABX_PKG_MIN_RELEASE_AGE", None)
+            with (
+                mock.patch.dict(os.environ, env1, clear=True),
+                mock.patch.object(NpmProvider, "exec", return_value=proc),
+            ):
+                provider.default_install_handler("cowsay", install_args=["cowsay"])
+            self.assertIn("minimumReleaseAge: 10080", config_path.read_text())
+
+            # Second install with 14-day age
+            with (
+                mock.patch.dict(os.environ, {"ABX_PKG_MIN_RELEASE_AGE": "14"}),
+                mock.patch.object(NpmProvider, "exec", return_value=proc),
+            ):
+                provider.default_install_handler("cowsay", install_args=["cowsay"])
+            content = config_path.read_text()
+            self.assertIn("minimumReleaseAge: 20160", content)
+            self.assertNotIn("10080", content)
+
+            # Third install with age disabled — key should be removed
+            with (
+                mock.patch.dict(os.environ, {"ABX_PKG_MIN_RELEASE_AGE": "0"}),
+                mock.patch.object(NpmProvider, "exec", return_value=proc),
+            ):
+                provider.default_install_handler("cowsay", install_args=["cowsay"])
+            self.assertNotIn("minimumReleaseAge", config_path.read_text())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -186,6 +186,65 @@ class NpmProvider(BinProvider):
                 PATH = ":".join([*PATH.split(":"), str(bin_dir)])
         return TypeAdapter(PATHStr).validate_python(PATH)
 
+    def _write_pnpm_workspace_config(self) -> None:
+        """Write/update pnpm-workspace.yaml with minimumReleaseAge if pnpm is the backend.
+
+        Called before every install/update/uninstall so the config always
+        reflects the current ``ABX_PKG_MIN_RELEASE_AGE`` value.  When the
+        age is ``0`` (disabled), the ``minimumReleaseAge`` key is *removed*
+        from the file so pnpm reverts to its default behavior.
+
+        pnpm's minimumReleaseAge is config-only (no CLI flag).  The value is
+        in **minutes**, converted from ABX_PKG_MIN_RELEASE_AGE which is in days.
+        The file is written into the directory pnpm operates from (npm_prefix
+        when set, otherwise the pnpm home / cache dir).
+        """
+        npm_abspath = self.INSTALLER_BIN_ABSPATH
+        if not npm_abspath or Path(npm_abspath).name != "pnpm":
+            return
+
+        raw = os.getenv("ABX_PKG_MIN_RELEASE_AGE", "7")
+        try:
+            days = int(raw)
+        except (TypeError, ValueError):
+            days = 7
+
+        config_dir = self.npm_prefix or self.cache_dir / "pnpm-home"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        config_path = config_dir / "pnpm-workspace.yaml"
+
+        # Preserve any existing content and only update/remove minimumReleaseAge
+        try:
+            existing = config_path.read_text()
+        except FileNotFoundError:
+            existing = ""
+
+        key = "minimumReleaseAge:"
+
+        if days <= 0:
+            # Remove the key from the config if present
+            if key in existing:
+                lines = [line for line in existing.splitlines() if not line.strip().startswith(key)]
+                content = "\n".join(lines).strip()
+                if content:
+                    config_path.write_text(content + "\n")
+                elif config_path.exists():
+                    config_path.write_text("")
+                logger.debug("Removed minimumReleaseAge from %s", config_path)
+            return
+
+        minutes = days * 24 * 60
+        new_line = f"minimumReleaseAge: {minutes}"
+        if key in existing:
+            # Replace existing value
+            lines = [new_line if line.strip().startswith(key) else line for line in existing.splitlines()]
+            config_path.write_text("\n".join(lines) + "\n")
+        else:
+            # Append to file
+            config_path.write_text(existing.rstrip("\n") + f"\n{new_line}\n" if existing else f"{new_line}\n")
+
+        logger.debug("Wrote %s with minimumReleaseAge=%d", config_path, minutes)
+
     def _npm(
         self,
         npm_cmd: list[str],
@@ -235,6 +294,7 @@ class NpmProvider(BinProvider):
                     else arg
                     for arg in npm_args
                     if arg not in ("--force", "--no-audit", "--no-fund")
+                    and not arg.startswith("--min-release-age")
                 ),
             ]
 
@@ -263,6 +323,10 @@ class NpmProvider(BinProvider):
         if self.npm_prefix:
             (self.npm_prefix / "node_modules/.bin").mkdir(parents=True, exist_ok=True)
 
+        # pnpm's minimumReleaseAge is config-only (no CLI flag), so we write
+        # a pnpm-workspace.yaml into the working directory pnpm operates from.
+        self._write_pnpm_workspace_config()
+
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(
         self,
@@ -271,6 +335,7 @@ class NpmProvider(BinProvider):
         **context,
     ) -> str:
         self.setup()
+        self._write_pnpm_workspace_config()
 
         install_args = install_args or self.get_install_args(bin_name)
         if not self.INSTALLER_BIN_ABSPATH:
@@ -320,6 +385,7 @@ class NpmProvider(BinProvider):
         **context,
     ) -> str:
         self.setup()
+        self._write_pnpm_workspace_config()
 
         install_args = install_args or self.get_install_args(bin_name)
         if not self.INSTALLER_BIN_ABSPATH:
@@ -360,6 +426,7 @@ class NpmProvider(BinProvider):
         install_args: InstallArgs | None = None,
         **context,
     ) -> bool:
+        self._write_pnpm_workspace_config()
         install_args = install_args or self.get_install_args(bin_name)
         if not self.INSTALLER_BIN_ABSPATH:
             raise Exception(
