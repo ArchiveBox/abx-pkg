@@ -23,7 +23,12 @@ from .base_types import (
     bin_abspath,
 )
 from .semver import SemVer
-from .binprovider import BinProvider, remap_kwargs, postinstall_scripts_args, min_release_age_args
+from .binprovider import (
+    BinProvider,
+    remap_kwargs,
+    postinstall_scripts_args,
+    min_release_age_args,
+)
 from .logging import format_subprocess_output, get_logger, log_subprocess_error
 
 logger = get_logger(__name__)
@@ -224,7 +229,11 @@ class NpmProvider(BinProvider):
         if days <= 0:
             # Remove the key from the config if present
             if key in existing:
-                lines = [line for line in existing.splitlines() if not line.strip().startswith(key)]
+                lines = [
+                    line
+                    for line in existing.splitlines()
+                    if not line.strip().startswith(key)
+                ]
                 content = "\n".join(lines).strip()
                 if content:
                     config_path.write_text(content + "\n")
@@ -237,11 +246,18 @@ class NpmProvider(BinProvider):
         new_line = f"minimumReleaseAge: {minutes}"
         if key in existing:
             # Replace existing value
-            lines = [new_line if line.strip().startswith(key) else line for line in existing.splitlines()]
+            lines = [
+                new_line if line.strip().startswith(key) else line
+                for line in existing.splitlines()
+            ]
             config_path.write_text("\n".join(lines) + "\n")
         else:
             # Append to file
-            config_path.write_text(existing.rstrip("\n") + f"\n{new_line}\n" if existing else f"{new_line}\n")
+            config_path.write_text(
+                existing.rstrip("\n") + f"\n{new_line}\n"
+                if existing
+                else f"{new_line}\n"
+            )
 
         logger.debug("Wrote %s with minimumReleaseAge=%d", config_path, minutes)
 
@@ -322,10 +338,6 @@ class NpmProvider(BinProvider):
 
         if self.npm_prefix:
             (self.npm_prefix / "node_modules/.bin").mkdir(parents=True, exist_ok=True)
-
-        # pnpm's minimumReleaseAge is config-only (no CLI flag), so we write
-        # a pnpm-workspace.yaml into the working directory pnpm operates from.
-        self._write_pnpm_workspace_config()
 
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(

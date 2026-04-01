@@ -3555,8 +3555,11 @@ class TestSecurityControls(unittest.TestCase):
         self.assertTrue(args[0].startswith("--exclude-newer="))
         # The timestamp should be parseable and ~7 days in the past
         from datetime import datetime, timezone
+
         ts = args[0].split("=", 1)[1]
-        cutoff = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        cutoff = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=timezone.utc
+        )
         age = (datetime.now(timezone.utc) - cutoff).days
         self.assertIn(age, (6, 7, 8))  # allow 1-day margin for timezone edge cases
 
@@ -3571,7 +3574,9 @@ class TestSecurityControls(unittest.TestCase):
             args = min_release_age_args("pip", using_uv=False)
             self.assertEqual(args, [])
             # Old pip version => no flag
-            args = min_release_age_args("pip", using_uv=False, pip_version=SemVer("25.3.1"))
+            args = min_release_age_args(
+                "pip", using_uv=False, pip_version=SemVer("25.3.1")
+            )
             self.assertEqual(args, [])
 
     def test_min_release_age_args_pip_without_uv_new_pip(self):
@@ -3581,13 +3586,18 @@ class TestSecurityControls(unittest.TestCase):
         env = os.environ.copy()
         env.pop("ABX_PKG_MIN_RELEASE_AGE", None)
         with mock.patch.dict(os.environ, env, clear=True):
-            args = min_release_age_args("pip", using_uv=False, pip_version=SemVer("26.0.1"))
+            args = min_release_age_args(
+                "pip", using_uv=False, pip_version=SemVer("26.0.1")
+            )
         self.assertEqual(len(args), 1)
         self.assertTrue(args[0].startswith("--uploaded-prior-to="))
         # The timestamp should be parseable and ~7 days in the past
         from datetime import datetime, timezone
+
         ts = args[0].split("=", 1)[1]
-        cutoff = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        cutoff = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=timezone.utc
+        )
         age = (datetime.now(timezone.utc) - cutoff).days
         self.assertIn(age, (6, 7, 8))
 
@@ -3596,7 +3606,9 @@ class TestSecurityControls(unittest.TestCase):
         from abx_pkg.binprovider import min_release_age_args
 
         with mock.patch.dict(os.environ, {"ABX_PKG_MIN_RELEASE_AGE": "0"}):
-            args = min_release_age_args("pip", using_uv=False, pip_version=SemVer("26.0.1"))
+            args = min_release_age_args(
+                "pip", using_uv=False, pip_version=SemVer("26.0.1")
+            )
         self.assertEqual(args, [])
 
     def test_min_release_age_args_unsupported_provider(self):
@@ -3693,7 +3705,15 @@ class TestSecurityControls(unittest.TestCase):
             try:
                 installed = binary.install()
             except Exception as err:
-                if any(token in str(err) for token in ("only-binary", "--no-build", "--exclude-newer", "No matching distribution found")):
+                if any(
+                    token in str(err)
+                    for token in (
+                        "only-binary",
+                        "--no-build",
+                        "--exclude-newer",
+                        "No matching distribution found",
+                    )
+                ):
                     self.skipTest(
                         "cowsay install blocked by security controls (expected if only sdist available)"
                     )
@@ -3762,10 +3782,13 @@ class TestSecurityControls(unittest.TestCase):
         proc = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
 
         with (
-            mock.patch.dict(os.environ, {
-                "ABX_PKG_POSTINSTALL_SCRIPTS": "True",
-                "ABX_PKG_MIN_RELEASE_AGE": "0",
-            }),
+            mock.patch.dict(
+                os.environ,
+                {
+                    "ABX_PKG_POSTINSTALL_SCRIPTS": "True",
+                    "ABX_PKG_MIN_RELEASE_AGE": "0",
+                },
+            ),
             mock.patch.object(NpmProvider, "exec", return_value=proc) as mock_exec,
         ):
             provider.default_install_handler("cowsay", install_args=["cowsay"])
@@ -3780,7 +3803,9 @@ class TestSecurityControls(unittest.TestCase):
     # ------------------------------------------------------------------
 
     @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
-    def test_pnpm_setup_writes_workspace_config_with_min_release_age(self, _mock_load_path):
+    def test_pnpm_setup_writes_workspace_config_with_min_release_age(
+        self, _mock_load_path
+    ):
         """NpmProvider.setup() writes pnpm-workspace.yaml with minimumReleaseAge when pnpm is the backend."""
         with tempfile.TemporaryDirectory() as tmpdir:
             prefix = Path(tmpdir) / "npm-prefix"
@@ -3822,7 +3847,9 @@ class TestSecurityControls(unittest.TestCase):
             prefix.mkdir()
             config_path = prefix / "pnpm-workspace.yaml"
             # Pre-populate with an existing minimumReleaseAge value
-            config_path.write_text("packages:\n  - 'apps/*'\nminimumReleaseAge: 10080\n")
+            config_path.write_text(
+                "packages:\n  - 'apps/*'\nminimumReleaseAge: 10080\n"
+            )
 
             provider = NpmProvider(npm_prefix=prefix, euid=os.geteuid())
             provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/pnpm")
@@ -3884,7 +3911,9 @@ class TestSecurityControls(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             cache_dir = Path(tmpdir) / "npm-cache"
             cache_dir.mkdir()
-            provider = NpmProvider(npm_prefix=None, cache_dir=cache_dir, euid=os.geteuid())
+            provider = NpmProvider(
+                npm_prefix=None, cache_dir=cache_dir, euid=os.geteuid()
+            )
             provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/pnpm")
 
             env = os.environ.copy()
@@ -3895,7 +3924,6 @@ class TestSecurityControls(unittest.TestCase):
             config_path = cache_dir / "pnpm-home" / "pnpm-workspace.yaml"
             self.assertTrue(config_path.exists())
             self.assertIn("minimumReleaseAge: 10080", config_path.read_text())
-
 
     @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
     def test_pnpm_install_strips_min_release_age_flag(self, _mock_load_path):
@@ -3909,7 +3937,9 @@ class TestSecurityControls(unittest.TestCase):
             (prefix / "node_modules" / ".bin").mkdir(parents=True)
             provider = NpmProvider(npm_prefix=prefix, euid=os.geteuid())
             provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/pnpm")
-            proc = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+            proc = subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="", stderr=""
+            )
 
             env = os.environ.copy()
             env.pop("ABX_PKG_POSTINSTALL_SCRIPTS", None)
@@ -3924,7 +3954,11 @@ class TestSecurityControls(unittest.TestCase):
             cmd = mock_exec.call_args.kwargs["cmd"]
             # --min-release-age should be stripped for pnpm
             release_age_flags = [a for a in cmd if a.startswith("--min-release-age")]
-            self.assertEqual(len(release_age_flags), 0, f"pnpm got npm-only flags: {release_age_flags}")
+            self.assertEqual(
+                len(release_age_flags),
+                0,
+                f"pnpm got npm-only flags: {release_age_flags}",
+            )
             # --ignore-scripts IS valid for pnpm and should be present
             self.assertIn("--ignore-scripts", cmd)
 
@@ -3940,7 +3974,9 @@ class TestSecurityControls(unittest.TestCase):
             (prefix / "node_modules" / ".bin").mkdir(parents=True)
             provider = NpmProvider(npm_prefix=prefix, euid=os.geteuid())
             provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/pnpm")
-            proc = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+            proc = subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="", stderr=""
+            )
             config_path = prefix / "pnpm-workspace.yaml"
 
             # First install with 7-day age

@@ -26,7 +26,13 @@ from .base_types import (
     bin_abspaths,
 )
 from .semver import SemVer
-from .binprovider import BinProvider, DEFAULT_ENV_PATH, remap_kwargs, postinstall_scripts_args, min_release_age_args
+from .binprovider import (
+    BinProvider,
+    DEFAULT_ENV_PATH,
+    remap_kwargs,
+    postinstall_scripts_args,
+    min_release_age_args,
+)
 from .logging import format_subprocess_output, get_logger, log_subprocess_error
 
 logger = get_logger(__name__)
@@ -324,7 +330,7 @@ class PipProvider(BinProvider):
             pip_ver = installer.loaded_version if installer else None
             # Guard against UNKNOWN_VERSION sentinel (999.999.999) which would
             # falsely satisfy the pip >= 26.0 check in min_release_age_args
-            if pip_ver and pip_ver >= SemVer((999, 0, 0)):
+            if pip_ver and pip_ver == SemVer((999, 999, 999)):
                 pip_ver = None
             pip_cmd = [
                 subcommand,

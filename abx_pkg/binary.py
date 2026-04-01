@@ -69,7 +69,11 @@ class Binary(ShallowBinary):
         ),
     )
     min_release_age: int = Field(
-        default_factory=lambda: int(v) if (v := os.getenv("ABX_PKG_MIN_RELEASE_AGE", "7")).lstrip("-").isdigit() else 7,
+        default_factory=lambda: (
+            int(v)
+            if (v := os.getenv("ABX_PKG_MIN_RELEASE_AGE", "7")).lstrip("-").isdigit()
+            else 7
+        ),
         description=(
             "Minimum days since publication before a package can be installed. "
             "Defaults to ABX_PKG_MIN_RELEASE_AGE env var (7 if unset). "
