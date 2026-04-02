@@ -75,7 +75,7 @@ ALL_PROVIDERS = [
     PyinfraProvider,
 ]
 ALL_PROVIDER_NAMES = [
-    provider.model_fields["name"].default for provider in ALL_PROVIDERS
+    (provider if isinstance(provider, type) else type(provider)).model_fields["name"].default for provider in ALL_PROVIDERS
 ]  # pip, apt, brew, etc.
 ALL_PROVIDER_CLASS_NAMES = [
     provider.__name__ for provider in ALL_PROVIDERS
@@ -84,7 +84,7 @@ ALL_PROVIDER_CLASS_NAMES = [
 # Lazy provider singletons: maps provider name -> class
 # e.g. 'apt' -> AptProvider, 'pip' -> PipProvider, 'env' -> EnvProvider
 _PROVIDER_CLASS_BY_NAME = {
-    provider.model_fields["name"].default: provider for provider in ALL_PROVIDERS
+    (provider if isinstance(provider, type) else type(provider)).model_fields["name"].default: provider for provider in ALL_PROVIDERS
 }
 _provider_singletons: dict = {}
 
