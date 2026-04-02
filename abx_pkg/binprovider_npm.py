@@ -361,12 +361,16 @@ class NpmProvider(BinProvider):
                 for arg in install_args
             ]
 
-        seconds = int(min_release_age * 86400)
+        min_release_age_days = f"{min_release_age:g}"
         npm_cmd_args = [
             *self.npm_install_args,
             self.cache_arg,
             *(["--ignore-scripts"] if not postinstall_scripts else []),
-            *([f"--min-release-age={seconds}"] if min_release_age > 0 else []),
+            *(
+                [f"--min-release-age={min_release_age_days}"]
+                if min_release_age > 0
+                else []
+            ),
         ]
         if self.npm_prefix:
             npm_cmd_args.append(f"--prefix={self.npm_prefix}")
@@ -424,12 +428,16 @@ class NpmProvider(BinProvider):
                 for arg in install_args
             ]
 
-        seconds = int(min_release_age * 86400)
+        min_release_age_days = f"{min_release_age:g}"
         update_args = [
             *self.npm_install_args,
             self.cache_arg,
             *(["--ignore-scripts"] if not postinstall_scripts else []),
-            *([f"--min-release-age={seconds}"] if min_release_age > 0 else []),
+            *(
+                [f"--min-release-age={min_release_age_days}"]
+                if min_release_age > 0
+                else []
+            ),
         ]
         if self.npm_prefix:
             update_args.append(f"--prefix={self.npm_prefix}")

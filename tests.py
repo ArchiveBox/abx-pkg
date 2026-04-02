@@ -51,6 +51,13 @@ from abx_pkg.logging import summarize_value
 REAL_OS_STAT = os.stat
 
 
+def real_bin_abspath(bin_name: str) -> Path:
+    loaded = Binary(name=bin_name, binproviders=[EnvProvider()]).load()
+    if not loaded.loaded_abspath:
+        raise unittest.SkipTest(f"{bin_name} is not available on this host")
+    return Path(loaded.loaded_abspath)
+
+
 class ListHandler(logging.Handler):
     def __init__(self):
         super().__init__()
@@ -1676,7 +1683,7 @@ class TestUpdateAndUninstall(unittest.TestCase):
         _mock_load_path,
     ):
         provider = NpmProvider(npm_prefix=Path("/tmp/npm"), euid=os.geteuid())
-        provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/pnpm")
+        provider._INSTALLER_BIN_ABSPATH = real_bin_abspath("pnpm")
         proc = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
 
         with (
@@ -1710,7 +1717,7 @@ class TestUpdateAndUninstall(unittest.TestCase):
         _mock_load_path,
     ):
         provider = NpmProvider(npm_prefix=Path("/tmp/npm"), euid=os.geteuid())
-        provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/pnpm")
+        provider._INSTALLER_BIN_ABSPATH = real_bin_abspath("pnpm")
         proc = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
 
         with mock.patch.object(NpmProvider, "exec", return_value=proc) as mock_exec:
@@ -1729,7 +1736,7 @@ class TestUpdateAndUninstall(unittest.TestCase):
     @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
     def test_npm_provider_install_uses_npm_directly(self, _mock_load_path):
         provider = NpmProvider(npm_prefix=Path("/tmp/npm"), euid=os.geteuid())
-        provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/npm")
+        provider._INSTALLER_BIN_ABSPATH = real_bin_abspath("npm")
         proc = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
         with mock.patch.object(NpmProvider, "exec", return_value=proc) as mock_exec:
             provider.default_install_handler("python", install_args=["python"])
@@ -3110,6 +3117,21 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             )
             self.assert_binary_lifecycle(binary)
 
+    def test_npm_provider_live_install_with_min_release_age_in_days(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            provider = NpmProvider(npm_prefix=Path(temp_dir) / "npm")
+            binary = Binary(
+                name="cowsay",
+                binproviders=[provider],
+                postinstall_scripts=False,
+                min_release_age=7,
+            )
+            installed = binary.install()
+
+            self.assertTrue(installed.is_valid)
+            self.assertIsNotNone(installed.loaded_version)
+            self.assertIsNotNone(installed.loaded_abspath)
+
     def test_cargo_provider_live_update_and_uninstall(self):
         if not shutil.which("cargo"):
             raise unittest.SkipTest("cargo is not available on this host")
@@ -3614,9 +3636,9 @@ class TestSecurityControls(unittest.TestCase):
 
     @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
     def test_npm_install_command_includes_security_flags(self, _mock_load_path):
-        """NpmProvider install command includes --ignore-scripts and --min-release-age in seconds."""
+        """NpmProvider install command includes --ignore-scripts and --min-release-age in days."""
         provider = NpmProvider(npm_prefix=Path("/tmp/npm"), euid=os.geteuid())
-        provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/npm")
+        provider._INSTALLER_BIN_ABSPATH = real_bin_abspath("npm")
         proc = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
 
         with mock.patch.object(NpmProvider, "exec", return_value=proc) as mock_exec:
@@ -3629,16 +3651,58 @@ class TestSecurityControls(unittest.TestCase):
 
         cmd = mock_exec.call_args.kwargs["cmd"]
         self.assertIn("--ignore-scripts", cmd)
-        # 7 days * 86400 seconds/day = 604800 seconds
         release_age_flags = [a for a in cmd if a.startswith("--min-release-age=")]
         self.assertEqual(len(release_age_flags), 1)
-        self.assertEqual(release_age_flags[0], "--min-release-age=604800")
+        self.assertEqual(release_age_flags[0], "--min-release-age=7")
+
+    @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
+    def test_npm_update_command_includes_release_age_in_days(self, _mock_load_path):
+        """NpmProvider update command keeps min-release-age in npm day units."""
+        provider = NpmProvider(npm_prefix=Path("/tmp/npm"), euid=os.geteuid())
+        provider._INSTALLER_BIN_ABSPATH = real_bin_abspath("npm")
+        proc = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+        with mock.patch.object(NpmProvider, "exec", return_value=proc) as mock_exec:
+            provider.default_update_handler(
+                "cowsay",
+                install_args=["cowsay"],
+                postinstall_scripts=False,
+                min_release_age=7.0,
+            )
+
+        cmd = mock_exec.call_args.kwargs["cmd"]
+        release_age_flags = [a for a in cmd if a.startswith("--min-release-age=")]
+        self.assertEqual(len(release_age_flags), 1)
+        self.assertEqual(release_age_flags[0], "--min-release-age=7")
+
+    @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
+    def test_npm_install_command_preserves_fractional_day_values(
+        self,
+        _mock_load_path,
+    ):
+        """NpmProvider should not convert day values to seconds or truncate fractions."""
+        provider = NpmProvider(npm_prefix=Path("/tmp/npm"), euid=os.geteuid())
+        provider._INSTALLER_BIN_ABSPATH = real_bin_abspath("npm")
+        proc = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+        with mock.patch.object(NpmProvider, "exec", return_value=proc) as mock_exec:
+            provider.default_install_handler(
+                "cowsay",
+                install_args=["cowsay"],
+                postinstall_scripts=False,
+                min_release_age=1.5,
+            )
+
+        cmd = mock_exec.call_args.kwargs["cmd"]
+        release_age_flags = [a for a in cmd if a.startswith("--min-release-age=")]
+        self.assertEqual(len(release_age_flags), 1)
+        self.assertEqual(release_age_flags[0], "--min-release-age=1.5")
 
     @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
     def test_npm_uninstall_has_ignore_scripts_but_no_release_age(self, _mock_load_path):
         """NpmProvider uninstall includes --ignore-scripts but not --min-release-age."""
         provider = NpmProvider(npm_prefix=Path("/tmp/npm"), euid=os.geteuid())
-        provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/npm")
+        provider._INSTALLER_BIN_ABSPATH = real_bin_abspath("npm")
         proc = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
 
         with mock.patch.object(NpmProvider, "exec", return_value=proc) as mock_exec:
@@ -3658,7 +3722,7 @@ class TestSecurityControls(unittest.TestCase):
     def test_npm_install_no_security_flags_when_opted_out(self, _mock_load_path):
         """NpmProvider install omits security flags when user opts out."""
         provider = NpmProvider(npm_prefix=Path("/tmp/npm"), euid=os.geteuid())
-        provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/npm")
+        provider._INSTALLER_BIN_ABSPATH = real_bin_abspath("npm")
         proc = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
 
         with mock.patch.object(NpmProvider, "exec", return_value=proc) as mock_exec:
@@ -3688,7 +3752,7 @@ class TestSecurityControls(unittest.TestCase):
             prefix = Path(tmpdir) / "npm-prefix"
             prefix.mkdir()
             provider = NpmProvider(npm_prefix=prefix, euid=os.geteuid())
-            provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/pnpm")
+            provider._INSTALLER_BIN_ABSPATH = real_bin_abspath("pnpm")
 
             provider._write_pnpm_workspace_config(min_release_age=7.0)
 
@@ -3705,7 +3769,7 @@ class TestSecurityControls(unittest.TestCase):
             prefix = Path(tmpdir) / "npm-prefix"
             prefix.mkdir()
             provider = NpmProvider(npm_prefix=prefix, euid=os.geteuid())
-            provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/pnpm")
+            provider._INSTALLER_BIN_ABSPATH = real_bin_abspath("pnpm")
 
             provider._write_pnpm_workspace_config(min_release_age=14.0)
 
@@ -3725,7 +3789,7 @@ class TestSecurityControls(unittest.TestCase):
             )
 
             provider = NpmProvider(npm_prefix=prefix, euid=os.geteuid())
-            provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/pnpm")
+            provider._INSTALLER_BIN_ABSPATH = real_bin_abspath("pnpm")
 
             provider._write_pnpm_workspace_config(min_release_age=0.0)
 
@@ -3742,7 +3806,7 @@ class TestSecurityControls(unittest.TestCase):
             prefix = Path(tmpdir) / "npm-prefix"
             prefix.mkdir()
             provider = NpmProvider(npm_prefix=prefix, euid=os.geteuid())
-            provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/npm")
+            provider._INSTALLER_BIN_ABSPATH = real_bin_abspath("npm")
 
             provider._write_pnpm_workspace_config(min_release_age=7.0)
 
@@ -3758,7 +3822,7 @@ class TestSecurityControls(unittest.TestCase):
             config_path.write_text("packages:\n  - 'apps/*'\nminimumReleaseAge: 1440\n")
 
             provider = NpmProvider(npm_prefix=prefix, euid=os.geteuid())
-            provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/pnpm")
+            provider._INSTALLER_BIN_ABSPATH = real_bin_abspath("pnpm")
 
             provider._write_pnpm_workspace_config(min_release_age=7.0)
 
@@ -3782,7 +3846,7 @@ class TestSecurityControls(unittest.TestCase):
                 cache_dir=cache_dir,
                 euid=os.geteuid(),
             )
-            provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/pnpm")
+            provider._INSTALLER_BIN_ABSPATH = real_bin_abspath("pnpm")
 
             provider._write_pnpm_workspace_config(min_release_age=7.0)
 
@@ -3801,7 +3865,7 @@ class TestSecurityControls(unittest.TestCase):
             prefix = Path(tmpdir) / "npm-prefix"
             (prefix / "node_modules" / ".bin").mkdir(parents=True)
             provider = NpmProvider(npm_prefix=prefix, euid=os.geteuid())
-            provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/pnpm")
+            provider._INSTALLER_BIN_ABSPATH = real_bin_abspath("pnpm")
             proc = subprocess.CompletedProcess(
                 args=[],
                 returncode=0,
@@ -3839,7 +3903,7 @@ class TestSecurityControls(unittest.TestCase):
             prefix = Path(tmpdir) / "npm-prefix"
             (prefix / "node_modules" / ".bin").mkdir(parents=True)
             provider = NpmProvider(npm_prefix=prefix, euid=os.geteuid())
-            provider._INSTALLER_BIN_ABSPATH = Path("/usr/local/bin/pnpm")
+            provider._INSTALLER_BIN_ABSPATH = real_bin_abspath("pnpm")
             proc = subprocess.CompletedProcess(
                 args=[],
                 returncode=0,
