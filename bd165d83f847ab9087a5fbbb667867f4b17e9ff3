@@ -1,0 +1,64 @@
+abx_pkg/binprovider_ansible.py
+  ed11b5598c0d1b27 15,194-196,220-222,254-256
+abx_pkg/binprovider_cargo.py
+  ed11b5598c0d1b27 12,69-75,103-105,107-111,144-146,148-152,191-193
+abx_pkg/binprovider_gem.py
+  ed11b5598c0d1b27 12,69-75,137-139,141-145,179-181,183-187,221-223
+abx_pkg/binprovider_go_get.py
+  ed11b5598c0d1b27 64-70,88-90,92-96,127-129,134-136,144-146,169
+abx_pkg/binprovider_pip.py
+  ed11b5598c0d1b27 83-88,214-220,222-229,242-246,248-253,285-286,397-399,402-406,428-431,452-454,457-461,483-486,507-509,553,596
+abx_pkg/binprovider_brew.py
+  ed11b5598c0d1b27 48-53,152-154,170-174,183,225-227,240-244,253,293-295,365,389,404,460,495
+abx_pkg/binprovider.py
+  bb0fe717524fd053 94-95,97-98,320-327,345-346,525-530,702,722,741,781-783,785-789,797,811-813,824-826,1109-1115,1119-1138,1140-1155,1165-1166,1169-1186,1248-1253,1291-1292,1295-1312,1372-1377,1409-1410,1413-1420,1508-1509,1512-1519,1525-1538,1571-1578,1586-1588,1599-1601,1611-1613,1677-1681,1691-1695
+  ed11b5598c0d1b27 96,1139
+abx_pkg/binprovider_npm.py
+  ed11b5598c0d1b27 69-74,322-328,350-352,354-362,425-427,429-437,493-495,497-500,560,629,659
+abx_pkg/binprovider_pyinfra.py
+  ed11b5598c0d1b27 14,127-129,144-146,164-166
+abx_pkg/binprovider_docker.py
+  ed11b5598c0d1b27 68-74,144-146,148-152,189-191,196-198,206-208
+tests.py
+  ed11b5598c0d1b27 16,61-66,542-543,559-571,573,576,582-595,714-718,727-736,1056-1099,1180-1185,1745,2259,2324,2410,2470,2559-2563,2643,2715,2768,3112-3113,3246,3265,3285,3305,3322,3355,3365,3386,3396,3416,3742-3749,3751-3808,3813-3854
+abx_pkg/binprovider_apt.py
+  ed11b5598c0d1b27 11,56-58,121-123,188-190
+abx_pkg/binary.py
+  bb0fe717524fd053 19-25,77,107-109,113-117,121-124
+  ed11b5598c0d1b27 110-112,118-120
+abx_pkg/binprovider_nix.py
+  ed11b5598c0d1b27 20,93-99,135-137,139-143,181-183,224-226
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.5",
+  "base_commit_sha": "bd165d83f847ab9087a5fbbb667867f4b17e9ff3",
+  "prompts": {
+    "bb0fe717524fd053": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d4cef-c845-78d3-b346-7cc77e64d6e8",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 230,
+      "total_deletions": 41,
+      "accepted_lines": 216,
+      "overriden_lines": 0
+    },
+    "ed11b5598c0d1b27": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d4cdf-f4d1-7e62-8d35-94a78647f56e",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 546,
+      "total_deletions": 123,
+      "accepted_lines": 546,
+      "overriden_lines": 0
+    }
+  }
+}
