@@ -101,7 +101,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        os: [ubuntu-latest, macos-15-intel]
+        os: [ubuntu-latest, macOS-latest]
 
     steps:
     - uses: actions/checkout@v6
@@ -164,14 +164,14 @@ jobs:
         export PNPM_HOME="${RUNNER_TEMP}/pnpm"
         export PATH="$PNPM_HOME:$PATH"
         uv run pytest \
-          tests/test_brewprovider.py::TestBrewProvider::test_live_update_and_uninstall \
-          tests/test_pipprovider.py::TestPipProvider::test_live_update_and_uninstall \
-          tests/test_npmprovider.py::TestNpmProvider::test_live_update_and_uninstall \
-          tests/test_cargoprovider.py::TestCargoProvider::test_live_update_and_uninstall \
-          tests/test_gemprovider.py::TestGemProvider::test_live_update_and_uninstall \
-          tests/test_gogetprovider.py::TestGoGetProvider::test_live_update_and_uninstall \
-          tests/test_nixprovider.py::TestNixProvider::test_live_update_and_uninstall \
-          tests/test_dockerprovider.py::TestDockerProvider::test_live_update_and_uninstall
+          tests/test_brewprovider.py::TestBrewProvider::test_provider_direct_methods_exercise_real_lifecycle \
+          tests/test_pipprovider.py::TestPipProvider::test_provider_direct_methods_exercise_real_lifecycle \
+          tests/test_npmprovider.py::TestNpmProvider::test_provider_direct_methods_exercise_real_lifecycle \
+          tests/test_cargoprovider.py::TestCargoProvider::test_provider_direct_methods_exercise_real_lifecycle \
+          tests/test_gemprovider.py::TestGemProvider::test_provider_direct_methods_exercise_real_lifecycle \
+          tests/test_gogetprovider.py::TestGoGetProvider::test_provider_direct_methods_exercise_real_lifecycle \
+          tests/test_nixprovider.py::TestNixProvider::test_provider_direct_methods_exercise_real_lifecycle \
+          tests/test_dockerprovider.py::TestDockerProvider::test_provider_direct_methods_exercise_real_lifecycle
 
     - name: Run non-root live package lifecycle tests on Linux
       if: runner.os == 'Linux'
@@ -179,19 +179,19 @@ jobs:
         export PNPM_HOME="${RUNNER_TEMP}/pnpm"
         export PATH="$PNPM_HOME:$PATH"
         uv run pytest \
-          tests/test_pipprovider.py::TestPipProvider::test_live_update_and_uninstall \
-          tests/test_npmprovider.py::TestNpmProvider::test_live_update_and_uninstall \
-          tests/test_cargoprovider.py::TestCargoProvider::test_live_update_and_uninstall \
-          tests/test_gemprovider.py::TestGemProvider::test_live_update_and_uninstall \
-          tests/test_gogetprovider.py::TestGoGetProvider::test_live_update_and_uninstall \
-          tests/test_nixprovider.py::TestNixProvider::test_live_update_and_uninstall \
-          tests/test_dockerprovider.py::TestDockerProvider::test_live_update_and_uninstall
+          tests/test_pipprovider.py::TestPipProvider::test_provider_direct_methods_exercise_real_lifecycle \
+          tests/test_npmprovider.py::TestNpmProvider::test_provider_direct_methods_exercise_real_lifecycle \
+          tests/test_cargoprovider.py::TestCargoProvider::test_provider_direct_methods_exercise_real_lifecycle \
+          tests/test_gemprovider.py::TestGemProvider::test_provider_direct_methods_exercise_real_lifecycle \
+          tests/test_gogetprovider.py::TestGoGetProvider::test_provider_direct_methods_exercise_real_lifecycle \
+          tests/test_nixprovider.py::TestNixProvider::test_provider_direct_methods_exercise_real_lifecycle \
+          tests/test_dockerprovider.py::TestDockerProvider::test_provider_direct_methods_exercise_real_lifecycle
 
     - name: Run root-required live package lifecycle tests on Linux
       if: runner.os == 'Linux'
       run: |
         export PNPM_HOME="${RUNNER_TEMP}/pnpm"
         sudo env "PATH=$PNPM_HOME:$PATH:/nix/var/nix/profiles/default/bin:$PATH" "$(command -v uv)" run pytest \
-          tests/test_aptprovider.py::TestAptProvider::test_live_update_and_uninstall \
-          tests/test_pyinfraprovider.py::TestPyinfraProvider::test_live_update_and_uninstall \
-          tests/test_ansibleprovider.py::TestAnsibleProvider::test_live_update_and_uninstall
+          tests/test_aptprovider.py::TestAptProvider::test_provider_direct_methods_exercise_real_lifecycle \
+          tests/test_pyinfraprovider.py::TestPyinfraProvider::test_provider_direct_methods_exercise_real_lifecycle \
+          tests/test_ansibleprovider.py::TestAnsibleProvider::test_provider_direct_methods_exercise_real_lifecycle
