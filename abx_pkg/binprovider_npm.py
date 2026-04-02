@@ -561,6 +561,8 @@ class NpmProvider(BinProvider):
         if not self.INSTALLER_BIN_ABSPATH:
             return None
 
+        package = None
+
         # fallback to using npm list to get the installed package version
         try:
             install_args = self.get_install_args(str(bin_name), **context) or [
@@ -602,6 +604,27 @@ class NpmProvider(BinProvider):
             if isinstance(package_listing, list):
                 package_listing = package_listing[0] if package_listing else {}
             version_str = package_listing["dependencies"][package]["version"]
+            return SemVer.parse(version_str)
+        except Exception:
+            pass
+
+        try:
+            assert package
+            root_args = (
+                ["root", f"--prefix={self.npm_prefix}"]
+                if self.npm_prefix
+                else ["root", "--global"]
+            )
+            modules_dir = Path(
+                self._npm(
+                    root_args,
+                    timeout=self._version_timeout,
+                    quiet=True,
+                ).stdout.strip(),
+            )
+            version_str = json.loads(
+                (modules_dir / package / "package.json").read_text(),
+            )["version"]
             return SemVer.parse(version_str)
         except Exception:
             raise

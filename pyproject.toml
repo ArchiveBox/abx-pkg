@@ -82,6 +82,9 @@ dev = [
     "ty>=0.0.24",
 ]
 
+[tool.uv]
+exclude-newer = "5 days"
+
 [tool.mypy]
 mypy_path = "abx_pkg"
 python_version = "3.11"
