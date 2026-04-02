@@ -12,7 +12,7 @@ exclude-newer-span = "P5D"
 
 [[package]]
 name = "abx-pkg"
-version = "1.9.21"
+version = "1.9.22"
 source = { editable = "." }
 dependencies = [
     { name = "pip" },

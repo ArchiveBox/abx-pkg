@@ -2841,6 +2841,39 @@ def docker_daemon_is_available() -> bool:
     )
 
 
+def ensure_live_provider_test_dependencies() -> None:
+    repo_root = Path(__file__).resolve().parent
+    missing: list[str] = []
+    for module_name in ("ansible_runner", "pyinfra"):
+        try:
+            __import__(module_name)
+        except ModuleNotFoundError:
+            missing.append(module_name)
+
+    if missing:
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-q", "-e", ".[ansible,pyinfra]"],
+            check=True,
+            cwd=repo_root,
+        )
+
+
+def ensure_docker_daemon_ready(timeout_seconds: int = 180) -> None:
+    if docker_daemon_is_available():
+        return
+
+    if sys.platform == "darwin":
+        subprocess.run(["open", "-a", "Docker"], check=False)
+
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        if docker_daemon_is_available():
+            return
+        time.sleep(2)
+
+    raise RuntimeError("docker daemon is not available")
+
+
 def gem_package_is_installed(package: str) -> bool:
     gem = shutil.which("gem")
     if not gem:
