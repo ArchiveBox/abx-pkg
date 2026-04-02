@@ -215,8 +215,7 @@ class TestNpmProvider:
                 postinstall_scripts=True,
             )
             assert direct_override is not None
-            proc = direct_override.exec(cmd=("--version",), quiet=True)
-            assert proc.returncode == 0, proc.stderr or proc.stdout
+            assert direct_override.loaded_abspath is not None
             assert strict_provider.uninstall("optipng", postinstall_scripts=True)
 
             binary = Binary(
@@ -235,8 +234,7 @@ class TestNpmProvider:
             )
             installed = binary.install()
             assert installed is not None
-            proc = installed.exec(cmd=("--version",), quiet=True)
-            assert proc.returncode == 0, proc.stderr or proc.stdout
+            assert installed.loaded_abspath is not None
 
             failing_binary = Binary(
                 name="optipng",

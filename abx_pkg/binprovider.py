@@ -1217,6 +1217,15 @@ class BinProvider(BaseModel):
                 f"{self.__class__.__name__}.{action} cannot disable postinstall_scripts for provider {self.name}",
             )
 
+    def _coerce_security_constraints_from_install_args(
+        self,
+        *,
+        install_args: InstallArgs,
+        postinstall_scripts: bool,
+        min_release_age: float,
+    ) -> tuple[bool, float]:
+        return postinstall_scripts, min_release_age
+
     def _assert_min_version_satisfied(
         self,
         *,
@@ -1250,6 +1259,14 @@ class BinProvider(BaseModel):
         min_release_age = (
             self.min_release_age if min_release_age is None else min_release_age
         )
+        install_args = self.get_install_args(bin_name, quiet=quiet, nocache=nocache)
+        postinstall_scripts, min_release_age = (
+            self._coerce_security_constraints_from_install_args(
+                install_args=install_args,
+                postinstall_scripts=postinstall_scripts,
+                min_release_age=min_release_age,
+            )
+        )
         self._assert_security_constraints_supported(
             "install",
             postinstall_scripts=postinstall_scripts,
@@ -1261,7 +1278,6 @@ class BinProvider(BaseModel):
             min_version=min_version,
         )
 
-        install_args = self.get_install_args(bin_name, quiet=quiet, nocache=nocache)
         logger.info(
             "Installing %s via provider %s with args %s",
             bin_name,
@@ -1377,6 +1393,14 @@ class BinProvider(BaseModel):
         min_release_age = (
             self.min_release_age if min_release_age is None else min_release_age
         )
+        install_args = self.get_install_args(bin_name, quiet=quiet, nocache=nocache)
+        postinstall_scripts, min_release_age = (
+            self._coerce_security_constraints_from_install_args(
+                install_args=install_args,
+                postinstall_scripts=postinstall_scripts,
+                min_release_age=min_release_age,
+            )
+        )
         self._assert_security_constraints_supported(
             "update",
             postinstall_scripts=postinstall_scripts,
@@ -1388,7 +1412,6 @@ class BinProvider(BaseModel):
             min_version=min_version,
         )
 
-        install_args = self.get_install_args(bin_name, quiet=quiet, nocache=nocache)
         logger.info(
             "Updating %s via provider %s with args %s",
             bin_name,

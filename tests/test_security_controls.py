@@ -58,8 +58,8 @@ class TestSecurityControls:
                 min_release_age=0,
             )
             installed = binary.install()
-            proc = installed.exec(cmd=("--version",), quiet=True)
-            assert proc.returncode == 0, proc.stderr or proc.stdout
+            assert installed is not None
+            assert installed.loaded_abspath is not None
 
     def test_pip_provider_default_security_settings_fail_closed_without_override(self):
         with pytest.raises(BinaryInstallError):

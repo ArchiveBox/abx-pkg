@@ -89,6 +89,29 @@ class NpmProvider(BinProvider):
     def supports_postinstall_disable(self, action) -> bool:
         return action in ("install", "update")
 
+    def _coerce_security_constraints_from_install_args(
+        self,
+        *,
+        install_args: InstallArgs,
+        postinstall_scripts: bool,
+        min_release_age: float,
+    ) -> tuple[bool, float]:
+        if self._args_have_option(install_args, "--ignore-scripts"):
+            postinstall_scripts = False
+
+        explicit_min_release_age = self._get_option_value(
+            install_args,
+            "--min-release-age",
+        )
+        if explicit_min_release_age is None:
+            return postinstall_scripts, min_release_age
+        try:
+            return postinstall_scripts, float(explicit_min_release_age)
+        except ValueError as err:
+            raise ValueError(
+                f"{self.__class__.__name__} got invalid --min-release-age value: {explicit_min_release_age!r}",
+            ) from err
+
     @computed_field
     @property
     def is_valid(self) -> bool:
