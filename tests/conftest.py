@@ -1,0 +1,370 @@
+from __future__ import annotations
+
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+from abx_pkg import AptProvider, Binary, BrewProvider, SemVer
+from abx_pkg.exceptions import BinaryLoadError
+
+
+def _brew_formula_is_installed(package: str) -> bool:
+    brew = shutil.which("brew")
+    if not brew:
+        return False
+    return (
+        subprocess.run(
+            [brew, "list", "--formula", package],
+            capture_output=True,
+            text=True,
+        ).returncode
+        == 0
+    )
+
+
+def _apt_package_is_installed(package: str) -> bool:
+    dpkg = shutil.which("dpkg")
+    if not dpkg:
+        return False
+    return (
+        subprocess.run([dpkg, "-s", package], capture_output=True, text=True).returncode
+        == 0
+    )
+
+
+def _gem_package_is_installed(package: str) -> bool:
+    gem = shutil.which("gem")
+    if not gem:
+        return False
+    return bool(
+        subprocess.run(
+            [gem, "list", f"^{package}$", "-a"],
+            capture_output=True,
+            text=True,
+        ).stdout.strip(),
+    )
+
+
+def _docker_daemon_is_available() -> bool:
+    docker = shutil.which("docker")
+    if not docker:
+        return False
+    return (
+        subprocess.run([docker, "info"], capture_output=True, text=True).returncode == 0
+    )
+
+
+def _ensure_test_machine_dependencies() -> None:
+    repo_root = Path(__file__).resolve().parent.parent
+    missing: list[str] = []
+    for module_name in ("ansible_runner", "pyinfra"):
+        try:
+            __import__(module_name)
+        except ModuleNotFoundError:
+            missing.append(module_name)
+
+    if missing:
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-q", "-e", ".[ansible,pyinfra]"],
+            check=True,
+            cwd=repo_root,
+        )
+
+
+class TestMachine:
+    def require_tool(self, tool_name: str) -> str:
+        tool_path = shutil.which(tool_name)
+        assert tool_path, (
+            f"{tool_name} is required on this host for test-machine integration tests"
+        )
+        return tool_path
+
+    def require_docker_daemon(self) -> str:
+        docker = self.require_tool("docker")
+        proc = subprocess.run([docker, "info"], capture_output=True, text=True)
+        assert proc.returncode == 0, proc.stderr or proc.stdout
+        return docker
+
+    def command_version(
+        self,
+        executable: Path,
+        version_args: tuple[str, ...] = ("--version",),
+    ) -> tuple[subprocess.CompletedProcess[str], SemVer | None]:
+        proc = subprocess.run(
+            [str(executable), *version_args],
+            capture_output=True,
+            text=True,
+        )
+        combined_output = "\n".join(
+            part.strip() for part in (proc.stdout, proc.stderr) if part.strip()
+        )
+        return proc, SemVer.parse(combined_output)
+
+    def assert_shallow_binary_loaded(
+        self,
+        loaded,
+        *,
+        version_args: tuple[str, ...] = ("--version",),
+        assert_version_command: bool = True,
+        expected_version: SemVer | None = None,
+    ) -> None:
+        assert loaded is not None
+        assert loaded.is_valid
+        assert loaded.loaded_binprovider is not None
+        assert loaded.loaded_abspath is not None
+        assert loaded.loaded_version is not None
+        assert loaded.loaded_sha256 is not None
+        assert loaded.is_executable
+        assert bool(str(loaded))
+
+        provider = loaded.loaded_binprovider
+        assert (
+            provider.get_abspath(loaded.name, quiet=True, nocache=True)
+            == loaded.loaded_abspath
+        )
+        assert (
+            provider.get_version(loaded.name, quiet=True, nocache=True)
+            == loaded.loaded_version
+        )
+        assert (
+            provider.get_sha256(
+                loaded.name,
+                abspath=loaded.loaded_abspath,
+                nocache=True,
+            )
+            == loaded.loaded_sha256
+        )
+
+        if expected_version is not None:
+            assert loaded.loaded_version >= expected_version
+
+        if assert_version_command:
+            proc, parsed_version = self.command_version(
+                loaded.loaded_abspath,
+                version_args,
+            )
+            assert proc.returncode == 0, proc.stderr or proc.stdout
+            if parsed_version is not None:
+                assert loaded.loaded_version == parsed_version
+
+    def assert_provider_missing(self, provider, bin_name: str) -> None:
+        assert provider.load(bin_name, quiet=True, nocache=True) is None
+        assert provider.get_abspath(bin_name, quiet=True, nocache=True) is None
+
+    def assert_binary_missing(self, binary: Binary) -> None:
+        with pytest.raises(BinaryLoadError):
+            self.unloaded_binary(binary).load(nocache=True)
+
+    def unloaded_binary(self, binary: Binary) -> Binary:
+        return binary.model_copy(
+            deep=True,
+            update={
+                "loaded_binprovider": None,
+                "loaded_abspath": None,
+                "loaded_version": None,
+                "loaded_sha256": None,
+            },
+        )
+
+    def exercise_provider_lifecycle(
+        self,
+        provider,
+        *,
+        bin_name: str,
+        version_args: tuple[str, ...] = ("--version",),
+        install_kwargs: dict | None = None,
+        update_kwargs: dict | None = None,
+        assert_version_command: bool = True,
+        expect_uninstall_result: bool = True,
+    ):
+        install_kwargs = install_kwargs or {}
+        update_kwargs = update_kwargs or install_kwargs
+
+        provider.setup(**install_kwargs)
+        install_args = provider.get_install_args(bin_name)
+        assert tuple(install_args)
+        assert provider.get_packages(bin_name) == install_args
+
+        self.assert_provider_missing(provider, bin_name)
+
+        installed = provider.install(bin_name, nocache=True, **install_kwargs)
+        self.assert_shallow_binary_loaded(
+            installed,
+            version_args=version_args,
+            assert_version_command=assert_version_command,
+        )
+
+        loaded = provider.load(bin_name, nocache=True)
+        self.assert_shallow_binary_loaded(
+            loaded,
+            version_args=version_args,
+            assert_version_command=assert_version_command,
+        )
+
+        loaded_or_installed = provider.load_or_install(
+            bin_name,
+            nocache=True,
+            **install_kwargs,
+        )
+        self.assert_shallow_binary_loaded(
+            loaded_or_installed,
+            version_args=version_args,
+            assert_version_command=assert_version_command,
+        )
+
+        updated = provider.update(bin_name, nocache=True, **update_kwargs)
+        self.assert_shallow_binary_loaded(
+            updated,
+            version_args=version_args,
+            assert_version_command=assert_version_command,
+        )
+
+        uninstall_result = provider.uninstall(bin_name, nocache=True, **install_kwargs)
+        assert uninstall_result is expect_uninstall_result
+        if expect_uninstall_result:
+            self.assert_provider_missing(provider, bin_name)
+        else:
+            self.assert_shallow_binary_loaded(
+                provider.load(bin_name, nocache=True),
+                version_args=version_args,
+                assert_version_command=assert_version_command,
+            )
+
+        return installed, updated
+
+    def exercise_binary_lifecycle(
+        self,
+        binary: Binary,
+        *,
+        version_args: tuple[str, ...] = ("--version",),
+        assert_version_command: bool = True,
+    ) -> None:
+        fresh = self.unloaded_binary(binary)
+        self.assert_binary_missing(fresh)
+
+        installed = fresh.install()
+        self.assert_shallow_binary_loaded(
+            installed,
+            version_args=version_args,
+            assert_version_command=assert_version_command,
+        )
+
+        loaded = self.unloaded_binary(binary).load(nocache=True)
+        self.assert_shallow_binary_loaded(
+            loaded,
+            version_args=version_args,
+            assert_version_command=assert_version_command,
+        )
+
+        loaded_or_installed = self.unloaded_binary(binary).load_or_install(nocache=True)
+        self.assert_shallow_binary_loaded(
+            loaded_or_installed,
+            version_args=version_args,
+            assert_version_command=assert_version_command,
+        )
+
+        updated = installed.update()
+        self.assert_shallow_binary_loaded(
+            updated,
+            version_args=version_args,
+            assert_version_command=assert_version_command,
+        )
+
+        removed = updated.uninstall()
+        assert not removed.is_valid
+        assert removed.loaded_binprovider is None
+        assert removed.loaded_abspath is None
+        assert removed.loaded_version is None
+        assert removed.loaded_sha256 is None
+        self.assert_binary_missing(binary)
+
+    def exercise_provider_dry_run(
+        self,
+        provider,
+        *,
+        bin_name: str,
+        expect_present_before: bool = False,
+        stale_min_version: SemVer | None = None,
+    ) -> None:
+        before = provider.load(bin_name, quiet=True, nocache=True)
+        if expect_present_before:
+            self.assert_shallow_binary_loaded(before, assert_version_command=False)
+        else:
+            assert before is None
+
+        dry_run_provider = provider.get_provider_with_overrides(dry_run=True)
+        if before is None or stale_min_version is not None:
+            dry_loaded_or_installed = dry_run_provider.load_or_install(
+                bin_name,
+                nocache=True,
+                min_version=stale_min_version,
+            )
+            assert dry_loaded_or_installed is not None
+            assert dry_loaded_or_installed.loaded_version == SemVer("999.999.999")
+            assert dry_loaded_or_installed.loaded_sha256 is not None
+
+        dry_installed = dry_run_provider.install(bin_name, nocache=True)
+        assert dry_installed is not None
+        assert dry_installed.loaded_version == SemVer("999.999.999")
+        assert dry_installed.loaded_sha256 is not None
+
+        dry_updated = dry_run_provider.update(bin_name, nocache=True)
+        assert dry_updated is not None
+        assert dry_updated.loaded_version == SemVer("999.999.999")
+        assert dry_updated.loaded_sha256 is not None
+
+        assert dry_run_provider.uninstall(bin_name, nocache=True) is True
+
+        after = provider.load(bin_name, quiet=True, nocache=True)
+        if expect_present_before:
+            self.assert_shallow_binary_loaded(after, assert_version_command=False)
+            assert after.loaded_abspath == before.loaded_abspath
+            assert after.loaded_version == before.loaded_version
+        else:
+            assert after is None
+
+    def pick_missing_brew_formula(self) -> str:
+        provider = BrewProvider(min_release_age=0)
+        for formula in ("hello", "jq", "watch", "fzy"):
+            if _brew_formula_is_installed(formula):
+                continue
+            if provider.load(formula, quiet=True, nocache=True) is not None:
+                continue
+            return formula
+        raise AssertionError(
+            "No safe missing brew formula candidates were available for a test-machine lifecycle test",
+        )
+
+    def pick_missing_apt_package(self) -> str:
+        provider = AptProvider(min_release_age=0)
+        for package in ("jq", "tree", "rename"):
+            if _apt_package_is_installed(package):
+                continue
+            if provider.load(package, quiet=True, nocache=True) is not None:
+                continue
+            return package
+        raise AssertionError(
+            "No safe missing apt package candidates were available for a test-machine lifecycle test",
+        )
+
+    def pick_missing_gem_package(self) -> str:
+        for package in ("lolcat", "cowsay"):
+            if _gem_package_is_installed(package):
+                continue
+            return package
+        raise AssertionError(
+            "No safe missing gem package candidates were available for a test-machine lifecycle test",
+        )
+
+
+@pytest.fixture(scope="session")
+def test_machine_dependencies():
+    _ensure_test_machine_dependencies()
+
+
+@pytest.fixture
+def test_machine() -> TestMachine:
+    return TestMachine()

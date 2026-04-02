@@ -5,9 +5,8 @@ import os
 import sys
 import json
 import shutil
+import subprocess
 import tempfile
-import importlib
-import importlib.util
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +15,7 @@ from .semver import SemVer
 from .binprovider import BinProvider, OPERATING_SYSTEM, DEFAULT_PATH, remap_kwargs
 
 
-ANSIBLE_INSTALLED = importlib.util.find_spec("ansible_runner") is not None
+ANSIBLE_INSTALLED = shutil.which("ansible-playbook") is not None
 
 
 ANSIBLE_INSTALL_PLAYBOOK_TEMPLATE = """
@@ -53,10 +52,6 @@ def get_homebrew_search_path() -> str | None:
     return str(Path(brew_abspath).parent)
 
 
-def get_ansible_bin_dir() -> str:
-    return str(Path(sys.executable).parent)
-
-
 def ansible_package_install(
     pkg_names: str | InstallArgs,
     playbook_template=ANSIBLE_INSTALL_PLAYBOOK_TEMPLATE,
@@ -64,15 +59,12 @@ def ansible_package_install(
     state="present",
     quiet=True,
     module_extra_kwargs: dict[str, Any] | None = None,
+    timeout: int | None = None,
 ) -> str:
     if not ANSIBLE_INSTALLED:
         raise RuntimeError(
-            "Ansible is not installed! To fix:\n    pip install ansible ansible-runner",
+            "Ansible is not installed! To fix:\n    pip install ansible",
         )
-
-    ansible_runner = importlib.import_module("ansible_runner")
-    Runner = ansible_runner.Runner
-    RunnerConfig = ansible_runner.RunnerConfig
 
     if isinstance(pkg_names, str):
         pkg_names = pkg_names.split(" ")
@@ -122,39 +114,34 @@ def ansible_package_install(
         playbook_path = Path(temp_dir) / "install_playbook.yml"
         playbook_path.write_text(playbook)
 
-        # run the playbook using ansible-runner
-        old_env = os.environ.copy()
-        try:
-            os.environ["ANSIBLE_INVENTORY_UNPARSED_WARNING"] = "False"
-            os.environ["ANSIBLE_LOCALHOST_WARNING"] = "False"
-            os.environ["ANSIBLE_HOME"] = str(ansible_home)
-            os.environ["ANSIBLE_PYTHON_INTERPRETER"] = sys.executable
-            os.environ["PATH"] = ":".join(
-                [get_ansible_bin_dir(), old_env.get("PATH", "")],
-            ).strip(":")
-            rc = RunnerConfig(
-                private_data_dir=temp_dir,
-                playbook=str(playbook_path),
-                rotate_artifacts=50000,
-                host_pattern="localhost",
-                quiet=quiet,
-            )
-            rc.prepare()
-            r = Runner(config=rc)
-            r.run()
-        finally:
-            os.environ.clear()
-            os.environ.update(old_env)
-        succeeded = r.status == "successful"
-        stdout_handle = r.stdout
-        stderr_handle = r.stderr
-        stdout = stdout_handle.read() if stdout_handle else ""
-        stderr = stderr_handle.read() if stderr_handle else ""
-        if stdout_handle:
-            stdout_handle.close()
-        if stderr_handle:
-            stderr_handle.close()
-        result_text = f"Installing {pkg_names} on {OPERATING_SYSTEM} using Ansible {installer_module} {['failed', 'succeeded'][succeeded]}:{stdout}\n{stderr}".strip()
+        env = os.environ.copy()
+        env["ANSIBLE_INVENTORY_UNPARSED_WARNING"] = "False"
+        env["ANSIBLE_LOCALHOST_WARNING"] = "False"
+        env["ANSIBLE_HOME"] = str(ansible_home)
+        env["ANSIBLE_PYTHON_INTERPRETER"] = sys.executable
+        env["PATH"] = ":".join(
+            [str(Path(sys.executable).parent), env.get("PATH", "")],
+        ).strip(":")
+        ansible_playbook = (
+            shutil.which("ansible-playbook", path=env["PATH"]) or "ansible-playbook"
+        )
+        proc = subprocess.run(
+            [
+                ansible_playbook,
+                "-i",
+                "localhost,",
+                "-c",
+                "local",
+                str(playbook_path),
+            ],
+            capture_output=True,
+            text=True,
+            cwd=temp_dir,
+            env=env,
+            timeout=timeout,
+        )
+        succeeded = proc.returncode == 0
+        result_text = f"Installing {pkg_names} on {OPERATING_SYSTEM} using Ansible {installer_module} {['failed', 'succeeded'][succeeded]}:{proc.stdout}\n{proc.stderr}".strip()
 
         # check for success/failure
         if succeeded:
@@ -194,6 +181,7 @@ class AnsibleProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        timeout: int | None = None,
     ) -> str:
         install_args = install_args or self.get_install_args(bin_name)
 
@@ -210,6 +198,7 @@ class AnsibleProvider(BinProvider):
             playbook_template=self.ansible_playbook_template,
             installer_module=self.ansible_installer_module,
             module_extra_kwargs=module_extra_kwargs or None,
+            timeout=timeout,
         )
 
     @remap_kwargs({"packages": "install_args"})
@@ -220,6 +209,7 @@ class AnsibleProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        timeout: int | None = None,
     ) -> str:
         install_args = install_args or self.get_install_args(bin_name)
 
@@ -237,6 +227,7 @@ class AnsibleProvider(BinProvider):
                 installer_module=self.ansible_installer_module,
                 state="latest",
                 module_extra_kwargs=module_extra_kwargs,
+                timeout=timeout,
             )
         return ansible_package_install(
             pkg_names=install_args,
@@ -244,6 +235,7 @@ class AnsibleProvider(BinProvider):
             playbook_template=self.ansible_playbook_template,
             installer_module=self.ansible_installer_module,
             state="latest",
+            timeout=timeout,
         )
 
     @remap_kwargs({"packages": "install_args"})
@@ -254,6 +246,7 @@ class AnsibleProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        timeout: int | None = None,
     ) -> bool:
         install_args = install_args or self.get_install_args(bin_name)
 
@@ -271,6 +264,7 @@ class AnsibleProvider(BinProvider):
                 installer_module=self.ansible_installer_module,
                 state="absent",
                 module_extra_kwargs=module_extra_kwargs,
+                timeout=timeout,
             )
         else:
             ansible_package_install(
@@ -279,6 +273,7 @@ class AnsibleProvider(BinProvider):
                 playbook_template=self.ansible_playbook_template,
                 installer_module=self.ansible_installer_module,
                 state="absent",
+                timeout=timeout,
             )
         return True
 

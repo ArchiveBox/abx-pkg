@@ -13,7 +13,7 @@ import tempfile
 from platformdirs import user_cache_path
 
 from pathlib import Path
-from typing import Self
+from typing import ClassVar, Self
 from pydantic import model_validator, TypeAdapter, computed_field
 
 from .base_types import (
@@ -55,6 +55,7 @@ except Exception:
 class PipProvider(BinProvider):
     name: BinProviderName = "pip"
     INSTALLER_BIN: BinName = "pip"
+    INSTALL_ROOT_FIELD: ClassVar[str | None] = "pip_venv"
 
     PATH: PATHStr = ""
 
@@ -100,6 +101,16 @@ class PipProvider(BinProvider):
                 return False
 
         return bool(self.INSTALLER_BIN_ABSPATH)
+
+    @computed_field
+    @property
+    def install_root(self) -> Path | None:
+        return self.pip_venv
+
+    @computed_field
+    @property
+    def bin_dir(self) -> Path | None:
+        return self.install_root / "bin" if self.install_root else None
 
     @computed_field
     @property
@@ -163,8 +174,8 @@ class PipProvider(BinProvider):
         pip_bin_dirs = set()
 
         if self.pip_venv:
-            # restrict PATH to only use venv bin path
-            pip_bin_dirs = {str(self.pip_venv / "bin")}
+            self.PATH = self._merge_PATH(self.pip_venv / "bin")
+            return self
         else:
             # autodetect global system python paths
 
@@ -205,10 +216,7 @@ class PipProvider(BinProvider):
             if ACTIVE_VENV:
                 pip_bin_dirs.discard(f"{ACTIVE_VENV}/bin")
 
-        for bin_dir in pip_bin_dirs:
-            if bin_dir not in PATH:
-                PATH = ":".join([*PATH.split(":"), bin_dir])
-        self.PATH = TypeAdapter(PATHStr).validate_python(PATH)
+        self.PATH = self._merge_PATH(*sorted(pip_bin_dirs), PATH=PATH)
         return self
 
     def setup(
@@ -227,15 +235,7 @@ class PipProvider(BinProvider):
         min_release_age = (
             self.min_release_age if min_release_age is None else min_release_age
         )
-        try:
-            self.cache_dir.mkdir(parents=True, exist_ok=True)
-            os.system(
-                f'chown {self.EUID} "{self.cache_dir}" 2>/dev/null',
-            )  # try to ensure cache dir is writable by EUID
-            os.system(
-                f'chmod 777 "{self.cache_dir}" 2>/dev/null',
-            )  # allow all users to share cache dir
-        except Exception:
+        if not self._ensure_writable_cache_dir(self.cache_dir):
             self.cache_arg = "--no-cache-dir"
 
         if self.pip_venv:
@@ -329,6 +329,13 @@ class PipProvider(BinProvider):
             uv_abspath = None
         subcommand, *pip_args = pip_cmd
         is_install = subcommand == "install"
+        has_release_age_flag = self._args_have_option(
+            pip_args,
+            "--exclude-newer",
+            "--uploaded-prior-to",
+        )
+        has_no_build_flag = self._args_have_option(pip_args, "--no-build")
+        has_only_binary_flag = self._args_have_option(pip_args, "--only-binary")
 
         # supply-chain security: compute ISO-8601 cutoff once, used by both uv and pip
         if is_install and min_release_age > 0:
@@ -355,8 +362,16 @@ class PipProvider(BinProvider):
             ),
             # supply-chain security: --no-build prevents arbitrary code execution,
             # --exclude-newer rejects packages published too recently
-            *(["--no-build"] if is_install and not postinstall_scripts else []),
-            *([f"--exclude-newer={cutoff}"] if is_install and cutoff else []),
+            *(
+                ["--no-build"]
+                if is_install and not postinstall_scripts and not has_no_build_flag
+                else []
+            ),
+            *(
+                [f"--exclude-newer={cutoff}"]
+                if is_install and cutoff and not has_release_age_flag
+                else []
+            ),
             *(
                 arg
                 for arg in pip_args
@@ -374,10 +389,17 @@ class PipProvider(BinProvider):
                 pip_ver = None
             pip_cmd = [
                 subcommand,
-                *(["--only-binary", ":all:"] if not postinstall_scripts else []),
+                *(
+                    ["--only-binary", ":all:"]
+                    if not postinstall_scripts and not has_only_binary_flag
+                    else []
+                ),
                 *(
                     [f"--uploaded-prior-to={cutoff}"]
-                    if cutoff and pip_ver is not None and pip_ver >= SemVer((26, 0, 0))  # pyright: ignore[reportOperatorIssue]
+                    if cutoff
+                    and pip_ver is not None
+                    and pip_ver >= SemVer((26, 0, 0))  # pyright: ignore[reportOperatorIssue]
+                    and not has_release_age_flag
                     else []
                 ),
                 *pip_args,
@@ -397,6 +419,7 @@ class PipProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        timeout: int | None = None,
     ) -> str:
         if self.pip_venv:
             self.setup(
@@ -425,6 +448,7 @@ class PipProvider(BinProvider):
                 *self.pip_install_args,
                 *install_args,
             ],
+            timeout=timeout,
             postinstall_scripts=False
             if postinstall_scripts is None
             else postinstall_scripts,
@@ -452,6 +476,7 @@ class PipProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        timeout: int | None = None,
     ) -> str:
         if self.pip_venv:
             self.setup(
@@ -480,6 +505,7 @@ class PipProvider(BinProvider):
                 "--upgrade",
                 *install_args,
             ],
+            timeout=timeout,
             postinstall_scripts=False
             if postinstall_scripts is None
             else postinstall_scripts,
@@ -507,6 +533,7 @@ class PipProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        timeout: int | None = None,
     ) -> bool:
         install_args = install_args or self.get_install_args(bin_name)
 
@@ -516,6 +543,7 @@ class PipProvider(BinProvider):
                 "--yes",
                 *install_args,
             ],
+            timeout=timeout,
         )
 
         if proc.returncode != 0:
@@ -576,15 +604,17 @@ class PipProvider(BinProvider):
         self,
         bin_name: BinName,
         abspath: HostBinPath | None = None,
+        timeout: int | None = None,
         **context,
     ) -> SemVer | None:
-        # print(f'[*] {self.__class__.__name__}: Getting version for {bin_name}...')
-
-        # try running <bin_name> --version first (fastest)
         try:
-            version = super().default_version_handler(bin_name, abspath, **context)
+            version = self._version_from_exec(
+                bin_name,
+                abspath=abspath,
+                timeout=timeout,
+            )
             if version:
-                return SemVer.parse(version)
+                return version
         except ValueError:
             pass
 
@@ -593,7 +623,7 @@ class PipProvider(BinProvider):
             self._pip(
                 ["show", "--no-input", str(bin_name)],
                 quiet=False,
-                timeout=self.version_timeout,
+                timeout=timeout,
             )
             .stdout.strip()
             .split("\n")
@@ -605,7 +635,7 @@ class PipProvider(BinProvider):
             version_str = [
                 line for line in output_lines if line.startswith("Version: ")
             ][0].split("Version: ", 1)[-1]
-            return SemVer.parse(version_str)
+            return version_str
         except Exception:
             return None
 

@@ -1,4 +1,4 @@
-<h1><a href="https://github.com/ArchiveBox/abx-pkg"><code>abx-pkg</code></a> &nbsp; &nbsp; &nbsp; &nbsp; 📦  <small><code>apt</code>&nbsp; <code>brew</code>&nbsp; <code>pip</code>&nbsp; <code>npm</code>&nbsp; <code>cargo</code>&nbsp; <code>gem</code>&nbsp; <code>go_get</code>&nbsp; <code>nix</code>&nbsp; <code>docker</code> &nbsp;₊₊₊</small><br/><sub>Simple Python interfaces for package managers + installed binaries.</sub></h1>
+<h1><a href="https://github.com/ArchiveBox/abx-pkg"><code>abx-pkg</code></a> &nbsp; &nbsp; &nbsp; &nbsp; 📦  <small><code>apt</code>&nbsp; <code>brew</code>&nbsp; <code>pip</code>&nbsp; <code>npm</code>&nbsp; <code>cargo</code>&nbsp; <code>gem</code>&nbsp; <code>goget</code>&nbsp; <code>nix</code>&nbsp; <code>docker</code> &nbsp;₊₊₊</small><br/><sub>Simple Python interfaces for package managers + installed binaries.</sub></h1>
 <br/>
 
 [![PyPI][pypi-badge]][pypi]
@@ -16,17 +16,17 @@
 It's designed for when `requirements.txt` isn't enough, and you have to detect or install dependencies at runtime. It's great for installing and managing MCP servers and their dependencies at runtime.
 
 
-```python
+```bash
 pip install abx-pkg
+```
 
-python
->>> from abx_pkg import Binary, apt, pip, npm
+```python
+from abx_pkg import Binary, npm
 
->>> curl = Binary('curl').load()
->>> print(curl.abspath, curl.version, curl.exec(cmd=['--version']))
-/usr/bin/curl 7.81.0 curl 7.81.0 (x86_64-apple-darwin23.0) libcurl/7.81.0 ...
+curl = Binary(name="curl").load()
+print(curl.abspath, curl.version, curl.exec(cmd=["--version"]))
 
->>> npm.install('puppeteer')
+npm.install("puppeteer")
 ```
 
 > 📦 Provides consistent interfaces for runtime dependency resolution & installation across multiple package managers & OSs
@@ -59,7 +59,7 @@ for binary in dependencies:
     binary = binary.load_or_install()
 
     print(binary.abspath, binary.version, binary.binprovider, binary.is_valid, binary.sha256)
-    # Path('/usr/bin/curl') SemVer('7.81.0') AptProvider() True abc134...
+    # Path(...) SemVer(...) EnvProvider()/AptProvider()/BrewProvider()/PipProvider()/NpmProvider() True '<sha256>'
 
     binary.exec(cmd=['--version'])   # curl 7.81.0 (x86_64-apple-darwin23.0) libcurl/7.81.0 ...
 ```
@@ -67,17 +67,17 @@ for binary in dependencies:
 `Binary.min_version` is optional. Leave it as `None` when any discovered version is acceptable, or set it to a `SemVer`/string to enforce a minimum version after load/install.
 
 ```python
-from abx_pkg import Binary, apt, pip
+from abx_pkg import Binary, apt, brew, env
 
 # Use providers directly for package manager operations
 apt.install('wget')
 print(apt.PATH, apt.get_abspaths('wget'), apt.get_version('wget'))
 
 # our Binary API provides a nice type-checkable, validated, serializable handle
-ffmpeg = Binary(name='ffmpeg').load()
-print(ffmpeg)                       # name=ffmpeg abspath=/usr/bin/ffmpeg version=3.3.0 is_valid=True binprovider=apt ...
-print(ffmpeg.abspaths)              # show all the ffmpeg binaries found in $PATH (in case there's more than one available)
-print(ffmpeg.model_dump())          # ... everything can also be dumped/loaded as json-ready dict
+ffmpeg = Binary(name='ffmpeg', binproviders=[env, apt, brew]).load()
+print(ffmpeg)                       # Binary(name='ffmpeg', abspath=Path(...), version=SemVer(...), sha256='...')
+print(ffmpeg.abspaths)              # show all matching binaries found via each provider PATH
+print(ffmpeg.model_dump(mode='json'))  # JSON-ready dict
 print(ffmpeg.model_json_schema())   # ... OpenAPI-ready JSON schema showing all available fields
 ```
 
@@ -89,11 +89,11 @@ from abx_pkg import Binary, BinProvider, BrewProvider, EnvProvider
 # or define binaries as classes for type checking
 class CurlBinary(Binary):
     name: str = 'curl'
-    binproviders: list[InstanceOf[BinProvider]] = [BrewProvider(), EnvProvider()]
+    binproviders_supported: list[InstanceOf[BinProvider]] = [BrewProvider(), EnvProvider()]
 
 curl = CurlBinary().install()
 assert isinstance(curl, CurlBinary)                                 # CurlBinary is a unique type you can use in annotations now
-print(curl.abspath, curl.version, curl.binprovider, curl.is_valid)  # Path('/opt/homebrew/bin/curl') SemVer('8.4.0') BrewProvider() True
+print(curl.abspath, curl.version, curl.binprovider, curl.is_valid)  # Path(...) SemVer(...) BrewProvider()/EnvProvider() True
 curl.exec(cmd=['--version'])                                        # curl 8.4.0 (x86_64-apple-darwin23.0) libcurl/8.4.0 ...
 ```
 
@@ -103,17 +103,16 @@ curl.exec(cmd=['--version'])                                        # curl 8.4.0
 
 - `apt` (Ubuntu/Debian/etc.)
 - `brew` (macOS/Linux)
-- `pip` (Linux/macOS/Windows)
-- `npm` (Linux/macOS/Windows)
+- `pip` (Linux/macOS)
+- `npm` (Linux/macOS)
 - `cargo` (Linux/macOS)
 - `gem` (Linux/macOS)
-- `go get` / `go install` (`GoGetProvider`) (Linux/macOS)
+- `goget` (Linux/macOS, via [`GoGetProvider`](./abx_pkg/binprovider_goget.py))
 - `nix` (Linux/macOS)
 - `docker` (Linux/macOS, using local wrapper scripts that run `docker run`)
 - `env` (looks for existing version of binary in user's `$PATH` at runtime)
-- `vendor` (you can bundle vendored copies of packages you depend on within your source)
 
-*Planned:* `apk`, `pkg`, *and more using `ansible`/[`pyinfra`](https://github.com/pyinfra-dev/pyinfra)...*
+*Planned:* `apk`, `pkg`, and additional future provider backends.
 
 `DockerProvider` expects image refs as install args, typically via overrides on a `Binary`. It writes a local wrapper script for the binary and executes it via `docker run ...`; the binary version is parsed from the image tag, so semver-like tags work best.
 
@@ -142,9 +141,10 @@ env.load('wget')
 These are instantiated on first access and cached for reuse. If you need custom configuration, you can still instantiate provider classes directly:
 
 ```python
+from pathlib import Path
 from abx_pkg import PipProvider
 
-custom_pip = PipProvider(abspath_handler={...})
+custom_pip = PipProvider(pip_venv=Path("/tmp/abx-pkg-venv"), min_release_age=0)
 ```
 
 ### Version Floors
@@ -165,58 +165,286 @@ Use `min_version=None` to explicitly disable version floor checks.
 
 ### [`BinProvider`](https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/binprovider.py#:~:text=class%20BinProvider)
 
-**Implementations: `EnvProvider`, `AptProvider`, `BrewProvider`, `PipProvider`, `NpmProvider`**
+**Built-in implementations:** `EnvProvider`, `AptProvider`, `BrewProvider`, `PipProvider`, `NpmProvider`, `CargoProvider`, `GemProvider`, `GoGetProvider`, `NixProvider`, `DockerProvider`, `PyinfraProvider`, `AnsibleProvider`
 
-This type represents a "provider of binaries", e.g. a package manager like `apt`/`pip`/`npm`, or `env` (which finds binaries in your `$PATH`).
+This type represents a provider of binaries, e.g. a package manager like `apt` / `pip` / `npm`, or `env` (which only resolves binaries already present in `$PATH`).
 
-`BinProvider`s implement the following interface:
-* `.INSTALLER_BIN -> /opt/homebrew/bin/brew`  provider's pkg manager location
-* `.PATH -> PATHStr('/opt/homebrew/bin:/usr/local/bin:...')`  where provider stores bins
-* `get_install_args(bin_name: str) -> InstallArgs(['curl', 'libcurl4', '...])` find installer args for a bin
-- `install(bin_name: str)` install a bin using binprovider to install needed packages
-- `update(bin_name: str)` update a bin using the binprovider's package manager
-- `uninstall(bin_name: str)` remove a bin using the binprovider's package manager
-- `load(bin_name: str)`  find an existing installed binary
-- `load_or_install(bin_name: str)` `->` `Binary` find existing / install if needed
-- `get_version(bin_name: str) -> SemVer('1.0.0')`  get currently installed version
-- `get_abspath(bin_name: str) -> Path('/absolute/path/to/bin')` get installed bin abspath
-* `get_abspaths(bin_name: str) -> [Path('/opt/homebrew/bin/curl'), Path('/other/paths/to/curl'), ...]` get all matching bins found
-* `get_sha256(bin_name: str) -> str` get sha256 hash hexdigest of the binary
+#### 🧩 Shared API
 
-`install()` and `update()` return a loaded binary with fresh `abspath` / `version` / `sha256` metadata.
-`uninstall()` removes the package and returns `True` when the provider action succeeded.
+Every provider exposes the same lifecycle surface:
 
+- `load()` / `install()` / `update()` / `uninstall()` / `load_or_install()`
+- `get_install_args()` to resolve package names / formulae / image refs / module specs
+- `get_abspath()` / `get_abspaths()` / `get_version()` / `get_sha256()`
+
+Shared base defaults come from [`abx_pkg/binprovider.py`](./abx_pkg/binprovider.py) and apply unless a concrete provider overrides them:
 
 ```python
-from abx_pkg import env, apt, pip
-
-### Example: Finding an existing install of bash using the system $PATH environment
-bash = env.load(bin_name='bash')      # Binary('bash', provider=env)
-print(bash.abspath)                   # Path('/opt/homebrew/bin/bash')
-print(bash.version)                   # SemVer('5.2.26')
-bash.exec(['-c', 'echo hi'])          # hi
-
-### Example: Installing curl using the apt package manager
-curl = apt.install(bin_name='curl')   # Binary('curl', provider=apt)
-print(curl.abspath)                   # Path('/usr/bin/curl')
-print(curl.version)                   # SemVer('8.4.0')
-print(curl.sha256)                    # 9fd780521c97365f94c90724d80a889097ae1eeb2ffce67b87869cb7e79688ec
-curl.exec(['--version'])              # curl 7.81.0 (x86_64-pc-linux-gnu) libcurl/7.81.0 ...
-
-# Example: Updating and removing curl with the same provider
-curl = apt.update(bin_name='curl')
-assert curl.is_valid
-assert apt.uninstall(bin_name='curl') is True
-
-### Example: Finding/Installing django with pip (w/ customized binpath resolution behavior)
-from abx_pkg import PipProvider
-custom_pip = PipProvider(
-    abspath_handler={'*': lambda self, bin_name, **context: inspect.getfile(bin_name)},  # use python inspect to get path instead of os.which
-)
-django_bin = custom_pip.load_or_install('django') # Binary('django', provider=custom_pip)
-print(django_bin.abspath)             # Path('/usr/lib/python3.10/site-packages/django/__init__.py')
-print(django_bin.version)             # SemVer('5.0.2')
+INSTALLER_BIN = "env"
+PATH = str(Path(sys.executable).parent)
+postinstall_scripts = False          # or ABX_PKG_POSTINSTALL_SCRIPTS=1
+min_release_age = 7.0                # or ABX_PKG_MIN_RELEASE_AGE=<days>
+install_timeout = 120
+version_timeout = 10
+DRY_RUN = False                      # or DRY_RUN=1
 ```
+
+- `DRY_RUN`: use `provider.get_provider_with_overrides(dry_run=True)` or `DRY_RUN=1`. Provider subprocesses are logged and skipped, `install()` / `update()` return a placeholder loaded binary, and `uninstall()` returns `True` without mutating the host.
+- `install_timeout`: shared provider-level timeout used by `install()`, `update()`, and `uninstall()` handler execution paths.
+- `version_timeout`: shared provider-level timeout used by version / metadata probes such as `--version`, `npm show`, `npm list`, `pip show`, `go version -m`, and brew lookups.
+- Security controls fail closed: if `min_release_age > 0` or `postinstall_scripts=False` is requested on a provider that does not support that control for that action, `install()` / `update()` raises instead of silently ignoring it.
+
+Supported override keys are the same everywhere:
+
+```python
+from pathlib import Path
+from abx_pkg import PipProvider
+
+provider = PipProvider(pip_venv=Path("/tmp/venv")).get_provider_with_overrides(
+    overrides={
+        "black": {
+            "install_args": ["black==24.4.2"],
+            "version": "self.default_version_handler",
+            "abspath": "self.default_abspath_handler",
+        },
+    },
+    dry_run=True,
+    version_timeout=30,
+)
+```
+
+- `install_args` / `packages`: package-manager arguments for that provider. `packages` is the legacy alias.
+- `abspath`, `version`, `install`, `update`, `uninstall`: literal values, callables, or `"self.method_name"` references that replace the provider handler for a specific binary.
+
+Providers with isolated install locations also expose a shared constructor surface:
+
+- `install_root`: shared alias for provider-specific roots such as `pip_venv`, `npm_prefix`, `cargo_root`, `gem_home`, `gopath`, `nix_profile`, `docker_shim_dir.parent`, and `brew_prefix`.
+- `bin_dir`: shared alias for providers that separate package state from executable output, such as `gem_bindir`, `gobin`, and `docker_shim_dir`.
+- `provider.install_root` / `provider.bin_dir`: normalized computed properties you can inspect after construction, regardless of which provider-specific args were used.
+- Legacy provider-specific args still work. The shared aliases are additive, not replacements.
+- Providers that do not have an isolated install location reject `install_root` / `bin_dir` at construction time instead of silently ignoring them.
+- When an explicit install root or bin dir is configured, that provider-specific bin location wins during binary discovery and subprocess execution instead of being left behind ambient host `PATH` entries.
+
+#### 🌍 [`EnvProvider`](./abx_pkg/binprovider.py) (`env`)
+
+Source: [`abx_pkg/binprovider.py`](./abx_pkg/binprovider.py) • Tests: [`tests/test_envprovider.py`](./tests/test_envprovider.py)
+
+```python
+INSTALLER_BIN = "which"
+PATH = DEFAULT_ENV_PATH              # current PATH + current Python bin dir
+```
+
+- Install root: none. `env` is read-only and only searches existing binaries on `$PATH`.
+- Auto-switching: none.
+- Security: accepts `min_release_age` / `postinstall_scripts`, but they are effectively irrelevant because install / update are no-ops.
+- Overrides: `abspath` / `version` are the useful ones here. `python` has a built-in override to the current `sys.executable` and interpreter version.
+- Notes: `install()` / `update()` return explanatory no-op messages, and `uninstall()` returns `False`.
+
+#### 🐧 [`AptProvider`](./abx_pkg/binprovider_apt.py) (`apt`)
+
+Source: [`abx_pkg/binprovider_apt.py`](./abx_pkg/binprovider_apt.py) • Tests: [`tests/test_aptprovider.py`](./tests/test_aptprovider.py)
+
+```python
+INSTALLER_BIN = "apt-get"
+PATH = ""                            # populated from `dpkg -L bash` bin dirs
+euid = 0                             # always runs as root
+```
+
+- Install root: **no hermetic prefix support**. Installs into the host package database.
+- Auto-switching: tries `PyinfraProvider` first, then `AnsibleProvider`, then falls back to direct `apt-get`.
+- `DRY_RUN`: shared behavior.
+- Security: **no `min_release_age` enforcement** and **no postinstall-script disabling**.
+- Overrides: in the direct shell fallback, `install_args` becomes `apt-get install -y -qq --no-install-recommends ...`; `update()` uses `apt-get install --only-upgrade ...`.
+- Notes: direct mode runs `apt-get update -qq` at most once per day and requires root on Linux.
+
+#### 🍺 [`BrewProvider`](./abx_pkg/binprovider_brew.py) (`brew`)
+
+Source: [`abx_pkg/binprovider_brew.py`](./abx_pkg/binprovider_brew.py) • Tests: [`tests/test_brewprovider.py`](./tests/test_brewprovider.py)
+
+```python
+INSTALLER_BIN = "brew"
+PATH = "/home/linuxbrew/.linuxbrew/bin:/opt/homebrew/bin:/usr/local/bin"
+brew_prefix = guessed host prefix    # /opt/homebrew, /usr/local, or linuxbrew
+```
+
+- Install root: `brew_prefix` is for discovery only. `install_root=...` aliases to `brew_prefix`. **This provider does not create an isolated custom Homebrew prefix.**
+- Auto-switching: if `postinstall_scripts=True`, it prefers `PyinfraProvider` and then `AnsibleProvider`; otherwise it falls back to direct `brew`.
+- `DRY_RUN`: shared behavior.
+- Security: **`min_release_age` is unsupported**. `postinstall_scripts=False` is supported for direct brew via `--skip-post-install`.
+- Overrides: in the direct shell fallback, `install_args` maps to formula / cask args passed to `brew install`, `brew upgrade`, and `brew uninstall`.
+- Notes: direct mode runs `brew update` at most once per day. The test suite verifies that unsupported `min_release_age` fails closed.
+
+#### 🐍 [`PipProvider`](./abx_pkg/binprovider_pip.py) (`pip`)
+
+Source: [`abx_pkg/binprovider_pip.py`](./abx_pkg/binprovider_pip.py) • Tests: [`tests/test_pipprovider.py`](./tests/test_pipprovider.py), [`tests/test_security_controls.py`](./tests/test_security_controls.py)
+
+```python
+INSTALLER_BIN = "pip"
+PATH = ""                            # auto-built from global/user Python bin dirs
+pip_venv = None                      # set this for hermetic installs
+cache_dir = user_cache_path("pip", "abx-pkg") or /tmp/pip-cache
+pip_install_args = ["--no-input", "--disable-pip-version-check", "--quiet"]
+pip_bootstrap_packages = ["pip", "setuptools", "uv"]
+```
+
+- Install root: `pip_venv=None` uses the system/user Python environment. Set `pip_venv=Path(...)` or `install_root=Path(...)` for a hermetic venv rooted at `<pip_venv>/bin`, and that venv bin dir becomes the provider's active executable search path.
+- Auto-switching: the provider executable is still `pip`, but install / update / show / uninstall calls use `uv pip ...` when `uv` is available and `PIP_BINARY` is not forcing a specific pip path.
+- `DRY_RUN`: shared behavior.
+- Security: supports both `min_release_age` and `postinstall_scripts=False`.
+- Overrides: `install_args` is passed as pip requirement specs; unpinned specs get a `>=min_version` floor when `min_version` is supplied.
+- Notes: `postinstall_scripts=False` uses `uv pip --no-build` or plain `pip --only-binary :all:`. `min_release_age` is enforced with `uv --exclude-newer=<cutoff>` or plain `pip --uploaded-prior-to=<cutoff>` when the host pip is new enough.
+
+#### 📦 [`NpmProvider`](./abx_pkg/binprovider_npm.py) (`npm`)
+
+Source: [`abx_pkg/binprovider_npm.py`](./abx_pkg/binprovider_npm.py) • Tests: [`tests/test_npmprovider.py`](./tests/test_npmprovider.py), [`tests/test_security_controls.py`](./tests/test_security_controls.py)
+
+```python
+INSTALLER_BIN = "npm"
+PATH = ""                            # auto-built from npm/pnpm local + global bin dirs
+npm_prefix = None                    # None = global install, Path(...) = hermetic-ish prefix
+cache_dir = user_cache_path("npm", "abx-pkg") or /tmp/npm-cache
+npm_install_args = ["--force", "--no-audit", "--no-fund", "--loglevel=error"]
+```
+
+- Install root: `npm_prefix=None` installs globally. Set `npm_prefix=Path(...)` or `install_root=Path(...)` to install under `<prefix>/node_modules/.bin`; that prefix bin dir becomes the provider's active executable search path.
+- Auto-switching: prefers a real `npm` binary, falls back to `pnpm` if `npm` is unavailable, and honors `NPM_BINARY=/abs/path/to/npm-or-pnpm`.
+- `DRY_RUN`: shared behavior.
+- Security: supports both `min_release_age` and `postinstall_scripts=False`.
+- Overrides: `install_args` is passed as npm package specs; unpinned specs get rewritten to `pkg@>=<min_version>` when `min_version` is supplied.
+- Notes: direct npm mode uses `--ignore-scripts` and `--min-release-age=<days>`. pnpm mode writes `pnpm-workspace.yaml` with `minimumReleaseAge`; that is how release-age enforcement is configured there.
+
+#### 🦀 [`CargoProvider`](./abx_pkg/binprovider_cargo.py) (`cargo`)
+
+Source: [`abx_pkg/binprovider_cargo.py`](./abx_pkg/binprovider_cargo.py) • Tests: [`tests/test_cargoprovider.py`](./tests/test_cargoprovider.py)
+
+```python
+INSTALLER_BIN = "cargo"
+PATH = ""                            # prepends cargo_root/bin and cargo_home/bin
+cargo_root = None                    # set this for hermetic installs
+cargo_home = $CARGO_HOME or ~/.cargo
+cargo_install_args = ["--locked"]
+```
+
+- Install root: set `cargo_root=Path(...)` or `install_root=Path(...)` for isolated installs under `<cargo_root>/bin`; otherwise installs go through `cargo_home`.
+- Auto-switching: none.
+- `DRY_RUN`: shared behavior.
+- Security: **no `min_release_age` enforcement** and **no postinstall-script disabling**.
+- Overrides: `install_args` is passed to `cargo install`; `min_version` becomes `cargo install --version >=...`.
+- Notes: the provider also sets `CARGO_HOME`, `CARGO_TARGET_DIR`, and `CARGO_INSTALL_ROOT` when applicable.
+
+#### 💎 [`GemProvider`](./abx_pkg/binprovider_gem.py) (`gem`)
+
+Source: [`abx_pkg/binprovider_gem.py`](./abx_pkg/binprovider_gem.py) • Tests: [`tests/test_gemprovider.py`](./tests/test_gemprovider.py)
+
+```python
+INSTALLER_BIN = "gem"
+PATH = DEFAULT_ENV_PATH
+gem_home = None                      # defaults to $GEM_HOME or ~/.local/share/gem
+gem_bindir = None                    # defaults to <gem_home>/bin
+gem_install_args = ["--no-document"]
+```
+
+- Install root: set `gem_home` or `install_root`, and optionally `gem_bindir` or `bin_dir`, for hermetic installs; otherwise it uses `$GEM_HOME` or `~/.local/share/gem`.
+- Auto-switching: none.
+- `DRY_RUN`: shared behavior.
+- Security: **no `min_release_age` enforcement** and **no postinstall-script disabling**.
+- Overrides: `install_args` maps to `gem install ...`, `gem update ...`, and `gem uninstall ...`; `min_version` becomes `--version >=...`.
+- Notes: generated wrapper scripts are patched so they activate the configured `GEM_HOME` instead of the host default.
+
+#### 🐹 [`GoGetProvider`](./abx_pkg/binprovider_goget.py) (`goget`)
+
+Source: [`abx_pkg/binprovider_goget.py`](./abx_pkg/binprovider_goget.py) • Tests: [`tests/test_gogetprovider.py`](./tests/test_gogetprovider.py)
+
+```python
+INSTALLER_BIN = "go"
+PATH = DEFAULT_ENV_PATH
+gobin = None                         # defaults to <gopath>/bin
+gopath = $GOPATH or ~/go
+go_install_args = []
+```
+
+- Install root: set `gopath` or `install_root` for the Go workspace, and `gobin` or `bin_dir` for the executable dir; otherwise installs land in `<gopath>/bin`.
+- Auto-switching: none.
+- `DRY_RUN`: shared behavior.
+- Security: **no `min_release_age` enforcement** and **no postinstall-script disabling**.
+- Overrides: `install_args` is passed to `go install ...`; the default is `["<bin_name>@latest"]`.
+- Notes: `update()` is just `install()` again. Version detection prefers `go version -m <binary>` and falls back to the generic version probe. The provider name is `goget`, not `go_get`.
+
+#### ❄️ [`NixProvider`](./abx_pkg/binprovider_nix.py) (`nix`)
+
+Source: [`abx_pkg/binprovider_nix.py`](./abx_pkg/binprovider_nix.py) • Tests: [`tests/test_nixprovider.py`](./tests/test_nixprovider.py)
+
+```python
+INSTALLER_BIN = "nix"
+PATH = ""                            # prepends <nix_profile>/bin
+nix_profile = $ABX_PKG_NIX_PROFILE or ~/.nix-profile
+nix_state_dir = None                 # optional XDG state/cache isolation
+nix_install_args = [
+    "--extra-experimental-features", "nix-command",
+    "--extra-experimental-features", "flakes",
+]
+```
+
+- Install root: set `nix_profile=Path(...)` or `install_root=Path(...)` for a custom profile; add `nix_state_dir=Path(...)` to isolate state/cache paths too.
+- Auto-switching: none.
+- `DRY_RUN`: shared behavior.
+- Security: **no `min_release_age` enforcement** and **no postinstall-script disabling**.
+- Overrides: `install_args` is passed to `nix profile install ...`; default is `["nixpkgs#<bin_name>"]`.
+- Notes: update/uninstall operate on the resolved profile element name rather than reusing the full flake ref.
+
+#### 🐳 [`DockerProvider`](./abx_pkg/binprovider_docker.py) (`docker`)
+
+Source: [`abx_pkg/binprovider_docker.py`](./abx_pkg/binprovider_docker.py) • Tests: [`tests/test_dockerprovider.py`](./tests/test_dockerprovider.py)
+
+```python
+INSTALLER_BIN = "docker"
+PATH = ""                            # prepends docker_shim_dir
+docker_shim_dir = ($ABX_PKG_DOCKER_ROOT or ~/.cache/abx-pkg/docker) / "bin"
+docker_run_args = ["--rm", "-i"]
+```
+
+- Install root: **partial only**. Images are pulled into Docker's host-managed image store; the provider only controls the local shim dir and metadata dir. Use `install_root=Path(...)` for the shim/metadata root or `bin_dir=Path(...)` for the shim dir directly.
+- Auto-switching: none.
+- `DRY_RUN`: shared behavior.
+- Security: **no `min_release_age` enforcement** and **no postinstall-script disabling**.
+- Overrides: `install_args` is a list of Docker image refs. The first item is treated as the main image and becomes the generated shim target.
+- Notes: default install args are `["<bin_name>:latest"]`. `install()` / `update()` run `docker pull`, write metadata JSON, and create an executable wrapper that runs `docker run ...`.
+
+#### 🛠️ [`PyinfraProvider`](./abx_pkg/binprovider_pyinfra.py) (`pyinfra`)
+
+Source: [`abx_pkg/binprovider_pyinfra.py`](./abx_pkg/binprovider_pyinfra.py) • Tests: [`tests/test_pyinfraprovider.py`](./tests/test_pyinfraprovider.py)
+
+```python
+INSTALLER_BIN = "pyinfra"
+PATH = os.environ.get("PATH", DEFAULT_PATH)
+pyinfra_installer_module = "auto"
+pyinfra_installer_kwargs = {}
+```
+
+- Install root: **no hermetic prefix support**. It delegates to host package managers through pyinfra operations.
+- Auto-switching: `installer_module="auto"` resolves to `operations.brew.packages` on macOS and `operations.server.packages` on Linux.
+- `DRY_RUN`: shared behavior.
+- Security: **no `min_release_age` enforcement** and **no postinstall-script disabling**.
+- Overrides: `install_args` is the package list passed to the selected pyinfra operation.
+- Notes: privilege requirements depend on the underlying package manager and selected module.
+
+#### 📘 [`AnsibleProvider`](./abx_pkg/binprovider_ansible.py) (`ansible`)
+
+Source: [`abx_pkg/binprovider_ansible.py`](./abx_pkg/binprovider_ansible.py) • Tests: [`tests/test_ansibleprovider.py`](./tests/test_ansibleprovider.py)
+
+```python
+INSTALLER_BIN = "ansible"
+PATH = os.environ.get("PATH", DEFAULT_PATH)
+ansible_installer_module = "auto"
+ansible_playbook_template = ANSIBLE_INSTALL_PLAYBOOK_TEMPLATE
+```
+
+- Install root: **no hermetic prefix support**. It delegates to the host via `ansible-runner`.
+- Auto-switching: `installer_module="auto"` resolves to `community.general.homebrew` on macOS and `ansible.builtin.package` on Linux.
+- `DRY_RUN`: shared behavior.
+- Security: **no `min_release_age` enforcement** and **no postinstall-script disabling**.
+- Overrides: `install_args` becomes the playbook loop input for the chosen Ansible module.
+- Notes: when using the Homebrew module, the provider auto-injects the detected brew search path into module kwargs. Privilege requirements still come from the underlying package manager.
 
 ### [`Binary`](https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/binary.py#:~:text=class%20Binary)
 
@@ -225,49 +453,50 @@ It can define one or more `BinProvider`s that it supports, along with overrides 
 
 `Binary`s implement the following interface:
 - `load()`, `install()`, `update()`, `uninstall()`, `load_or_install()` `->` `Binary`
-- `binprovider: InstanceOf[BinProvider]`
-- `abspath: Path`
-- `abspaths: list[Path]`
-- `version: SemVer`
-- `sha256: str`
+- `binproviders` / `binproviders_supported`
+- `binprovider` / `loaded_binprovider`
+- `abspath` / `loaded_abspath`
+- `abspaths` / `loaded_abspaths`
+- `version` / `loaded_version`
+- `sha256` / `loaded_sha256`
 
 `Binary.install()` and `Binary.update()` return a fresh loaded `Binary`.
 `Binary.uninstall()` returns a `Binary` with `binprovider`, `abspath`, `version`, and `sha256` cleared after removal.
 `Binary.load()`, `Binary.install()`, `Binary.load_or_install()`, and `Binary.update()` all enforce `min_version` consistently.
 
 ```python
-from abx_pkg import BinProvider, Binary, BinProviderName, BinName, ProviderLookupDict, SemVer, BrewProvider
+from pydantic import InstanceOf
+from abx_pkg import BinProvider, Binary, BinProviderName, BinName, HandlerDict, SemVer, BrewProvider
 from abx_pkg import env, pip, apt
 
 class CustomBrewProvider(BrewProvider):
-    name: str = 'custom_brew'
+    name: BinProviderName = 'custom_brew'
 
     def get_macos_packages(self, bin_name: str, **context) -> list[str]:
-        extra_packages_lookup_table = json.load(Path('macos_packages.json'))
-        return extra_packages_lookup_table.get(platform.machine(), [bin_name])
+        return ['yt-dlp'] if bin_name == 'ytdlp' else [bin_name]
 
-
-### Example: Create a reusable class defining a binary and its providers
+# Example: Create a reusable class defining a binary and its providers
 class YtdlpBinary(Binary):
     name: BinName = 'ytdlp'
     description: str = 'YT-DLP (Replacement for YouTube-DL) Media Downloader'
 
-    binproviders_supported: list[BinProvider] = [env, pip, apt, CustomBrewProvider()]
+    # use the real field name on subclasses; `binproviders` is the runtime alias
+    binproviders_supported: list[InstanceOf[BinProvider]] = [env, pip, apt, CustomBrewProvider()]
     
     # customize installed package names for specific package managers
-    overrides: dict[BinProviderName, ProviderLookupDict] = {
+    overrides: dict[BinProviderName, HandlerDict] = {
         'pip': {'install_args': ['yt-dlp[default,curl-cffi]']}, # can use literal values (install_args -> list[str], version -> SemVer, abspath -> Path, install -> str log)
         'apt': {'install_args': lambda: ['yt-dlp', 'ffmpeg']},  # also accepts any pure Callable that returns a list of packages
-        'brew': {'install_args': 'self.get_macos_packages'},    # also accepts string reference to function on self (where self is the BinProvider)
+        'custom_brew': {'install_args': 'self.get_macos_packages'},    # also accepts string reference to function on self (where self is the BinProvider)
     }
 
 
 ytdlp = YtdlpBinary().load_or_install()
-print(ytdlp.binprovider)                  # BrewProvider(...)
-print(ytdlp.abspath)                      # Path('/opt/homebrew/bin/yt-dlp')
-print(ytdlp.abspaths)                     # [Path('/opt/homebrew/bin/yt-dlp'), Path('/usr/local/bin/yt-dlp')]
-print(ytdlp.version)                      # SemVer('2024.4.9')
-print(ytdlp.sha256)                       # 46c3518cfa788090c42e379971485f56d007a6ce366dafb0556134ca724d6a36
+print(ytdlp.binprovider)                  # EnvProvider(...) / PipProvider(...) / AptProvider(...) / CustomBrewProvider(...)
+print(ytdlp.abspath)                      # Path(...)
+print(ytdlp.abspaths)                     # {'env': [Path(...)], 'custom_brew': [Path(...)]}
+print(ytdlp.version)                      # SemVer(...)
+print(ytdlp.sha256)                       # '<sha256>'
 print(ytdlp.is_valid)                     # True
 
 # Lifecycle actions preserve the Binary type and refresh/clear loaded metadata as needed
@@ -278,16 +507,20 @@ assert ytdlp.abspath is None and ytdlp.version is None
 ```
 
 ```python
-from abx_pkg import BinProvider, Binary, BinProviderName, BinName, ProviderLookupDict, SemVer
+import os
+import platform
+from pydantic import InstanceOf
+from abx_pkg import BinProvider, Binary, BinProviderName, BinName, HandlerDict, SemVer
 from abx_pkg import env, apt
 
-#### Example: Create a binary that uses Podman if available, or Docker otherwise
+# Example: Create a binary that uses Podman if available, or Docker otherwise
 class DockerBinary(Binary):
     name: BinName = 'docker'
 
-    binproviders_supported: list[BinProvider] = [env, apt]
+    # use the real field name on subclasses; `binproviders` is the runtime alias
+    binproviders_supported: list[InstanceOf[BinProvider]] = [env, apt]
     
-    overrides: dict[BinProviderName, ProviderLookupDict] = {
+    overrides: dict[BinProviderName, HandlerDict] = {
         'env': {
             # example: prefer podman if installed (falling back to docker)
             'abspath': lambda: os.which('podman') or os.which('docker') or os.which('docker-ce'),
@@ -303,19 +536,19 @@ class DockerBinary(Binary):
     }
 
 docker = DockerBinary().load_or_install()
-print(docker.binprovider)                 # EnvProvider()
-print(docker.abspath)                     # Path('/usr/local/bin/podman')
-print(docker.abspaths)                    # [Path('/usr/local/bin/podman'), Path('/opt/homebrew/bin/podman')]
-print(docker.version)                     # SemVer('6.0.2')
+print(docker.binprovider)                 # EnvProvider(...) / AptProvider(...)
+print(docker.abspath)                     # Path(...)
+print(docker.abspaths)                    # {'env': [Path(...)], ...}
+print(docker.version)                     # SemVer(...)
 print(docker.is_valid)                    # True
 
-# You can also pass **kwargs to override properties at runtime,
-# e.g. if you want to force the abspath to be at a specific path:
+# You can also seed loaded field values at construction time,
+# e.g. if you want to point at a specific existing binary path:
 custom_docker = DockerBinary(abspath='~/custom/bin/podman').load()
 print(custom_docker.name)                 # 'docker'
-print(custom_docker.binprovider)          # EnvProvider()
-print(custom_docker.abspath)              # Path('/Users/example/custom/bin/podman')
-print(custom_docker.version)              # SemVer('5.0.2')
+print(custom_docker.binprovider)          # EnvProvider(...) / AptProvider(...)
+print(custom_docker.abspath)              # Path(...)
+print(custom_docker.version)              # SemVer(...)
 print(custom_docker.is_valid)             # True
 ```
 
@@ -325,21 +558,45 @@ print(custom_docker.is_valid)             # True
 from abx_pkg import SemVer
 
 ### Example: Use the SemVer type directly for parsing & verifying version strings
-SemVer.parse('Google Chrome 124.0.6367.208+beta_234. 234.234.123')  # SemVer(124, 0, 6367')
-SemVer.parse('2024.04.05)                                           # SemVer(2024, 4, 5)
+SemVer.parse('Google Chrome 124.0.6367.208+beta_234. 234.234.123')  # SemVer(124, 0, 6367)
+SemVer.parse('2024.04.05')                                          # SemVer(2024, 4, 5)
 SemVer.parse('1.9+beta')                                            # SemVer(1, 9, 0)
 str(SemVer(1, 9, 0))                                                # '1.9.0'
 ```
 <br/>
 
 > These types are all meant to be used library-style to make writing your own apps easier.  
-> e.g. you can use it to build things like: [`playwright install --with-deps`](https://playwright.dev/docs/browsers#install-system-dependencies))
+> e.g. you can use it to build things like [`playwright install --with-deps`](https://playwright.dev/docs/browsers#install-system-dependencies).
 
 
 <br/>
 
 ---
 ---
+
+<br/>
+<br/>
+
+## Development
+
+`abx-pkg` uses `uv` for local development, dependency sync, linting, and tests.
+
+```bash
+# create/update the local env with dev deps
+uv sync --all-extras --all-groups
+
+# run formatting/lint/type checks
+uv run prek run --all-files
+
+# run the full test suite from tests/
+uv run pytest -sx tests/
+
+# build distributions
+uv build
+```
+
+- Tests now live under [`tests/`](./tests/).
+- Use `uv run pytest -sx tests/test_npmprovider.py` or a specific node like `uv run pytest -sx tests/test_npmprovider.py::TestNpmProvider::test_provider_dry_run_does_not_install_zx` when iterating on one provider.
 
 <br/>
 <br/>
@@ -364,21 +621,19 @@ With a few more packages, you get type-checked Django fields & forms that suppor
 pip install django-pydantic-field
 ```
 
-*Fore more info see the [`django-pydantic-field`](https://github.com/surenkov/django-pydantic-field) docs...*
+*For more info see the [`django-pydantic-field`](https://github.com/surenkov/django-pydantic-field) docs...*
 
 Example Django `models.py` showing how to store `Binary` and `BinProvider` instances in DB fields:
 ```python
-from typing import List
 from django.db import models
-from pydantic import InstanceOf
 from abx_pkg import BinProvider, Binary, SemVer
 from django_pydantic_field import SchemaField
 
-class Binary(models.Model):
-    name = models.CharField(max_length=63)
-    binary: Binary = SchemaField()
-    binproviders: list[InstanceOf[BinProvider]] = SchemaField(default=[])
-    version: SemVer = SchemaField(default=(0,0,1))
+class Dependency(models.Model):
+    label = models.CharField(max_length=63)
+    default_binprovider: BinProvider = SchemaField()
+    binaries: list[Binary] = SchemaField(default=[])
+    min_version: SemVer = SchemaField(default=(0, 0, 1))
 ```
 
 And here's how to save a `Binary` using the example model:
@@ -389,10 +644,10 @@ from abx_pkg import Binary, SemVer, env
 curl = Binary(name='curl').load()
 
 # save it to the DB using our new model
-obj = Binary(
-    name='curl',
-    binary=curl,                                  # store Binary/BinProvider/SemVer values directly in fields
-    binproviders=[env],                           # no need for manual JSON serialization / schema checking
+obj = Dependency(
+    label='runtime tools',
+    default_binprovider=env,                      # store BinProvider values directly
+    binaries=[curl],                              # store Binary/SemVer values directly
     min_version=SemVer('6.5.0'),
 )
 obj.save()
@@ -400,11 +655,11 @@ obj.save()
 
 When fetching it back from the DB, the `Binary` field is auto-deserialized / immediately usable:
 ```
-obj = Binary.objects.get(name='curl')    # everything is transparently serialized to/from the DB,
-                                                  # and is ready to go immediately after querying:
-assert obj.binary.abspath == curl.abspath
-print(obj.binary.abspath)                         #   Path('/usr/local/bin/curl')
-obj.binary.exec(['--version'])                    #   curl 7.81.0 (x86_64-apple-darwin23.0) libcurl/7.81.0 ...
+obj = Dependency.objects.get(label='runtime tools')    # everything is transparently serialized to/from the DB,
+                                                        # and is ready to go immediately after querying:
+assert obj.binaries[0].abspath == curl.abspath
+print(obj.binaries[0].abspath)                         #   Path('/usr/local/bin/curl')
+obj.binaries[0].exec(cmd=['--version'])               #   curl 7.81.0 (x86_64-apple-darwin23.0) libcurl/7.81.0 ...
 ```
 *For a full example see our provided [`django_example_project/`](https://github.com/ArchiveBox/abx-pkg/tree/main/django_example_project)...*
 
@@ -423,14 +678,14 @@ Then add this to your `settings.py`:
 ```python
 INSTALLED_APPS = [
     # ...
-    'admin_data_views'
-    'abx_pkg'
+    'admin_data_views',
+    'abx_pkg',
     # ...
 ]
 
 # point these to a function that gets the list of all binaries / a single binary
-ABX_PKG_GET_ALL_BINARIES = 'abx_pkg.views.get_all_binaries'
-ABX_PKG_GET_BINARY = 'abx_pkg.views.get_binary'
+ABX_PKG_GET_ALL_BINARIES = 'project.views.get_all_binaries'
+ABX_PKG_GET_BINARY = 'project.views.get_binary'
 
 ADMIN_DATA_VIEWS = {
     "NAME": "Environment",
@@ -558,39 +813,58 @@ logging.getLogger("abx_pkg").setLevel(logging.DEBUG)
 ### Advanced: Implement your own package manager behavior by subclassing BinProvider
 
 ```python
-from subprocess import run, PIPE
-
-from abx_pkg import BinProvider, BinProviderName, BinName, SemVer
+from pathlib import Path
+from abx_pkg import (
+    BinProvider,
+    BinProviderName,
+    BinName,
+    HostBinPath,
+    InstallArgs,
+    SemVer,
+    bin_abspath,
+    bin_version,
+)
 
 class CargoProvider(BinProvider):
     name: BinProviderName = 'cargo'
-    
-    def on_setup_paths(self):
-        if '~/.cargo/bin' not in sys.path:
-            sys.path.append('~/.cargo/bin')
+    INSTALLER_BIN: BinName = 'cargo'
+    PATH = str(Path.home() / '.cargo/bin')
 
-    def on_install(self, bin_name: BinName, **context):
-        install_args = self.on_get_install_args(bin_name)
-        installer_process = run(['cargo', 'install', *install_args.split(' ')], capture_output = True, text=True)
-        assert installer_process.returncode == 0
-
-    def on_get_install_args(self, bin_name: BinName, **context) -> InstallArgs:
-        # optionally remap bin_names to strings passed to installer 
-        # e.g. 'yt-dlp' -> ['yt-dlp, 'ffmpeg', 'libcffi', 'libaac']
+    def default_install_args_handler(self, bin_name: BinName, **context) -> InstallArgs:
         return [bin_name]
 
-    def on_get_abspath(self, bin_name: BinName, **context) -> Path | None:
-        self.on_setup_paths()
-        return Path(os.which(bin_name))
+    def default_install_handler(
+        self,
+        bin_name: BinName,
+        install_args: InstallArgs | None = None,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
+        timeout: int | None = None,
+    ) -> str:
+        install_args = install_args or self.get_install_args(bin_name)
+        installer = self.INSTALLER_BIN_ABSPATH
+        assert installer
+        proc = self.exec(installer, cmd=['install', *install_args], timeout=timeout)
+        assert proc.returncode == 0
+        return proc.stdout.strip() or proc.stderr.strip()
 
-    def on_get_version(self, bin_name: BinName, **context) -> SemVer | None:
-        self.on_setup_paths()
-        return SemVer(run([bin_name, '--version'], stdout=PIPE).stdout.decode())
+    def default_abspath_handler(self, bin_name: BinName, **context) -> HostBinPath | None:
+        return bin_abspath(bin_name, PATH=self.PATH)
+
+    def default_version_handler(
+        self,
+        bin_name: BinName,
+        abspath: HostBinPath | None = None,
+        timeout: int | None = None,
+        **context,
+    ) -> SemVer | None:
+        return self._version_from_exec(bin_name, abspath=abspath, timeout=timeout)
 
 cargo = CargoProvider()
 rg = cargo.install(bin_name='ripgrep')
-print(rg.binprovider)                   # CargoProvider()
-print(rg.version)                       # SemVer(14, 1, 0)
+print(rg.binprovider)                   # CargoProvider(...)
+print(rg.version)                       # SemVer(...)
 ```
 
 

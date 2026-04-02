@@ -93,9 +93,8 @@ jobs:
     - name: Run standard test suite
       run: |
         export PNPM_HOME="${RUNNER_TEMP}/pnpm"
-        source .venv/bin/activate
         export PATH="$PNPM_HOME:$PATH"
-        python tests.py
+        uv run pytest
 
   live-integration:
     runs-on: ${{ matrix.os }}
@@ -163,38 +162,36 @@ jobs:
       if: runner.os == 'macOS'
       run: |
         export PNPM_HOME="${RUNNER_TEMP}/pnpm"
-        source .venv/bin/activate
         export PATH="$PNPM_HOME:$PATH"
-        python -m unittest \
-          tests.LiveUpdateAndUninstallTest.test_brew_provider_live_update_and_uninstall \
-          tests.LiveUpdateAndUninstallTest.test_pip_provider_live_update_and_uninstall \
-          tests.LiveUpdateAndUninstallTest.test_npm_provider_live_update_and_uninstall \
-          tests.LiveUpdateAndUninstallTest.test_cargo_provider_live_update_and_uninstall \
-          tests.LiveUpdateAndUninstallTest.test_gem_provider_live_update_and_uninstall \
-          tests.LiveUpdateAndUninstallTest.test_go_get_provider_live_update_and_uninstall \
-          tests.LiveUpdateAndUninstallTest.test_nix_provider_live_update_and_uninstall \
-          tests.LiveUpdateAndUninstallTest.test_docker_provider_live_update_and_uninstall
+        uv run pytest \
+          tests/test_brewprovider.py::TestBrewProvider::test_live_update_and_uninstall \
+          tests/test_pipprovider.py::TestPipProvider::test_live_update_and_uninstall \
+          tests/test_npmprovider.py::TestNpmProvider::test_live_update_and_uninstall \
+          tests/test_cargoprovider.py::TestCargoProvider::test_live_update_and_uninstall \
+          tests/test_gemprovider.py::TestGemProvider::test_live_update_and_uninstall \
+          tests/test_gogetprovider.py::TestGoGetProvider::test_live_update_and_uninstall \
+          tests/test_nixprovider.py::TestNixProvider::test_live_update_and_uninstall \
+          tests/test_dockerprovider.py::TestDockerProvider::test_live_update_and_uninstall
 
     - name: Run non-root live package lifecycle tests on Linux
       if: runner.os == 'Linux'
       run: |
         export PNPM_HOME="${RUNNER_TEMP}/pnpm"
-        source .venv/bin/activate
         export PATH="$PNPM_HOME:$PATH"
-        python -m unittest \
-          tests.LiveUpdateAndUninstallTest.test_pip_provider_live_update_and_uninstall \
-          tests.LiveUpdateAndUninstallTest.test_npm_provider_live_update_and_uninstall \
-          tests.LiveUpdateAndUninstallTest.test_cargo_provider_live_update_and_uninstall \
-          tests.LiveUpdateAndUninstallTest.test_gem_provider_live_update_and_uninstall \
-          tests.LiveUpdateAndUninstallTest.test_go_get_provider_live_update_and_uninstall \
-          tests.LiveUpdateAndUninstallTest.test_nix_provider_live_update_and_uninstall \
-          tests.LiveUpdateAndUninstallTest.test_docker_provider_live_update_and_uninstall
+        uv run pytest \
+          tests/test_pipprovider.py::TestPipProvider::test_live_update_and_uninstall \
+          tests/test_npmprovider.py::TestNpmProvider::test_live_update_and_uninstall \
+          tests/test_cargoprovider.py::TestCargoProvider::test_live_update_and_uninstall \
+          tests/test_gemprovider.py::TestGemProvider::test_live_update_and_uninstall \
+          tests/test_gogetprovider.py::TestGoGetProvider::test_live_update_and_uninstall \
+          tests/test_nixprovider.py::TestNixProvider::test_live_update_and_uninstall \
+          tests/test_dockerprovider.py::TestDockerProvider::test_live_update_and_uninstall
 
     - name: Run root-required live package lifecycle tests on Linux
       if: runner.os == 'Linux'
       run: |
         export PNPM_HOME="${RUNNER_TEMP}/pnpm"
-        sudo env "PATH=$PNPM_HOME:$PATH:/nix/var/nix/profiles/default/bin" ./.venv/bin/python -m unittest \
-          tests.LiveUpdateAndUninstallTest.test_apt_provider_live_update_and_uninstall \
-          tests.LiveUpdateAndUninstallTest.test_pyinfra_provider_live_update_and_uninstall \
-          tests.LiveUpdateAndUninstallTest.test_ansible_provider_live_update_and_uninstall
+        sudo env "PATH=$PNPM_HOME:$PATH:/nix/var/nix/profiles/default/bin:$PATH" "$(command -v uv)" run pytest \
+          tests/test_aptprovider.py::TestAptProvider::test_live_update_and_uninstall \
+          tests/test_pyinfraprovider.py::TestPyinfraProvider::test_live_update_and_uninstall \
+          tests/test_ansibleprovider.py::TestAnsibleProvider::test_live_update_and_uninstall

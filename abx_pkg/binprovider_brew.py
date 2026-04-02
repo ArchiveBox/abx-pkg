@@ -6,8 +6,9 @@ import sys
 import time
 import platform
 from pathlib import Path
+from typing import ClassVar
 
-from pydantic import model_validator, TypeAdapter
+from pydantic import model_validator, TypeAdapter, computed_field
 
 from .base_types import (
     BinProviderName,
@@ -40,10 +41,21 @@ UPDATE_CHECK_INTERVAL = 60 * 60 * 24  # 1 day
 class BrewProvider(BinProvider):
     name: BinProviderName = "brew"
     INSTALLER_BIN: BinName = "brew"
+    INSTALL_ROOT_FIELD: ClassVar[str | None] = "brew_prefix"
 
     PATH: PATHStr = f"{DEFAULT_LINUX_DIR}:{NEW_MACOS_DIR}:{OLD_MACOS_DIR}"
 
     brew_prefix: Path = GUESSED_BREW_PREFIX
+
+    @computed_field
+    @property
+    def install_root(self) -> Path:
+        return self.brew_prefix
+
+    @computed_field
+    @property
+    def bin_dir(self) -> Path:
+        return self.brew_prefix / "bin"
 
     def supports_min_release_age(self, action) -> bool:
         return False
@@ -152,6 +164,7 @@ class BrewProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        timeout: int | None = None,
     ) -> str:
         global _LAST_UPDATE_CHECK
 
@@ -173,7 +186,7 @@ class BrewProvider(BinProvider):
 
         if PYINFRA_INSTALLED and postinstall_scripts:
             return pyinfra_package_install(
-                (bin_name,),
+                install_args,
                 installer_module="operations.brew.packages",
             )
 
@@ -182,7 +195,7 @@ class BrewProvider(BinProvider):
 
         if ANSIBLE_INSTALLED and postinstall_scripts:
             return ansible_package_install(
-                bin_name,
+                install_args,
                 installer_module="community.general.homebrew",
             )
 
@@ -193,16 +206,31 @@ class BrewProvider(BinProvider):
             or (time.time() - _LAST_UPDATE_CHECK) > UPDATE_CHECK_INTERVAL
         ):
             # only update if we haven't checked in the last day
-            self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=["update"])
+            self.exec(
+                bin_name=self.INSTALLER_BIN_ABSPATH,
+                cmd=["update"],
+                timeout=timeout,
+            )
             _LAST_UPDATE_CHECK = time.time()
 
         proc = self.exec(
             bin_name=self.INSTALLER_BIN_ABSPATH,
             cmd=[
                 "install",
-                *(["--skip-post-install"] if not postinstall_scripts else []),
+                *(
+                    ["--skip-post-install"]
+                    if (
+                        not postinstall_scripts
+                        and not self._args_have_option(
+                            install_args,
+                            "--skip-post-install",
+                        )
+                    )
+                    else []
+                ),
                 *install_args,
             ],
+            timeout=timeout,
         )
         if proc.returncode != 0:
             log_subprocess_error(
@@ -225,6 +253,7 @@ class BrewProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        timeout: int | None = None,
     ) -> str:
         global _LAST_UPDATE_CHECK
 
@@ -261,16 +290,31 @@ class BrewProvider(BinProvider):
             not _LAST_UPDATE_CHECK
             or (time.time() - _LAST_UPDATE_CHECK) > UPDATE_CHECK_INTERVAL
         ):
-            self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=["update"])
+            self.exec(
+                bin_name=self.INSTALLER_BIN_ABSPATH,
+                cmd=["update"],
+                timeout=timeout,
+            )
             _LAST_UPDATE_CHECK = time.time()
 
         proc = self.exec(
             bin_name=self.INSTALLER_BIN_ABSPATH,
             cmd=[
                 "upgrade",
-                *(["--skip-post-install"] if not postinstall_scripts else []),
+                *(
+                    ["--skip-post-install"]
+                    if (
+                        not postinstall_scripts
+                        and not self._args_have_option(
+                            install_args,
+                            "--skip-post-install",
+                        )
+                    )
+                    else []
+                ),
                 *install_args,
             ],
+            timeout=timeout,
         )
         if proc.returncode != 0:
             log_subprocess_error(
@@ -293,6 +337,7 @@ class BrewProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        timeout: int | None = None,
     ) -> bool:
         install_args = install_args or self.get_install_args(bin_name)
 
@@ -324,6 +369,7 @@ class BrewProvider(BinProvider):
         proc = self.exec(
             bin_name=self.INSTALLER_BIN_ABSPATH,
             cmd=["uninstall", *install_args],
+            timeout=timeout,
         )
         if proc.returncode != 0:
             log_subprocess_error(
@@ -415,6 +461,7 @@ class BrewProvider(BinProvider):
         self,
         bin_name: BinName,
         abspath: HostBinPath | None = None,
+        timeout: int | None = None,
         **context,
     ) -> SemVer | None:
         # print(f'[*] {self.__class__.__name__}: Getting version for {bin_name}...')
@@ -424,22 +471,19 @@ class BrewProvider(BinProvider):
             # /opt/homebrew/Cellar/curl/8.10.1/bin/curl -> 8.10.1
             version = str(abspath).rsplit(f"/bin/{bin_name}", 1)[0].rsplit("/", 1)[-1]
             if version:
-                try:
-                    parsed = SemVer.parse(version)
-                    if parsed:
-                        return parsed
-                except ValueError:
-                    pass
+                parsed_version = SemVer.parse(version)
+                if parsed_version:
+                    return parsed_version
 
         # fallback to running $ <bin_name> --version
         try:
-            version = super().default_version_handler(
+            version = self._version_from_exec(
                 bin_name,
                 abspath=abspath,
-                **context,
+                timeout=timeout,
             )
             if version:
-                return version if isinstance(version, SemVer) else SemVer.parse(version)
+                return version
         except ValueError:
             pass
 
@@ -457,7 +501,7 @@ class BrewProvider(BinProvider):
                             "--formulae",
                             package,
                         ],
-                        timeout=self.version_timeout,
+                        timeout=timeout,
                         quiet=True,
                     )
                     .stdout.strip()
@@ -475,7 +519,9 @@ class BrewProvider(BinProvider):
                     if len(path.parts) > cellar_idx + 2:
                         version = path.parts[cellar_idx + 2]
                         if version:
-                            return SemVer.parse(version)
+                            parsed_version = SemVer.parse(version)
+                            if parsed_version:
+                                return parsed_version
             except Exception:
                 pass
 
@@ -492,13 +538,13 @@ class BrewProvider(BinProvider):
                         main_package,
                     ],
                     quiet=True,
-                    timeout=self.version_timeout,
+                    timeout=timeout,
                 )
                 .stdout.strip()
                 .split("\n")[0]
             )
             # ==> curl: stable 8.10.1 (bottled), HEAD [keg-only]
-            return SemVer.parse(version_str)
+            return version_str
         except Exception:
             return None
 

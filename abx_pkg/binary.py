@@ -187,6 +187,11 @@ class Binary(ShallowBinary):
             for provider_name, bin_abspaths in self.loaded_abspaths.items()
         }
 
+    @property
+    def abspaths(self) -> dict[BinProviderName, list[HostBinPath]]:
+        """Backward-compatible read alias for loaded_abspaths."""
+        return self.loaded_abspaths
+
     @computed_field
     @property
     def python_name(self) -> str:

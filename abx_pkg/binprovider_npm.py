@@ -9,7 +9,7 @@ import tempfile
 import subprocess
 
 from pathlib import Path
-from typing import Self
+from typing import ClassVar, Self
 
 from pydantic import model_validator, TypeAdapter, computed_field
 from platformdirs import user_cache_path
@@ -49,6 +49,7 @@ except Exception:
 class NpmProvider(BinProvider):
     name: BinProviderName = "npm"
     INSTALLER_BIN: BinName = "npm"
+    INSTALL_ROOT_FIELD: ClassVar[str | None] = "npm_prefix"
 
     PATH: PATHStr = ""
 
@@ -86,6 +87,18 @@ class NpmProvider(BinProvider):
                 return False
 
         return bool(self.INSTALLER_BIN_ABSPATH)
+
+    @computed_field
+    @property
+    def install_root(self) -> Path | None:
+        return self.npm_prefix
+
+    @computed_field
+    @property
+    def bin_dir(self) -> Path | None:
+        return (
+            self.install_root / "node_modules" / ".bin" if self.install_root else None
+        )
 
     @computed_field
     @property
@@ -142,12 +155,12 @@ class NpmProvider(BinProvider):
 
     def _load_PATH(self) -> str:
         PATH = self.PATH
-        npm_bin_dirs: set[Path] = set()
         global _CACHED_GLOBAL_NPM_PREFIX
 
         if self.npm_prefix:
-            # restrict PATH to only use npm prefix
-            npm_bin_dirs = {self.npm_prefix / "node_modules/.bin"}
+            return self._merge_PATH(self.npm_prefix / "node_modules/.bin")
+
+        npm_bin_dirs: set[Path] = set()
 
         npm_abspath = self.INSTALLER_BIN_ABSPATH
         if npm_abspath:
@@ -187,10 +200,7 @@ class NpmProvider(BinProvider):
             _CACHED_GLOBAL_NPM_PREFIX = (Path(npm_abspath).name, npm_global_dir)
             npm_bin_dirs.add(npm_global_dir)
 
-        for bin_dir in npm_bin_dirs:
-            if str(bin_dir) not in PATH:
-                PATH = ":".join([*PATH.split(":"), str(bin_dir)])
-        return TypeAdapter(PATHStr).validate_python(PATH)
+        return self._merge_PATH(*sorted(npm_bin_dirs), PATH=PATH)
 
     def _write_pnpm_workspace_config(self, min_release_age: float = 7.0) -> None:
         """Write/update pnpm-workspace.yaml with minimumReleaseAge if pnpm is the backend.
@@ -257,6 +267,24 @@ class NpmProvider(BinProvider):
             )
 
         logger.debug("Wrote %s with minimumReleaseAge=%d", config_path, minutes)
+
+    def _coerce_min_release_age(
+        self,
+        min_release_age: float | None,
+        install_args: InstallArgs,
+    ) -> float:
+        explicit_min_release_age = self._get_option_value(
+            install_args,
+            "--min-release-age",
+        )
+        if explicit_min_release_age is None:
+            return 7.0 if min_release_age is None else min_release_age
+        try:
+            return float(explicit_min_release_age)
+        except ValueError as err:
+            raise ValueError(
+                f"{self.__class__.__name__} got invalid --min-release-age value: {explicit_min_release_age!r}",
+            ) from err
 
     def _npm(
         self,
@@ -330,13 +358,7 @@ class NpmProvider(BinProvider):
         if not self.PATH or not self._CACHED_LOCAL_NPM_PREFIX:
             self.PATH = self._load_PATH()
 
-        try:
-            self.cache_dir.mkdir(parents=True, exist_ok=True)
-            os.system(f'chown {self.EUID} "{self.cache_dir}"')
-            os.system(
-                f'chmod 777 "{self.cache_dir}"',
-            )  # allow all users to share cache dir
-        except Exception:
+        if not self._ensure_writable_cache_dir(self.cache_dir):
             self.cache_arg = "--no-cache"
 
         if self.npm_prefix:
@@ -350,6 +372,7 @@ class NpmProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        timeout: int | None = None,
     ) -> str:
         self.setup(
             postinstall_scripts=postinstall_scripts,
@@ -359,10 +382,9 @@ class NpmProvider(BinProvider):
         postinstall_scripts = (
             False if postinstall_scripts is None else postinstall_scripts
         )
-        min_release_age = 7.0 if min_release_age is None else min_release_age
-        self._write_pnpm_workspace_config(min_release_age=min_release_age)
-
         install_args = install_args or self.get_install_args(bin_name)
+        min_release_age = self._coerce_min_release_age(min_release_age, install_args)
+        self._write_pnpm_workspace_config(min_release_age=min_release_age)
         if not self.INSTALLER_BIN_ABSPATH:
             raise Exception(
                 f"{self.__class__.__name__} install method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
@@ -381,13 +403,25 @@ class NpmProvider(BinProvider):
             ]
 
         min_release_age_days = f"{min_release_age:g}"
+        explicit_npm_args = [*self.npm_install_args, self.cache_arg, *install_args]
         npm_cmd_args = [
             *self.npm_install_args,
             self.cache_arg,
-            *(["--ignore-scripts"] if not postinstall_scripts else []),
+            *(
+                ["--ignore-scripts"]
+                if (
+                    not postinstall_scripts
+                    and not self._args_have_option(
+                        explicit_npm_args,
+                        "--ignore-scripts",
+                    )
+                )
+                else []
+            ),
             *(
                 [f"--min-release-age={min_release_age_days}"]
                 if min_release_age > 0
+                and not self._args_have_option(explicit_npm_args, "--min-release-age")
                 else []
             ),
         ]
@@ -402,6 +436,7 @@ class NpmProvider(BinProvider):
                 *npm_cmd_args,
                 *install_args,
             ],
+            timeout=timeout,
         )
 
         if proc.returncode != 0:
@@ -425,6 +460,7 @@ class NpmProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        timeout: int | None = None,
     ) -> str:
         self.setup(
             postinstall_scripts=postinstall_scripts,
@@ -434,10 +470,9 @@ class NpmProvider(BinProvider):
         postinstall_scripts = (
             False if postinstall_scripts is None else postinstall_scripts
         )
-        min_release_age = 7.0 if min_release_age is None else min_release_age
-        self._write_pnpm_workspace_config(min_release_age=min_release_age)
-
         install_args = install_args or self.get_install_args(bin_name)
+        min_release_age = self._coerce_min_release_age(min_release_age, install_args)
+        self._write_pnpm_workspace_config(min_release_age=min_release_age)
         if not self.INSTALLER_BIN_ABSPATH:
             raise Exception(
                 f"{self.__class__.__name__} update method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
@@ -455,13 +490,28 @@ class NpmProvider(BinProvider):
             ]
 
         min_release_age_days = f"{min_release_age:g}"
+        explicit_update_args = [*self.npm_install_args, self.cache_arg, *install_args]
         update_args = [
             *self.npm_install_args,
             self.cache_arg,
-            *(["--ignore-scripts"] if not postinstall_scripts else []),
+            *(
+                ["--ignore-scripts"]
+                if (
+                    not postinstall_scripts
+                    and not self._args_have_option(
+                        explicit_update_args,
+                        "--ignore-scripts",
+                    )
+                )
+                else []
+            ),
             *(
                 [f"--min-release-age={min_release_age_days}"]
                 if min_release_age > 0
+                and not self._args_have_option(
+                    explicit_update_args,
+                    "--min-release-age",
+                )
                 else []
             ),
         ]
@@ -470,7 +520,10 @@ class NpmProvider(BinProvider):
         else:
             update_args.append("--global")
 
-        proc = self._npm(["update", *update_args, *install_args])
+        proc = self._npm(
+            ["update", *update_args, *install_args],
+            timeout=timeout,
+        )
 
         if proc.returncode != 0:
             log_subprocess_error(
@@ -493,29 +546,48 @@ class NpmProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        timeout: int | None = None,
     ) -> bool:
         postinstall_scripts = (
             False if postinstall_scripts is None else postinstall_scripts
         )
-        min_release_age = 7.0 if min_release_age is None else min_release_age
-        self._write_pnpm_workspace_config(min_release_age=min_release_age)
         install_args = install_args or self.get_install_args(bin_name)
+        min_release_age = self._coerce_min_release_age(min_release_age, install_args)
+        self._write_pnpm_workspace_config(min_release_age=min_release_age)
         if not self.INSTALLER_BIN_ABSPATH:
             raise Exception(
                 f"{self.__class__.__name__} uninstall method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
             )
 
+        explicit_uninstall_args = [
+            *self.npm_install_args,
+            self.cache_arg,
+            *install_args,
+        ]
         uninstall_args = [
             *self.npm_install_args,
             self.cache_arg,
-            *(["--ignore-scripts"] if not postinstall_scripts else []),
+            *(
+                ["--ignore-scripts"]
+                if (
+                    not postinstall_scripts
+                    and not self._args_have_option(
+                        explicit_uninstall_args,
+                        "--ignore-scripts",
+                    )
+                )
+                else []
+            ),
         ]
         if self.npm_prefix:
             uninstall_args.append(f"--prefix={self.npm_prefix}")
         else:
             uninstall_args.append("--global")
 
-        proc = self._npm(["uninstall", *uninstall_args, *install_args])
+        proc = self._npm(
+            ["uninstall", *uninstall_args, *install_args],
+            timeout=timeout,
+        )
 
         if proc.returncode != 0:
             log_subprocess_error(
@@ -586,13 +658,17 @@ class NpmProvider(BinProvider):
         self,
         bin_name: BinName,
         abspath: HostBinPath | None = None,
+        timeout: int | None = None,
         **context,
     ) -> SemVer | None:
-        # print(f'[*] {self.__class__.__name__}: Getting version for {bin_name}...')
         try:
-            version = super().default_version_handler(bin_name, abspath, **context)
+            version = self._version_from_exec(
+                bin_name,
+                abspath=abspath,
+                timeout=timeout,
+            )
             if version:
-                return SemVer.parse(version)
+                return version
         except ValueError:
             pass
 
@@ -626,7 +702,7 @@ class NpmProvider(BinProvider):
                     "--json",
                     package,
                 ],
-                timeout=self.version_timeout,
+                timeout=timeout,
                 quiet=True,
             ).stdout.strip()
             # {
@@ -641,8 +717,7 @@ class NpmProvider(BinProvider):
             package_listing = json.loads(json_output)
             if isinstance(package_listing, list):
                 package_listing = package_listing[0] if package_listing else {}
-            version_str = package_listing["dependencies"][package]["version"]
-            return SemVer.parse(version_str)
+            return package_listing["dependencies"][package]["version"]
         except Exception:
             pass
 
@@ -656,14 +731,14 @@ class NpmProvider(BinProvider):
             modules_dir = Path(
                 self._npm(
                     root_args,
-                    timeout=self.version_timeout,
+                    timeout=timeout,
                     quiet=True,
                 ).stdout.strip(),
             )
             version_str = json.loads(
                 (modules_dir / package / "package.json").read_text(),
             )["version"]
-            return SemVer.parse(version_str)
+            return version_str
         except Exception:
             raise
         return None

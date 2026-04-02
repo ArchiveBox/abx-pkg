@@ -26,7 +26,7 @@ def semver_to_str(semver: tuple[int, int, int] | str) -> str:
 
 
 SemVerTuple = namedtuple("SemVerTuple", ("major", "minor", "patch"), defaults=(0, 0, 0))
-SemVerParsableTypes = str | tuple[str | int, ...] | list[str | int]
+SemVerParsableTypes = bytes | str | tuple[str | int, ...] | list[str | int]
 
 
 class SemVer(SemVerTuple):
@@ -100,23 +100,20 @@ class SemVer(SemVerTuple):
                 )  # first 3 chunks can only be nums
             )
 
-        full_text = version_stdout.split("\n")[0].strip()
-        first_line_columns = full_text.split()[:5]
-        version_columns = list(
-            filter(contains_semver, map(just_numbers, first_line_columns)),
-        )
+        for line in (
+            line.strip() for line in version_stdout.splitlines()[:5] if line.strip()
+        ):
+            version_columns = list(
+                filter(contains_semver, map(just_numbers, line.split()[:5])),
+            )
+            if version_columns:
+                first_version_tuple = version_columns[0].split(".", 3)[:3]
+                return cls(
+                    *(int(chunk) for chunk in first_version_tuple),
+                    full_text=line,
+                )
 
-        # could not find any column of first line that looks like a version number, despite there being some text
-        if not version_columns:
-            # raise Exception('Failed to parse semver from version command output: {}'.format(' '.join(first_line_columns)))
-            return None
-
-        # take first col containing a semver, and truncate it to 3 chunks (e.g. 2024.04.09.91) -> (2024, 04, 09)
-        first_version_tuple = version_columns[0].split(".", 3)[:3]
-
-        # print('FINAL_VALUE', first_version_tuple)
-
-        return cls(*(int(chunk) for chunk in first_version_tuple), full_text=full_text)
+        return None
 
     def __str__(self):
         return ".".join(str(chunk) for chunk in self)

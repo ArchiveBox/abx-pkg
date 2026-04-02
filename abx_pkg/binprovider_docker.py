@@ -5,7 +5,7 @@ import os
 import json
 
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from pydantic import model_validator, TypeAdapter, computed_field
 from typing import Self
@@ -26,10 +26,13 @@ DEFAULT_DOCKER_ROOT = Path(
 class DockerProvider(BinProvider):
     name: BinProviderName = "docker"
     INSTALLER_BIN: BinName = "docker"
+    INSTALL_ROOT_FIELD: ClassVar[str | None] = "docker_root"
+    BIN_DIR_FIELD: ClassVar[str | None] = "docker_shim_dir"
 
     PATH: PATHStr = ""
 
-    docker_shim_dir: Path = DEFAULT_DOCKER_ROOT / "bin"
+    docker_root: Path | None = None
+    docker_shim_dir: Path | None = None
     docker_run_args: list[str] = ["--rm", "-i"]
 
     @computed_field
@@ -37,11 +40,25 @@ class DockerProvider(BinProvider):
     def is_valid(self) -> bool:
         return bool(self.INSTALLER_BIN_ABSPATH)
 
+    @computed_field
+    @property
+    def install_root(self) -> Path:
+        if self.docker_root:
+            return self.docker_root
+        if self.docker_shim_dir:
+            return self.docker_shim_dir.parent
+        return DEFAULT_DOCKER_ROOT
+
+    @computed_field
+    @property
+    def bin_dir(self) -> Path:
+        return self.docker_shim_dir or (self.install_root / "bin")
+
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
         if self.euid is None:
             self.euid = self.detect_euid(
-                owner_paths=(self.docker_shim_dir,),
+                owner_paths=(self.bin_dir,),
                 preserve_root=True,
             )
 
@@ -49,18 +66,15 @@ class DockerProvider(BinProvider):
 
     @model_validator(mode="after")
     def load_PATH_from_docker_shims(self) -> Self:
-        docker_bin_dir = str(self.bin_dir())
-        if docker_bin_dir not in self.PATH:
-            self.PATH = TypeAdapter(PATHStr).validate_python(
-                ":".join([*self.PATH.split(":"), docker_bin_dir]),
-            )
+        self.PATH = self._merge_PATH(
+            self.bin_dir,
+            PATH=self.PATH,
+            prepend=True,
+        )
         return self
 
-    def bin_dir(self) -> Path:
-        return self.docker_shim_dir
-
     def metadata_dir(self) -> Path:
-        return self.bin_dir().parent / "metadata"
+        return self.install_root / "metadata"
 
     def metadata_path(self, bin_name: str) -> Path:
         return self.metadata_dir() / f"{bin_name}.json"
@@ -72,7 +86,7 @@ class DockerProvider(BinProvider):
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
     ) -> None:
-        self.bin_dir().mkdir(parents=True, exist_ok=True)
+        self.bin_dir.mkdir(parents=True, exist_ok=True)
         self.metadata_dir().mkdir(parents=True, exist_ok=True)
 
     def default_install_args_handler(self, bin_name: BinName, **context) -> InstallArgs:
@@ -115,7 +129,7 @@ class DockerProvider(BinProvider):
         return json.loads(metadata_path.read_text(encoding="utf-8"))
 
     def _write_shim(self, bin_name: str, image_ref: str) -> Path:
-        wrapper_path = self.bin_dir() / bin_name
+        wrapper_path = self.bin_dir / bin_name
         docker_bin = self.INSTALLER_BIN_ABSPATH
         assert docker_bin, (
             f"{self.__class__.__name__}.INSTALLER_BIN is not available on this host"
@@ -144,6 +158,7 @@ class DockerProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        timeout: int | None = None,
     ) -> str:
         self.setup(
             postinstall_scripts=postinstall_scripts,
@@ -162,6 +177,7 @@ class DockerProvider(BinProvider):
             proc = self.exec(
                 bin_name=self.INSTALLER_BIN_ABSPATH,
                 cmd=["pull", image_ref],
+                timeout=timeout,
             )
             if proc.returncode != 0:
                 log_subprocess_error(
@@ -189,6 +205,7 @@ class DockerProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        timeout: int | None = None,
     ) -> str:
         return self.default_install_handler(
             bin_name=bin_name,
@@ -196,6 +213,7 @@ class DockerProvider(BinProvider):
             postinstall_scripts=postinstall_scripts,
             min_release_age=min_release_age,
             min_version=min_version,
+            timeout=timeout,
         )
 
     @remap_kwargs({"packages": "install_args"})
@@ -206,6 +224,7 @@ class DockerProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        timeout: int | None = None,
     ) -> bool:
         install_args = install_args or self.get_install_args(bin_name)
         if not self.INSTALLER_BIN_ABSPATH:
@@ -213,7 +232,7 @@ class DockerProvider(BinProvider):
                 f"{self.__class__.__name__} uninstall method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
             )
 
-        wrapper_path = self.bin_dir() / bin_name
+        wrapper_path = self.bin_dir / bin_name
         wrapper_path.unlink(missing_ok=True)
         self.metadata_path(bin_name).unlink(missing_ok=True)
 
@@ -223,6 +242,7 @@ class DockerProvider(BinProvider):
                 bin_name=self.INSTALLER_BIN_ABSPATH,
                 cmd=["image", "rm", "--force", image_ref],
                 quiet=True,
+                timeout=timeout,
             )
             if proc.returncode != 0 and image_ref == main_image:
                 log_subprocess_error(
@@ -242,7 +262,7 @@ class DockerProvider(BinProvider):
         bin_name: BinName | HostBinPath,
         **context,
     ) -> HostBinPath | None:
-        wrapper_path = self.bin_dir() / str(bin_name)
+        wrapper_path = self.bin_dir / str(bin_name)
         if wrapper_path.is_file() and os.access(wrapper_path, os.R_OK):
             return TypeAdapter(HostBinPath).validate_python(wrapper_path)
         abspath = super().default_abspath_handler(bin_name, **context)
@@ -254,11 +274,26 @@ class DockerProvider(BinProvider):
         self,
         bin_name: BinName,
         abspath: HostBinPath | None = None,
+        timeout: int | None = None,
         **context,
     ) -> SemVer | None:
         metadata = self._read_metadata(str(bin_name))
         if metadata:
-            version = SemVer.parse(metadata["tag"])
-            if version:
-                return version
-        return None
+            parsed_tag = SemVer.parse(str(metadata["tag"]))
+            if parsed_tag:
+                return parsed_tag
+
+        abspath = abspath or self.get_abspath(bin_name, quiet=True)
+        if not abspath:
+            return None
+
+        try:
+            version = super().default_version_handler(
+                bin_name,
+                abspath=abspath,
+                timeout=timeout,
+                **context,
+            )
+            return SemVer.parse(version) if version is not None else None
+        except ValueError:
+            return None

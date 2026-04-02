@@ -7,7 +7,7 @@ import shutil
 from pathlib import Path
 
 from pydantic import model_validator, TypeAdapter, computed_field
-from typing import Self
+from typing import ClassVar, Self
 
 from .base_types import (
     BinProviderName,
@@ -33,6 +33,7 @@ DEFAULT_NIX_BIN_DIR = Path("/nix/var/nix/profiles/default/bin")
 class NixProvider(BinProvider):
     name: BinProviderName = "nix"
     INSTALLER_BIN: BinName = "nix"
+    INSTALL_ROOT_FIELD: ClassVar[str | None] = "nix_profile"
 
     PATH: PATHStr = ""
 
@@ -71,6 +72,16 @@ class NixProvider(BinProvider):
 
         return bool(self.INSTALLER_BIN_ABSPATH)
 
+    @computed_field
+    @property
+    def install_root(self) -> Path:
+        return self.nix_profile
+
+    @computed_field
+    @property
+    def bin_dir(self) -> Path:
+        return self.nix_profile / "bin"
+
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
         if self.euid is None:
@@ -83,11 +94,11 @@ class NixProvider(BinProvider):
 
     @model_validator(mode="after")
     def load_PATH_from_nix_profile(self) -> Self:
-        profile_bin_dir = str(self.nix_profile / "bin")
-        if profile_bin_dir not in self.PATH:
-            self.PATH = TypeAdapter(PATHStr).validate_python(
-                ":".join([*self.PATH.split(":"), profile_bin_dir]),
-            )
+        self.PATH = self._merge_PATH(
+            self.nix_profile / "bin",
+            PATH=self.PATH,
+            prepend=True,
+        )
         return self
 
     def setup(
@@ -135,6 +146,7 @@ class NixProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        timeout: int | None = None,
     ) -> str:
         self.setup(
             postinstall_scripts=postinstall_scripts,
@@ -159,6 +171,7 @@ class NixProvider(BinProvider):
                 *install_args,
             ],
             env=self._nix_env(),
+            timeout=timeout,
         )
         if proc.returncode != 0:
             log_subprocess_error(
@@ -181,6 +194,7 @@ class NixProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        timeout: int | None = None,
     ) -> str:
         profile_element = self._profile_element_name(
             bin_name,
@@ -202,6 +216,7 @@ class NixProvider(BinProvider):
                 profile_element,
             ],
             env=self._nix_env(),
+            timeout=timeout,
         )
         if proc.returncode != 0:
             log_subprocess_error(
@@ -224,6 +239,7 @@ class NixProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        timeout: int | None = None,
     ) -> bool:
         profile_element = self._profile_element_name(
             bin_name,
@@ -245,6 +261,7 @@ class NixProvider(BinProvider):
                 profile_element,
             ],
             env=self._nix_env(),
+            timeout=timeout,
         )
         if proc.returncode not in (0, 1):
             log_subprocess_error(
@@ -257,10 +274,4 @@ class NixProvider(BinProvider):
                 f"{self.__class__.__name__}: uninstall got returncode {proc.returncode} while uninstalling {profile_element}",
             )
 
-        if self.nix_profile.is_symlink() or self.nix_profile.exists():
-            try:
-                self.nix_profile.unlink()
-            except OSError:
-                pass
-        (self.nix_profile / "bin").mkdir(parents=True, exist_ok=True)
         return True

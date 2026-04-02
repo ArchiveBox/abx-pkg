@@ -5,8 +5,8 @@ import os
 
 from pathlib import Path
 
-from pydantic import model_validator, TypeAdapter, computed_field
-from typing import Self
+from pydantic import model_validator, computed_field
+from typing import ClassVar, Self
 
 from .base_types import BinProviderName, PATHStr, BinName, InstallArgs
 from .semver import SemVer
@@ -22,6 +22,8 @@ DEFAULT_GEM_HOME = Path(os.environ.get("GEM_HOME", "~/.local/share/gem")).expand
 class GemProvider(BinProvider):
     name: BinProviderName = "gem"
     INSTALLER_BIN: BinName = "gem"
+    INSTALL_ROOT_FIELD: ClassVar[str | None] = "gem_home"
+    BIN_DIR_FIELD: ClassVar[str | None] = "gem_bindir"
 
     PATH: PATHStr = DEFAULT_ENV_PATH
 
@@ -39,6 +41,16 @@ class GemProvider(BinProvider):
 
         return bool(self.INSTALLER_BIN_ABSPATH)
 
+    @computed_field
+    @property
+    def install_root(self) -> Path:
+        return (self.gem_home or DEFAULT_GEM_HOME).expanduser()
+
+    @computed_field
+    @property
+    def bin_dir(self) -> Path:
+        return (self.gem_bindir or (self.install_root / "bin")).expanduser()
+
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
         if self.euid is None:
@@ -51,20 +63,11 @@ class GemProvider(BinProvider):
 
     @model_validator(mode="after")
     def load_PATH_from_gem_home(self) -> Self:
-        bindir = self._bindir()
         if self.gem_home or self.gem_bindir:
-            self.PATH = TypeAdapter(PATHStr).validate_python(str(bindir))
-        elif str(bindir) not in self.PATH:
-            self.PATH = TypeAdapter(PATHStr).validate_python(
-                ":".join([*self.PATH.split(":"), str(bindir)]),
-            )
+            self.PATH = self._merge_PATH(self.bin_dir)
+        else:
+            self.PATH = self._merge_PATH(self.bin_dir, PATH=self.PATH)
         return self
-
-    def _gem_home(self) -> Path:
-        return (self.gem_home or DEFAULT_GEM_HOME).expanduser()
-
-    def _bindir(self) -> Path:
-        return (self.gem_bindir or (self._gem_home() / "bin")).expanduser()
 
     def setup(
         self,
@@ -73,36 +76,36 @@ class GemProvider(BinProvider):
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
     ) -> None:
-        self._gem_home().mkdir(parents=True, exist_ok=True)
-        self._bindir().mkdir(parents=True, exist_ok=True)
+        self.install_root.mkdir(parents=True, exist_ok=True)
+        self.bin_dir.mkdir(parents=True, exist_ok=True)
 
     def _gem_install_args(self) -> list[str]:
         return [
             "--install-dir",
-            str(self._gem_home()),
+            str(self.install_root),
             "--bindir",
-            str(self._bindir()),
+            str(self.bin_dir),
             *self.gem_install_args,
         ]
 
     def _gem_scope_args(self) -> list[str]:
         return [
             "-i",
-            str(self._gem_home()),
+            str(self.install_root),
         ]
 
     def _gem_env(self) -> dict[str, str]:
         env = os.environ.copy()
-        gem_home = str(self._gem_home())
+        gem_home = str(self.install_root)
         env["GEM_HOME"] = gem_home
         env["GEM_PATH"] = gem_home
         return env
 
     def _patch_generated_wrappers(self) -> None:
-        gem_home = str(self._gem_home())
+        gem_home = str(self.install_root)
         gem_use_paths_line = f'Gem.use_paths("{gem_home}", ["{gem_home}"])'
 
-        for wrapper_path in self._bindir().iterdir():
+        for wrapper_path in self.bin_dir.iterdir():
             if not wrapper_path.is_file():
                 continue
 
@@ -137,6 +140,7 @@ class GemProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        timeout: int | None = None,
     ) -> str:
         self.setup(
             postinstall_scripts=postinstall_scripts,
@@ -150,12 +154,17 @@ class GemProvider(BinProvider):
                 f"{self.__class__.__name__} install method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
             )
 
-        version_args = ["--version", f">={min_version}"] if min_version else []
+        version_args = (
+            ["--version", f">={min_version}"]
+            if min_version and not self._args_have_option(install_args, "--version")
+            else []
+        )
 
         proc = self.exec(
             bin_name=self.INSTALLER_BIN_ABSPATH,
             cmd=["install", *self._gem_install_args(), *version_args, *install_args],
             env=self._gem_env(),
+            timeout=timeout,
         )
         if proc.returncode != 0:
             log_subprocess_error(
@@ -179,6 +188,7 @@ class GemProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        timeout: int | None = None,
     ) -> str:
         self.setup(
             postinstall_scripts=postinstall_scripts,
@@ -192,12 +202,17 @@ class GemProvider(BinProvider):
                 f"{self.__class__.__name__} update method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
             )
 
-        version_args = ["--version", f">={min_version}"] if min_version else []
+        version_args = (
+            ["--version", f">={min_version}"]
+            if min_version and not self._args_have_option(install_args, "--version")
+            else []
+        )
 
         proc = self.exec(
             bin_name=self.INSTALLER_BIN_ABSPATH,
             cmd=["update", *self._gem_install_args(), *version_args, *install_args],
             env=self._gem_env(),
+            timeout=timeout,
         )
         if proc.returncode != 0:
             log_subprocess_error(
@@ -221,6 +236,7 @@ class GemProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        timeout: int | None = None,
     ) -> bool:
         install_args = install_args or self.get_install_args(bin_name)
         if not self.INSTALLER_BIN_ABSPATH:
@@ -240,6 +256,7 @@ class GemProvider(BinProvider):
                 *install_args,
             ],
             env=self._gem_env(),
+            timeout=timeout,
         )
         if proc.returncode != 0 and "is not installed in GEM_HOME" not in proc.stderr:
             log_subprocess_error(
@@ -252,7 +269,7 @@ class GemProvider(BinProvider):
                 f"{self.__class__.__name__}: uninstall got returncode {proc.returncode} while uninstalling {install_args}: {install_args}",
             )
 
-        bindir = self._bindir()
+        bindir = self.bin_dir
         for install_arg in install_args:
             (bindir / install_arg).unlink(missing_ok=True)
         (bindir / bin_name).unlink(missing_ok=True)

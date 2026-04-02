@@ -5,8 +5,8 @@ import os
 
 from pathlib import Path
 
-from pydantic import model_validator, TypeAdapter, computed_field
-from typing import Self
+from pydantic import TypeAdapter, model_validator, computed_field
+from typing import ClassVar, Self
 
 from .base_types import BinProviderName, PATHStr, BinName, InstallArgs, HostBinPath
 from .semver import SemVer
@@ -20,8 +20,10 @@ DEFAULT_GOPATH = Path(os.environ.get("GOPATH", "~/go")).expanduser()
 
 
 class GoGetProvider(BinProvider):
-    name: BinProviderName = "go_get"
+    name: BinProviderName = "goget"
     INSTALLER_BIN: BinName = "go"
+    INSTALL_ROOT_FIELD: ClassVar[str | None] = "gopath"
+    BIN_DIR_FIELD: ClassVar[str | None] = "gobin"
 
     PATH: PATHStr = DEFAULT_ENV_PATH
 
@@ -37,6 +39,16 @@ class GoGetProvider(BinProvider):
 
         return bool(self.INSTALLER_BIN_ABSPATH)
 
+    @computed_field
+    @property
+    def install_root(self) -> Path:
+        return self.gopath
+
+    @computed_field
+    @property
+    def bin_dir(self) -> Path:
+        return (self.gobin or (self.install_root / "bin")).expanduser()
+
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
         if self.euid is None:
@@ -49,17 +61,11 @@ class GoGetProvider(BinProvider):
 
     @model_validator(mode="after")
     def load_PATH_from_go_env(self) -> Self:
-        bin_dir = self._gobin()
-        if self.gobin:
-            self.PATH = TypeAdapter(PATHStr).validate_python(str(bin_dir))
-        elif str(bin_dir) not in self.PATH:
-            self.PATH = TypeAdapter(PATHStr).validate_python(
-                ":".join([*self.PATH.split(":"), str(bin_dir)]),
-            )
+        if self.gobin or "gopath" in self.model_fields_set:
+            self.PATH = self._merge_PATH(self.bin_dir)
+        else:
+            self.PATH = self._merge_PATH(self.bin_dir, PATH=self.PATH)
         return self
-
-    def _gobin(self) -> Path:
-        return (self.gobin or (self.gopath / "bin")).expanduser()
 
     def setup(
         self,
@@ -68,16 +74,24 @@ class GoGetProvider(BinProvider):
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
     ) -> None:
-        self.gopath.mkdir(parents=True, exist_ok=True)
-        self._gobin().mkdir(parents=True, exist_ok=True)
+        self.install_root.mkdir(parents=True, exist_ok=True)
+        self.bin_dir.mkdir(parents=True, exist_ok=True)
 
     def _go_env(self) -> dict[str, str]:
         env = os.environ.copy()
-        env["GOPATH"] = str(self.gopath)
-        env["GOBIN"] = str(self._gobin())
+        env["GOPATH"] = str(self.install_root)
+        env["GOBIN"] = str(self.bin_dir)
         return env
 
     def default_install_args_handler(self, bin_name: BinName, **context) -> InstallArgs:
+        bin_name_str = str(bin_name)
+        if not (
+            bin_name_str.startswith(("./", "../"))
+            or ("/" in bin_name_str and "." in bin_name_str.split("/", 1)[0])
+        ):
+            raise ValueError(
+                f"{self.__class__.__name__} requires install_args with a full Go module path for {bin_name!r}, e.g. overrides={{'{bin_name}': {{'install_args': ['example.com/module/cmd/{bin_name}@latest']}}}}",
+            )
         return [f"{bin_name}@latest"]
 
     @remap_kwargs({"packages": "install_args"})
@@ -88,6 +102,7 @@ class GoGetProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        timeout: int | None = None,
     ) -> str:
         self.setup(
             postinstall_scripts=postinstall_scripts,
@@ -105,6 +120,7 @@ class GoGetProvider(BinProvider):
             bin_name=self.INSTALLER_BIN_ABSPATH,
             cmd=["install", *self.go_install_args, *install_args],
             env=self._go_env(),
+            timeout=timeout,
         )
         if proc.returncode != 0:
             log_subprocess_error(
@@ -127,6 +143,7 @@ class GoGetProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        timeout: int | None = None,
     ) -> str:
         return self.default_install_handler(
             bin_name=bin_name,
@@ -134,6 +151,7 @@ class GoGetProvider(BinProvider):
             postinstall_scripts=postinstall_scripts,
             min_release_age=min_release_age,
             min_version=min_version,
+            timeout=timeout,
         )
 
     @remap_kwargs({"packages": "install_args"})
@@ -144,6 +162,7 @@ class GoGetProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        timeout: int | None = None,
     ) -> bool:
         abspath = self.get_abspath(bin_name, quiet=True, nocache=True)
         if not abspath:
@@ -152,10 +171,38 @@ class GoGetProvider(BinProvider):
         Path(abspath).unlink(missing_ok=True)
         return True
 
+    def default_abspath_handler(
+        self,
+        bin_name: BinName | HostBinPath,
+        **context,
+    ) -> HostBinPath | None:
+        bin_name_str = str(bin_name)
+        abspath = super().default_abspath_handler(bin_name, **context)
+        if abspath:
+            return TypeAdapter(HostBinPath).validate_python(abspath)
+
+        install_args = list(
+            context.get("install_args") or self.get_install_args(bin_name_str),
+        )
+        install_target = install_args[0] if install_args else bin_name_str
+        candidate_name = (
+            Path(
+                str(install_target).split("@", 1)[0].rstrip("/"),
+            ).name
+            or bin_name_str
+        )
+        if candidate_name == bin_name_str:
+            return None
+        candidate_abspath = super().default_abspath_handler(candidate_name, **context)
+        if candidate_abspath is None:
+            return None
+        return TypeAdapter(HostBinPath).validate_python(candidate_abspath)
+
     def default_version_handler(
         self,
         bin_name: BinName,
         abspath: HostBinPath | None = None,
+        timeout: int | None = None,
         **context,
     ) -> SemVer | None:
         abspath = abspath or self.get_abspath(bin_name, quiet=True)
@@ -166,7 +213,7 @@ class GoGetProvider(BinProvider):
             bin_name=self.INSTALLER_BIN_ABSPATH,
             cmd=["version", "-m", abspath],
             env=self._go_env(),
-            timeout=self.version_timeout,
+            timeout=timeout,
             quiet=True,
         )
         if proc.returncode == 0:
@@ -174,9 +221,11 @@ class GoGetProvider(BinProvider):
                 if line.startswith("mod\t"):
                     parts = line.split("\t")
                     if len(parts) >= 3:
-                        version = SemVer.parse(parts[2].lstrip("v"))
-                        if version:
-                            return version
+                        return parts[2].lstrip("v")
 
-        version = super().default_version_handler(bin_name, abspath=abspath, **context)
-        return SemVer.parse(version) if version else None
+        version = self._version_from_exec(
+            bin_name,
+            abspath=abspath,
+            timeout=timeout,
+        )
+        return version

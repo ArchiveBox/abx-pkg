@@ -5,8 +5,8 @@ import os
 
 from pathlib import Path
 
-from pydantic import model_validator, TypeAdapter, computed_field
-from typing import Self
+from pydantic import model_validator, computed_field
+from typing import ClassVar, Self
 
 from .base_types import BinProviderName, PATHStr, BinName, InstallArgs
 from .semver import SemVer
@@ -22,6 +22,7 @@ DEFAULT_CARGO_HOME = Path(os.environ.get("CARGO_HOME", "~/.cargo")).expanduser()
 class CargoProvider(BinProvider):
     name: BinProviderName = "cargo"
     INSTALLER_BIN: BinName = "cargo"
+    INSTALL_ROOT_FIELD: ClassVar[str | None] = "cargo_root"
 
     PATH: PATHStr = ""
 
@@ -39,6 +40,16 @@ class CargoProvider(BinProvider):
 
         return bool(self.INSTALLER_BIN_ABSPATH)
 
+    @computed_field
+    @property
+    def install_root(self) -> Path:
+        return self.cargo_root or self.cargo_home
+
+    @computed_field
+    @property
+    def bin_dir(self) -> Path:
+        return self.install_root / "bin"
+
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
         if self.euid is None:
@@ -51,19 +62,10 @@ class CargoProvider(BinProvider):
 
     @model_validator(mode="after")
     def load_PATH_from_cargo_root(self) -> Self:
-        cargo_bin_dirs: list[str] = []
-
+        cargo_bin_dirs = [self.cargo_home / "bin"]
         if self.cargo_root:
-            cargo_bin_dirs.append(str(self.cargo_root / "bin"))
-
-        cargo_bin_dirs.append(str(self.cargo_home / "bin"))
-
-        PATH = self.PATH
-        for bin_dir in cargo_bin_dirs:
-            if bin_dir not in PATH:
-                PATH = ":".join([*PATH.split(":"), bin_dir])
-
-        self.PATH = TypeAdapter(PATHStr).validate_python(PATH)
+            cargo_bin_dirs.insert(0, self.cargo_root / "bin")
+        self.PATH = self._merge_PATH(*cargo_bin_dirs, PATH=self.PATH, prepend=True)
         return self
 
     def setup(
@@ -95,6 +97,46 @@ class CargoProvider(BinProvider):
             install_args.extend(["--root", str(self.cargo_root)])
         return install_args
 
+    def _cargo_package_specs(
+        self,
+        bin_name: str,
+        install_args: InstallArgs | None = None,
+    ) -> list[str]:
+        install_args = list(install_args or self.get_install_args(bin_name))
+        options_with_values = {
+            "--version",
+            "--git",
+            "--branch",
+            "--tag",
+            "--rev",
+            "--path",
+            "--root",
+            "--index",
+            "--registry",
+            "--bin",
+            "--example",
+            "--profile",
+            "--target",
+            "--target-dir",
+            "--config",
+            "-j",
+            "--jobs",
+            "-Z",
+        }
+        package_specs: list[str] = []
+        skip_next = False
+        for arg in install_args:
+            if skip_next:
+                skip_next = False
+                continue
+            if arg in options_with_values:
+                skip_next = True
+                continue
+            if arg.startswith("-"):
+                continue
+            package_specs.append(arg)
+        return package_specs or [bin_name]
+
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(
         self,
@@ -103,6 +145,7 @@ class CargoProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        timeout: int | None = None,
     ) -> str:
         self.setup(
             postinstall_scripts=postinstall_scripts,
@@ -116,12 +159,17 @@ class CargoProvider(BinProvider):
                 f"{self.__class__.__name__} install method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
             )
 
-        version_args = ["--version", f">={min_version}"] if min_version else []
+        version_args = (
+            ["--version", f">={min_version}"]
+            if min_version and not self._args_have_option(install_args, "--version")
+            else []
+        )
 
         proc = self.exec(
             bin_name=self.INSTALLER_BIN_ABSPATH,
             cmd=["install", *self._cargo_install_args(), *version_args, *install_args],
             env=self._cargo_env(),
+            timeout=timeout,
         )
         if proc.returncode != 0:
             log_subprocess_error(
@@ -144,6 +192,7 @@ class CargoProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        timeout: int | None = None,
     ) -> str:
         self.setup(
             postinstall_scripts=postinstall_scripts,
@@ -157,7 +206,11 @@ class CargoProvider(BinProvider):
                 f"{self.__class__.__name__} update method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
             )
 
-        version_args = ["--version", f">={min_version}"] if min_version else []
+        version_args = (
+            ["--version", f">={min_version}"]
+            if min_version and not self._args_have_option(install_args, "--version")
+            else []
+        )
 
         proc = self.exec(
             bin_name=self.INSTALLER_BIN_ABSPATH,
@@ -169,6 +222,7 @@ class CargoProvider(BinProvider):
                 *install_args,
             ],
             env=self._cargo_env(),
+            timeout=timeout,
         )
         if proc.returncode != 0:
             log_subprocess_error(
@@ -191,8 +245,13 @@ class CargoProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        timeout: int | None = None,
     ) -> bool:
         install_args = install_args or self.get_install_args(bin_name)
+        package_specs = self._cargo_package_specs(
+            bin_name,
+            install_args=install_args,
+        )
         if not self.INSTALLER_BIN_ABSPATH:
             raise Exception(
                 f"{self.__class__.__name__} uninstall method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
@@ -200,8 +259,13 @@ class CargoProvider(BinProvider):
 
         proc = self.exec(
             bin_name=self.INSTALLER_BIN_ABSPATH,
-            cmd=["uninstall", *self._cargo_install_args(), *install_args],
+            cmd=[
+                "uninstall",
+                *(["--root", str(self.cargo_root)] if self.cargo_root else []),
+                *package_specs,
+            ],
             env=self._cargo_env(),
+            timeout=timeout,
         )
         if proc.returncode != 0 and "did not match any packages" not in proc.stderr:
             log_subprocess_error(
@@ -211,7 +275,7 @@ class CargoProvider(BinProvider):
                 proc.stderr,
             )
             raise Exception(
-                f"{self.__class__.__name__}: uninstall got returncode {proc.returncode} while uninstalling {install_args}: {install_args}\n{format_subprocess_output(proc.stdout, proc.stderr)}".strip(),
+                f"{self.__class__.__name__}: uninstall got returncode {proc.returncode} while uninstalling {package_specs}: {package_specs}\n{format_subprocess_output(proc.stdout, proc.stderr)}".strip(),
             )
 
         return True

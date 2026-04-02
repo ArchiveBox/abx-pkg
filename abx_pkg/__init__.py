@@ -52,7 +52,7 @@ from .binprovider_apt import AptProvider
 from .binprovider_brew import BrewProvider
 from .binprovider_cargo import CargoProvider
 from .binprovider_gem import GemProvider
-from .binprovider_go_get import GoGetProvider
+from .binprovider_goget import GoGetProvider
 from .binprovider_nix import NixProvider
 from .binprovider_docker import DockerProvider
 from .binprovider_pip import PipProvider
