@@ -9,6 +9,7 @@ from pydantic import model_validator, TypeAdapter, computed_field
 from typing import Self
 
 from .base_types import BinProviderName, PATHStr, BinName, InstallArgs
+from .semver import SemVer
 from .binprovider import BinProvider, remap_kwargs
 from .logging import format_subprocess_output, get_logger, log_subprocess_error
 
@@ -65,7 +66,13 @@ class CargoProvider(BinProvider):
         self.PATH = TypeAdapter(PATHStr).validate_python(PATH)
         return self
 
-    def setup(self) -> None:
+    def setup(
+        self,
+        *,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
+    ) -> None:
         self.cargo_home.mkdir(parents=True, exist_ok=True)
         self._cargo_target_dir().mkdir(parents=True, exist_ok=True)
         if self.cargo_root:
@@ -93,9 +100,15 @@ class CargoProvider(BinProvider):
         self,
         bin_name: str,
         install_args: InstallArgs | None = None,
-        **context,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
     ) -> str:
-        self.setup()
+        self.setup(
+            postinstall_scripts=postinstall_scripts,
+            min_release_age=min_release_age,
+            min_version=min_version,
+        )
 
         install_args = install_args or self.get_install_args(bin_name)
         if not self.INSTALLER_BIN_ABSPATH:
@@ -103,7 +116,6 @@ class CargoProvider(BinProvider):
                 f"{self.__class__.__name__} install method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
             )
 
-        min_version = context.get("min_version")
         version_args = ["--version", f">={min_version}"] if min_version else []
 
         proc = self.exec(
@@ -129,9 +141,15 @@ class CargoProvider(BinProvider):
         self,
         bin_name: str,
         install_args: InstallArgs | None = None,
-        **context,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
     ) -> str:
-        self.setup()
+        self.setup(
+            postinstall_scripts=postinstall_scripts,
+            min_release_age=min_release_age,
+            min_version=min_version,
+        )
 
         install_args = install_args or self.get_install_args(bin_name)
         if not self.INSTALLER_BIN_ABSPATH:
@@ -139,7 +157,6 @@ class CargoProvider(BinProvider):
                 f"{self.__class__.__name__} update method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
             )
 
-        min_version = context.get("min_version")
         version_args = ["--version", f">={min_version}"] if min_version else []
 
         proc = self.exec(
@@ -171,7 +188,9 @@ class CargoProvider(BinProvider):
         self,
         bin_name: str,
         install_args: InstallArgs | None = None,
-        **context,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
     ) -> bool:
         install_args = install_args or self.get_install_args(bin_name)
         if not self.INSTALLER_BIN_ABSPATH:

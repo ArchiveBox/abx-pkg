@@ -13,7 +13,7 @@ import logging
 from io import StringIO
 from unittest import mock
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TypeGuard
 from types import SimpleNamespace
 
 # from rich import print
@@ -56,6 +56,12 @@ def real_bin_abspath(bin_name: str) -> Path:
     if not loaded.loaded_abspath:
         raise unittest.SkipTest(f"{bin_name} is not available on this host")
     return Path(loaded.loaded_abspath)
+
+
+def is_install_args_sequence(value: object) -> TypeGuard[InstallArgs]:
+    return isinstance(value, (tuple, list)) and all(
+        isinstance(item, str) for item in value
+    )
 
 
 class ListHandler(logging.Handler):
@@ -533,8 +539,8 @@ class TestBinProvider(unittest.TestCase):
             called_default_version_getter = False
             called_default_packages_getter = False
             called_custom_install_handler = False
-            received_legacy_install_packages = None
-            received_new_install_args = None
+            received_legacy_install_packages: InstallArgs | None = None
+            received_new_install_args: InstallArgs | None = None
 
         def custom_version_getter():
             return "1.2.3"
@@ -550,19 +556,43 @@ class TestBinProvider(unittest.TestCase):
         def legacy_install_handler(
             binprovider: BinProvider,
             bin_name: BinName,
-            **context,
-        ):
+            install_args: InstallArgs | None = None,
+            postinstall_scripts: bool | None = None,
+            min_release_age: float | None = None,
+            min_version: SemVer | None = None,
+            **context: object,
+        ) -> str:
+            del (
+                bin_name,
+                install_args,
+                postinstall_scripts,
+                min_release_age,
+                min_version,
+            )
             packages = context.get("packages")
+            assert packages is None or is_install_args_sequence(packages)
             TestRecord.called_custom_install_handler = True
             TestRecord.received_legacy_install_packages = packages
+            assert binprovider.__class__.__name__ == "CustomProvider"
             return "legacy install ok"
 
         def new_install_handler(
             binprovider: BinProvider,
             bin_name: BinName,
-            **context,
-        ):
-            install_args = context.get("install_args")
+            install_args: InstallArgs | None = None,
+            postinstall_scripts: bool | None = None,
+            min_release_age: float | None = None,
+            min_version: SemVer | None = None,
+            **context: object,
+        ) -> str:
+            del (
+                binprovider,
+                bin_name,
+                postinstall_scripts,
+                min_release_age,
+                min_version,
+                context,
+            )
             TestRecord.received_new_install_args = install_args
             return "new install ok"
 
@@ -681,7 +711,11 @@ class TestBinProvider(unittest.TestCase):
         # test install handler
         exc = None
         try:
-            provider.install("doesnotexist")
+            provider.install(
+                "doesnotexist",
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
         except Exception as err:
             exc = err
         self.assertIsInstance(exc, AssertionError)
@@ -690,8 +724,16 @@ class TestBinProvider(unittest.TestCase):
             in str(exc),
         )
 
-        provider.install("legacyinstall")
-        provider.install("newinstall")
+        provider.install(
+            "legacyinstall",
+            postinstall_scripts=True,
+            min_release_age=0,
+        )
+        provider.install(
+            "newinstall",
+            postinstall_scripts=True,
+            min_release_age=0,
+        )
         self.assertTrue(TestRecord.called_custom_install_handler)
         self.assertEqual(TestRecord.received_legacy_install_packages, ("legacy-pkg",))
         self.assertEqual(TestRecord.received_new_install_args, ("new-pkg",))
@@ -1011,6 +1053,51 @@ class TestBinProvider(unittest.TestCase):
         self.assertEqual(provider.euid, 0)
         self.assertEqual(provider.EUID, 0)
 
+    def test_providers_fail_closed_when_min_release_age_is_unsupported(self):
+        providers = [
+            BrewProvider(),
+            AptProvider(),
+            CargoProvider(cargo_root=Path("/tmp/cargo-root")),
+            GemProvider(
+                gem_home=Path("/tmp/gem-home"),
+                gem_bindir=Path("/tmp/gem-home/bin"),
+            ),
+            GoGetProvider(gobin=Path("/tmp/go/bin"), gopath=Path("/tmp/go")),
+            NixProvider(
+                nix_profile=Path("/tmp/nix/profile"),
+                nix_state_dir=Path("/tmp/nix/state"),
+            ),
+            DockerProvider(docker_shim_dir=Path("/tmp/docker-bin")),
+            PyinfraProvider(pyinfra_installer_module="operations.server.packages"),
+            AnsibleProvider(ansible_installer_module="ansible.builtin.package"),
+        ]
+
+        for provider in providers:
+            with self.assertRaisesRegex(RuntimeError, "min_release_age"):
+                provider.install("tool")
+
+    def test_providers_fail_closed_when_postinstall_disable_is_unsupported(self):
+        providers = [
+            AptProvider(),
+            CargoProvider(cargo_root=Path("/tmp/cargo-root")),
+            GemProvider(
+                gem_home=Path("/tmp/gem-home"),
+                gem_bindir=Path("/tmp/gem-home/bin"),
+            ),
+            GoGetProvider(gobin=Path("/tmp/go/bin"), gopath=Path("/tmp/go")),
+            NixProvider(
+                nix_profile=Path("/tmp/nix/profile"),
+                nix_state_dir=Path("/tmp/nix/state"),
+            ),
+            DockerProvider(docker_shim_dir=Path("/tmp/docker-bin")),
+            PyinfraProvider(pyinfra_installer_module="operations.server.packages"),
+            AnsibleProvider(ansible_installer_module="ansible.builtin.package"),
+        ]
+
+        for provider in providers:
+            with self.assertRaisesRegex(RuntimeError, "postinstall_scripts"):
+                provider.install("tool", min_release_age=0)
+
 
 class TestForwardRefs(unittest.TestCase):
     def test_subclass_without_overrides_import(self):
@@ -1089,6 +1176,13 @@ class TestBinary(unittest.TestCase):
 
         self.assertEqual(binary.min_version, SemVer("1.2.0"))
         self.assertTrue(binary.is_valid)
+
+    def test_binary_inherits_provider_security_defaults_when_unspecified(self):
+        provider = EnvProvider(postinstall_scripts=True, min_release_age=4)
+        binary = Binary(name="python", binproviders=[provider])
+
+        self.assertTrue(binary.postinstall_scripts)
+        self.assertEqual(binary.min_release_age, 4)
 
     def test_min_version_invalidates_lower_loaded_version(self):
         binary = Binary.model_validate(
@@ -1648,7 +1742,7 @@ class TestUpdateAndUninstall(unittest.TestCase):
             ),
             mock.patch.object(BrewProvider, "get_sha256", return_value="unknown"),
         ):
-            provider.update("python")
+            provider.update("python", min_release_age=0)
 
         self.assertEqual(mock_exec.call_args_list[0].kwargs["cmd"], ["update"])
         upgrade_cmd = mock_exec.call_args_list[1].kwargs["cmd"]
@@ -2162,7 +2256,7 @@ class TestUpdateAndUninstall(unittest.TestCase):
             ),
             mock.patch.object(CargoProvider, "get_sha256", return_value="unknown"),
         ):
-            provider.update("just")
+            provider.update("just", postinstall_scripts=True, min_release_age=0)
 
         self.assertEqual(
             mock_exec.call_args.kwargs["cmd"],
@@ -2227,7 +2321,7 @@ class TestUpdateAndUninstall(unittest.TestCase):
             ),
             mock.patch.object(GemProvider, "get_sha256", return_value="unknown"),
         ):
-            provider.update("lolcat")
+            provider.update("lolcat", postinstall_scripts=True, min_release_age=0)
 
         self.assertEqual(
             mock_exec.call_args.kwargs["cmd"],
@@ -2313,7 +2407,7 @@ class TestUpdateAndUninstall(unittest.TestCase):
             ),
             mock.patch.object(GoGetProvider, "get_sha256", return_value="unknown"),
         ):
-            provider.update("shfmt")
+            provider.update("shfmt", postinstall_scripts=True, min_release_age=0)
 
         self.assertEqual(mock_exec.call_args.kwargs["cmd"], ["install", "shfmt@latest"])
 
@@ -2373,7 +2467,7 @@ class TestUpdateAndUninstall(unittest.TestCase):
             ),
             mock.patch.object(NixProvider, "get_sha256", return_value="unknown"),
         ):
-            provider.update("hello")
+            provider.update("hello", postinstall_scripts=True, min_release_age=0)
 
         self.assertEqual(
             mock_exec.call_args.kwargs["cmd"],
@@ -2462,7 +2556,11 @@ class TestUpdateAndUninstall(unittest.TestCase):
             mock.patch.object(DockerProvider, "get_sha256", return_value="unknown"),
             mock.patch.object(DockerProvider, "_write_shim"),
         ):
-            provider.update("shellcheck")
+            provider.update(
+                "shellcheck",
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
 
         self.assertEqual(
             mock_exec.call_args.kwargs["cmd"],
@@ -2542,7 +2640,7 @@ class TestUpdateAndUninstall(unittest.TestCase):
             mock.patch.object(AptProvider, "get_sha256", return_value="unknown"),
         ):
             provider = AptProvider()
-            provider.update("python")
+            provider.update("python", postinstall_scripts=True, min_release_age=0)
 
         self.assertEqual(mock_exec.call_args_list[1].kwargs["cmd"], ["update", "-qq"])
         self.assertEqual(
@@ -2614,7 +2712,7 @@ class TestUpdateAndUninstall(unittest.TestCase):
             pyinfra_installer_module="operations.server.packages",
         )
 
-        provider.update("python")
+        provider.update("python", postinstall_scripts=True, min_release_age=0)
 
         mock_pyinfra_install.assert_called_once_with(
             pkg_names=("python",),
@@ -2667,7 +2765,7 @@ class TestUpdateAndUninstall(unittest.TestCase):
     ):
         provider = AnsibleProvider(ansible_installer_module="ansible.builtin.package")
 
-        provider.update("python")
+        provider.update("python", postinstall_scripts=True, min_release_age=0)
 
         mock_ansible_install.assert_called_once_with(
             pkg_names=("python",),
@@ -3011,7 +3109,8 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
         return Binary(
             name=binary.name,
             binproviders=binary.binproviders_supported,
-            min_release_age=0,
+            postinstall_scripts=binary.postinstall_scripts,
+            min_release_age=binary.min_release_age,
             overrides={
                 **binary.overrides,
                 provider_name: {
@@ -3144,6 +3243,7 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             binary = Binary(
                 name="choose",
                 binproviders=[provider],
+                postinstall_scripts=True,
                 min_release_age=0,
             )
             override_binary = self.make_override_binary(binary, ["choose"])
@@ -3162,6 +3262,7 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             binary = Binary(
                 name=gem_package,
                 binproviders=[provider],
+                postinstall_scripts=True,
                 min_release_age=0,
             )
             self.assert_binary_lifecycle(
@@ -3181,6 +3282,7 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             binary = Binary(
                 name="shfmt",
                 binproviders=[provider],
+                postinstall_scripts=True,
                 min_release_age=0,
                 overrides={
                     "go_get": {"install_args": ["mvdan.cc/sh/v3/cmd/shfmt@latest"]},
@@ -3200,6 +3302,7 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             binary = Binary(
                 name="jq",
                 binproviders=[provider],
+                postinstall_scripts=True,
                 min_release_age=0,
             )
             self.assert_binary_lifecycle(
@@ -3216,6 +3319,7 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             binary = Binary(
                 name="shellcheck",
                 binproviders=[provider],
+                postinstall_scripts=True,
                 min_release_age=0,
                 overrides={"docker": {"install_args": ["koalaman/shellcheck:v0.10.0"]}},
             )
@@ -3248,6 +3352,7 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             binary = Binary(
                 name=self.pick_missing_apt_package(),
                 binproviders=[provider],
+                postinstall_scripts=True,
                 min_release_age=0,
             )
         elif shutil.which("brew"):
@@ -3257,6 +3362,7 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             binary = Binary(
                 name=self.pick_missing_brew_formula(),
                 binproviders=[provider],
+                postinstall_scripts=True,
                 min_release_age=0,
             )
         else:
@@ -3277,6 +3383,7 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             binary = Binary(
                 name=self.pick_missing_apt_package(),
                 binproviders=[provider],
+                postinstall_scripts=True,
                 min_release_age=0,
             )
         elif shutil.which("brew"):
@@ -3286,6 +3393,7 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
             binary = Binary(
                 name=self.pick_missing_brew_formula(),
                 binproviders=[provider],
+                postinstall_scripts=True,
                 min_release_age=0,
             )
         else:
@@ -3305,6 +3413,7 @@ class LiveUpdateAndUninstallTest(unittest.TestCase):
         binary = Binary(
             name=self.pick_missing_apt_package(),
             binproviders=[provider],
+            postinstall_scripts=True,
             min_release_age=0,
         )
         self.assert_binary_lifecycle(binary)
@@ -3630,9 +3739,119 @@ class TestSecurityControls(unittest.TestCase):
             self.assertIsNotNone(installed.loaded_version)
             self.assertIsNotNone(installed.loaded_abspath)
 
+    def test_pip_provider_live_install_revalidates_min_version(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            provider = PipProvider(
+                pip_venv=Path(tmpdir) / "venv",
+                min_release_age=0,
+            ).get_provider_with_overrides(
+                overrides={"black": {"install_args": ["black==23.1.0"]}},
+            )
+
+            with self.assertRaises(ValueError):
+                provider.install("black", min_version=SemVer("24.0.0"))
+
+    def test_pip_provider_live_load_or_install_upgrades_below_min_version(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            venv_path = Path(tmpdir) / "venv"
+            old_provider = PipProvider(
+                pip_venv=venv_path,
+                min_release_age=0,
+            ).get_provider_with_overrides(
+                overrides={"black": {"install_args": ["black==23.1.0"]}},
+            )
+            old_installed = old_provider.install("black")
+            self.assertIsNotNone(old_installed)
+            assert old_installed is not None
+            self.assertTrue(old_installed.is_valid)
+            assert old_installed.loaded_version is not None
+            target_version = SemVer("24.0.0")
+            assert target_version is not None
+            self.assertLess(tuple(old_installed.loaded_version), tuple(target_version))
+
+            provider = PipProvider(pip_venv=venv_path, min_release_age=0)
+            upgraded = provider.load_or_install("black", min_version=SemVer("24.0.0"))
+
+            self.assertIsNotNone(upgraded)
+            assert upgraded is not None
+            self.assertTrue(upgraded.is_valid)
+            assert upgraded.loaded_version is not None
+            self.assertGreaterEqual(
+                tuple(upgraded.loaded_version),
+                tuple(target_version),
+            )
+
+    def test_pip_provider_default_min_release_age_applies_and_binary_override_wins(
+        self,
+    ):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            strict_provider = PipProvider(
+                pip_venv=Path(tmpdir) / "strict-venv",
+                min_release_age=36500,
+            )
+            with self.assertRaises(Exception):
+                strict_provider.install("black")
+
+            override_provider = PipProvider(
+                pip_venv=Path(tmpdir) / "override-venv",
+                min_release_age=36500,
+            )
+            binary = Binary(
+                name="black",
+                binproviders=[override_provider],
+                min_release_age=0,
+            )
+            installed = binary.install()
+
+            self.assertTrue(installed.is_valid)
+            self.assertEqual(binary.min_release_age, 0)
+
     # ------------------------------------------------------------------
     # Live integration: NpmProvider command includes security flags
     # ------------------------------------------------------------------
+
+    def test_npm_provider_default_postinstall_scripts_applies_and_binary_override_wins(
+        self,
+    ):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            strict_provider = NpmProvider(
+                npm_prefix=Path(tmpdir) / "strict-npm",
+                postinstall_scripts=False,
+                min_release_age=0,
+            )
+            strict_installed = strict_provider.install("gifsicle")
+            self.assertIsNotNone(strict_installed)
+            assert strict_installed is not None
+            self.assertTrue(strict_installed.is_valid)
+            assert strict_installed.loaded_abspath is not None
+            strict_proc = subprocess.run(
+                [str(strict_installed.loaded_abspath), "--version"],
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(strict_proc.returncode, 0)
+
+            override_provider = NpmProvider(
+                npm_prefix=Path(tmpdir) / "override-npm",
+                postinstall_scripts=False,
+                min_release_age=0,
+            )
+            binary = Binary(
+                name="gifsicle",
+                binproviders=[override_provider],
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+            installed = binary.install()
+
+            self.assertTrue(installed.is_valid)
+            assert installed.loaded_abspath is not None
+            proc = subprocess.run(
+                [str(installed.loaded_abspath), "--version"],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr or proc.stdout)
 
     @mock.patch("abx_pkg.binprovider_npm.NpmProvider._load_PATH", return_value="")
     def test_npm_install_command_includes_security_flags(self, _mock_load_path):

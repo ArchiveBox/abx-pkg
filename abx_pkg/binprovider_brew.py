@@ -45,6 +45,12 @@ class BrewProvider(BinProvider):
 
     brew_prefix: Path = GUESSED_BREW_PREFIX
 
+    def supports_min_release_age(self, action) -> bool:
+        return False
+
+    def supports_postinstall_disable(self, action) -> bool:
+        return action in ("install", "update")
+
     def _brew_prefixes(self) -> list[Path]:
         prefixes: list[Path] = []
         seen: set[str] = set()
@@ -143,7 +149,9 @@ class BrewProvider(BinProvider):
         self,
         bin_name: str,
         install_args: InstallArgs | None = None,
-        **context,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
     ) -> str:
         global _LAST_UPDATE_CHECK
 
@@ -159,7 +167,11 @@ class BrewProvider(BinProvider):
         # Attempt 1: Try installing with Pyinfra
         from .binprovider_pyinfra import PYINFRA_INSTALLED, pyinfra_package_install
 
-        if PYINFRA_INSTALLED:
+        postinstall_scripts = (
+            False if postinstall_scripts is None else postinstall_scripts
+        )
+
+        if PYINFRA_INSTALLED and postinstall_scripts:
             return pyinfra_package_install(
                 (bin_name,),
                 installer_module="operations.brew.packages",
@@ -168,7 +180,7 @@ class BrewProvider(BinProvider):
         # Attempt 2: Try installing with Ansible
         from .binprovider_ansible import ANSIBLE_INSTALLED, ansible_package_install
 
-        if ANSIBLE_INSTALLED:
+        if ANSIBLE_INSTALLED and postinstall_scripts:
             return ansible_package_install(
                 bin_name,
                 installer_module="community.general.homebrew",
@@ -184,7 +196,6 @@ class BrewProvider(BinProvider):
             self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=["update"])
             _LAST_UPDATE_CHECK = time.time()
 
-        postinstall_scripts = context.get("postinstall_scripts", False)
         proc = self.exec(
             bin_name=self.INSTALLER_BIN_ABSPATH,
             cmd=[
@@ -211,7 +222,9 @@ class BrewProvider(BinProvider):
         self,
         bin_name: str,
         install_args: InstallArgs | None = None,
-        **context,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
     ) -> str:
         global _LAST_UPDATE_CHECK
 
@@ -224,7 +237,11 @@ class BrewProvider(BinProvider):
 
         from .binprovider_pyinfra import PYINFRA_INSTALLED, pyinfra_package_install
 
-        if PYINFRA_INSTALLED:
+        postinstall_scripts = (
+            False if postinstall_scripts is None else postinstall_scripts
+        )
+
+        if PYINFRA_INSTALLED and postinstall_scripts:
             return pyinfra_package_install(
                 install_args,
                 installer_module="operations.brew.packages",
@@ -233,7 +250,7 @@ class BrewProvider(BinProvider):
 
         from .binprovider_ansible import ANSIBLE_INSTALLED, ansible_package_install
 
-        if ANSIBLE_INSTALLED:
+        if ANSIBLE_INSTALLED and postinstall_scripts:
             return ansible_package_install(
                 install_args,
                 installer_module="community.general.homebrew",
@@ -247,7 +264,6 @@ class BrewProvider(BinProvider):
             self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=["update"])
             _LAST_UPDATE_CHECK = time.time()
 
-        postinstall_scripts = context.get("postinstall_scripts", False)
         proc = self.exec(
             bin_name=self.INSTALLER_BIN_ABSPATH,
             cmd=[
@@ -274,7 +290,9 @@ class BrewProvider(BinProvider):
         self,
         bin_name: str,
         install_args: InstallArgs | None = None,
-        **context,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
     ) -> bool:
         install_args = install_args or self.get_install_args(bin_name)
 
@@ -344,7 +362,7 @@ class BrewProvider(BinProvider):
                     self.exec(
                         bin_name=self.INSTALLER_BIN_ABSPATH,
                         cmd=["list", "--formula", package],
-                        timeout=self._version_timeout,
+                        timeout=self.version_timeout,
                         quiet=True,
                     )
                     .stdout.strip()
@@ -368,7 +386,7 @@ class BrewProvider(BinProvider):
         #             'list',
         #             '--formulae',
         #             package,
-        #         ], timeout=self._version_timeout, quiet=True).stdout.strip().split('\n')
+        #         ], timeout=self.version_timeout, quiet=True).stdout.strip().split('\n')
         #         # /opt/homebrew/Cellar/curl/8.10.1/bin/curl
         #         # /opt/homebrew/Cellar/curl/8.10.1/bin/curl-config
         #         # /opt/homebrew/Cellar/curl/8.10.1/include/curl/ (12 files)
@@ -383,7 +401,7 @@ class BrewProvider(BinProvider):
         #             'info',
         #             '--quiet',
         #             package,
-        #         ], timeout=self._version_timeout, quiet=True).stdout.strip().split('\n')
+        #         ], timeout=self.version_timeout, quiet=True).stdout.strip().split('\n')
         #         # /opt/homebrew/Cellar/curl/8.10.0 (530 files, 4MB)
         #         cellar_path = [line for line in info_lines if '/Cellar/' in line][0].rsplit(' (', 1)[0]
         #         abspath = bin_abspath(bin_name, PATH=f'{cellar_path}/bin')
@@ -439,7 +457,7 @@ class BrewProvider(BinProvider):
                             "--formulae",
                             package,
                         ],
-                        timeout=self._version_timeout,
+                        timeout=self.version_timeout,
                         quiet=True,
                     )
                     .stdout.strip()
@@ -474,7 +492,7 @@ class BrewProvider(BinProvider):
                         main_package,
                     ],
                     quiet=True,
-                    timeout=self._version_timeout,
+                    timeout=self.version_timeout,
                 )
                 .stdout.strip()
                 .split("\n")[0]

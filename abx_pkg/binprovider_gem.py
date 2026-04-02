@@ -9,6 +9,7 @@ from pydantic import model_validator, TypeAdapter, computed_field
 from typing import Self
 
 from .base_types import BinProviderName, PATHStr, BinName, InstallArgs
+from .semver import SemVer
 from .binprovider import BinProvider, DEFAULT_ENV_PATH, remap_kwargs
 from .logging import get_logger, log_subprocess_error
 
@@ -65,7 +66,13 @@ class GemProvider(BinProvider):
     def _bindir(self) -> Path:
         return (self.gem_bindir or (self._gem_home() / "bin")).expanduser()
 
-    def setup(self) -> None:
+    def setup(
+        self,
+        *,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
+    ) -> None:
         self._gem_home().mkdir(parents=True, exist_ok=True)
         self._bindir().mkdir(parents=True, exist_ok=True)
 
@@ -127,9 +134,15 @@ class GemProvider(BinProvider):
         self,
         bin_name: str,
         install_args: InstallArgs | None = None,
-        **context,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
     ) -> str:
-        self.setup()
+        self.setup(
+            postinstall_scripts=postinstall_scripts,
+            min_release_age=min_release_age,
+            min_version=min_version,
+        )
 
         install_args = install_args or self.get_install_args(bin_name)
         if not self.INSTALLER_BIN_ABSPATH:
@@ -137,7 +150,6 @@ class GemProvider(BinProvider):
                 f"{self.__class__.__name__} install method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
             )
 
-        min_version = context.get("min_version")
         version_args = ["--version", f">={min_version}"] if min_version else []
 
         proc = self.exec(
@@ -164,9 +176,15 @@ class GemProvider(BinProvider):
         self,
         bin_name: str,
         install_args: InstallArgs | None = None,
-        **context,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
     ) -> str:
-        self.setup()
+        self.setup(
+            postinstall_scripts=postinstall_scripts,
+            min_release_age=min_release_age,
+            min_version=min_version,
+        )
 
         install_args = install_args or self.get_install_args(bin_name)
         if not self.INSTALLER_BIN_ABSPATH:
@@ -174,7 +192,6 @@ class GemProvider(BinProvider):
                 f"{self.__class__.__name__} update method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
             )
 
-        min_version = context.get("min_version")
         version_args = ["--version", f">={min_version}"] if min_version else []
 
         proc = self.exec(
@@ -201,7 +218,9 @@ class GemProvider(BinProvider):
         self,
         bin_name: str,
         install_args: InstallArgs | None = None,
-        **context,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
     ) -> bool:
         install_args = install_args or self.get_install_args(bin_name)
         if not self.INSTALLER_BIN_ABSPATH:

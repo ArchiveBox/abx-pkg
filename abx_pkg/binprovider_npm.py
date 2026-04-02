@@ -66,6 +66,12 @@ class NpmProvider(BinProvider):
 
     _CACHED_LOCAL_NPM_PREFIX: Path | None = None
 
+    def supports_min_release_age(self, action) -> bool:
+        return action in ("install", "update")
+
+    def supports_postinstall_disable(self, action) -> bool:
+        return action in ("install", "update")
+
     @computed_field
     @property
     def is_valid(self) -> bool:
@@ -313,7 +319,13 @@ class NpmProvider(BinProvider):
             env=env,
         )
 
-    def setup(self) -> None:
+    def setup(
+        self,
+        *,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
+    ) -> None:
         """create npm install prefix and node_modules_dir if needed"""
         if not self.PATH or not self._CACHED_LOCAL_NPM_PREFIX:
             self.PATH = self._load_PATH()
@@ -335,11 +347,19 @@ class NpmProvider(BinProvider):
         self,
         bin_name: str,
         install_args: InstallArgs | None = None,
-        **context,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
     ) -> str:
-        self.setup()
-        postinstall_scripts = context.get("postinstall_scripts", False)
-        min_release_age = context.get("min_release_age", 7.0)
+        self.setup(
+            postinstall_scripts=postinstall_scripts,
+            min_release_age=min_release_age,
+            min_version=min_version,
+        )
+        postinstall_scripts = (
+            False if postinstall_scripts is None else postinstall_scripts
+        )
+        min_release_age = 7.0 if min_release_age is None else min_release_age
         self._write_pnpm_workspace_config(min_release_age=min_release_age)
 
         install_args = install_args or self.get_install_args(bin_name)
@@ -348,7 +368,6 @@ class NpmProvider(BinProvider):
                 f"{self.__class__.__name__} install method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
             )
 
-        min_version = context.get("min_version")
         if min_version:
             # npm uses pkg@>=1.2.3 syntax for version constraints
             install_args = [
@@ -403,11 +422,19 @@ class NpmProvider(BinProvider):
         self,
         bin_name: str,
         install_args: InstallArgs | None = None,
-        **context,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
     ) -> str:
-        self.setup()
-        postinstall_scripts = context.get("postinstall_scripts", False)
-        min_release_age = context.get("min_release_age", 7.0)
+        self.setup(
+            postinstall_scripts=postinstall_scripts,
+            min_release_age=min_release_age,
+            min_version=min_version,
+        )
+        postinstall_scripts = (
+            False if postinstall_scripts is None else postinstall_scripts
+        )
+        min_release_age = 7.0 if min_release_age is None else min_release_age
         self._write_pnpm_workspace_config(min_release_age=min_release_age)
 
         install_args = install_args or self.get_install_args(bin_name)
@@ -416,7 +443,6 @@ class NpmProvider(BinProvider):
                 f"{self.__class__.__name__} update method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
             )
 
-        min_version = context.get("min_version")
         if min_version:
             install_args = [
                 f"{arg}@>={min_version}"
@@ -464,10 +490,14 @@ class NpmProvider(BinProvider):
         self,
         bin_name: str,
         install_args: InstallArgs | None = None,
-        **context,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
     ) -> bool:
-        postinstall_scripts = context.get("postinstall_scripts", False)
-        min_release_age = context.get("min_release_age", 7.0)
+        postinstall_scripts = (
+            False if postinstall_scripts is None else postinstall_scripts
+        )
+        min_release_age = 7.0 if min_release_age is None else min_release_age
         self._write_pnpm_workspace_config(min_release_age=min_release_age)
         install_args = install_args or self.get_install_args(bin_name)
         if not self.INSTALLER_BIN_ABSPATH:
@@ -527,7 +557,7 @@ class NpmProvider(BinProvider):
             package_info = json.loads(
                 self._npm(
                     ["show", "--json", main_package, "bin"],
-                    timeout=self._version_timeout,
+                    timeout=self.version_timeout,
                     quiet=True,
                 ).stdout.strip(),
             )
@@ -596,7 +626,7 @@ class NpmProvider(BinProvider):
                     "--json",
                     package,
                 ],
-                timeout=self._version_timeout,
+                timeout=self.version_timeout,
                 quiet=True,
             ).stdout.strip()
             # {
@@ -626,7 +656,7 @@ class NpmProvider(BinProvider):
             modules_dir = Path(
                 self._npm(
                     root_args,
-                    timeout=self._version_timeout,
+                    timeout=self.version_timeout,
                     quiet=True,
                 ).stdout.strip(),
             )

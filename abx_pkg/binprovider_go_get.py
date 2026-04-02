@@ -61,7 +61,13 @@ class GoGetProvider(BinProvider):
     def _gobin(self) -> Path:
         return (self.gobin or (self.gopath / "bin")).expanduser()
 
-    def setup(self) -> None:
+    def setup(
+        self,
+        *,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
+    ) -> None:
         self.gopath.mkdir(parents=True, exist_ok=True)
         self._gobin().mkdir(parents=True, exist_ok=True)
 
@@ -79,9 +85,15 @@ class GoGetProvider(BinProvider):
         self,
         bin_name: str,
         install_args: InstallArgs | None = None,
-        **context,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
     ) -> str:
-        self.setup()
+        self.setup(
+            postinstall_scripts=postinstall_scripts,
+            min_release_age=min_release_age,
+            min_version=min_version,
+        )
 
         install_args = install_args or self.get_install_args(bin_name)
         if not self.INSTALLER_BIN_ABSPATH:
@@ -112,12 +124,16 @@ class GoGetProvider(BinProvider):
         self,
         bin_name: str,
         install_args: InstallArgs | None = None,
-        **context,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
     ) -> str:
         return self.default_install_handler(
             bin_name=bin_name,
             install_args=install_args,
-            **context,
+            postinstall_scripts=postinstall_scripts,
+            min_release_age=min_release_age,
+            min_version=min_version,
         )
 
     @remap_kwargs({"packages": "install_args"})
@@ -125,7 +141,9 @@ class GoGetProvider(BinProvider):
         self,
         bin_name: str,
         install_args: InstallArgs | None = None,
-        **context,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
     ) -> bool:
         abspath = self.get_abspath(bin_name, quiet=True, nocache=True)
         if not abspath:
@@ -148,7 +166,7 @@ class GoGetProvider(BinProvider):
             bin_name=self.INSTALLER_BIN_ABSPATH,
             cmd=["version", "-m", abspath],
             env=self._go_env(),
-            timeout=self._version_timeout,
+            timeout=self.version_timeout,
             quiet=True,
         )
         if proc.returncode == 0:

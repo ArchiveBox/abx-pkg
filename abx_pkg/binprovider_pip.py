@@ -80,6 +80,12 @@ class PipProvider(BinProvider):
         None  # speed optimization only, faster to cache the abspath than to recompute it on every access
     )
 
+    def supports_min_release_age(self, action) -> bool:
+        return action in ("install", "update")
+
+    def supports_postinstall_disable(self, action) -> bool:
+        return action in ("install", "update")
+
     @computed_field
     @property
     def is_valid(self) -> bool:
@@ -205,8 +211,22 @@ class PipProvider(BinProvider):
         self.PATH = TypeAdapter(PATHStr).validate_python(PATH)
         return self
 
-    def setup(self):
+    def setup(
+        self,
+        *,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
+    ):
         """create pip venv dir if needed"""
+        postinstall_scripts = (
+            self.postinstall_scripts
+            if postinstall_scripts is None
+            else postinstall_scripts
+        )
+        min_release_age = (
+            self.min_release_age if min_release_age is None else min_release_age
+        )
         try:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
             os.system(
@@ -219,9 +239,18 @@ class PipProvider(BinProvider):
             self.cache_arg = "--no-cache-dir"
 
         if self.pip_venv:
-            self._pip_setup_venv(self.pip_venv)
+            self._pip_setup_venv(
+                self.pip_venv,
+                postinstall_scripts=postinstall_scripts,
+                min_release_age=min_release_age,
+            )
 
-    def _pip_setup_venv(self, pip_venv: Path):
+    def _pip_setup_venv(
+        self,
+        pip_venv: Path,
+        postinstall_scripts: bool = False,
+        min_release_age: float = 7.0,
+    ):
         pip_venv.parent.mkdir(parents=True, exist_ok=True)
 
         # create new venv in pip_venv if it doesn't exist
@@ -253,6 +282,8 @@ class PipProvider(BinProvider):
                     *self.pip_bootstrap_packages,
                 ],
                 quiet=True,
+                postinstall_scripts=postinstall_scripts,
+                min_release_age=min_release_age,
             )  # setuptools is not installed by default after python >= 3.12, and uv is needed for fast pip-compatible installs
             if proc.returncode != 0:
                 raise Exception(
@@ -363,13 +394,18 @@ class PipProvider(BinProvider):
         self,
         bin_name: str,
         install_args: InstallArgs | None = None,
-        **context,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
     ) -> str:
         if self.pip_venv:
-            self.setup()
+            self.setup(
+                postinstall_scripts=postinstall_scripts,
+                min_release_age=min_release_age,
+                min_version=min_version,
+            )
 
         install_args = install_args or self.get_install_args(bin_name)
-        min_version = context.get("min_version")
         if min_version:
             # append >=X.Y.Z to each package spec that doesn't already have a version constraint
             install_args = [
@@ -389,8 +425,10 @@ class PipProvider(BinProvider):
                 *self.pip_install_args,
                 *install_args,
             ],
-            postinstall_scripts=context.get("postinstall_scripts", False),
-            min_release_age=context.get("min_release_age", 7.0),
+            postinstall_scripts=False
+            if postinstall_scripts is None
+            else postinstall_scripts,
+            min_release_age=7.0 if min_release_age is None else min_release_age,
         )
 
         if proc.returncode != 0:
@@ -411,13 +449,18 @@ class PipProvider(BinProvider):
         self,
         bin_name: str,
         install_args: InstallArgs | None = None,
-        **context,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
     ) -> str:
         if self.pip_venv:
-            self.setup()
+            self.setup(
+                postinstall_scripts=postinstall_scripts,
+                min_release_age=min_release_age,
+                min_version=min_version,
+            )
 
         install_args = install_args or self.get_install_args(bin_name)
-        min_version = context.get("min_version")
         if min_version:
             install_args = [
                 f"{arg}>={min_version}"
@@ -437,8 +480,10 @@ class PipProvider(BinProvider):
                 "--upgrade",
                 *install_args,
             ],
-            postinstall_scripts=context.get("postinstall_scripts", False),
-            min_release_age=context.get("min_release_age", 7.0),
+            postinstall_scripts=False
+            if postinstall_scripts is None
+            else postinstall_scripts,
+            min_release_age=7.0 if min_release_age is None else min_release_age,
         )
 
         if proc.returncode != 0:
@@ -459,7 +504,9 @@ class PipProvider(BinProvider):
         self,
         bin_name: str,
         install_args: InstallArgs | None = None,
-        **context,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
     ) -> bool:
         install_args = install_args or self.get_install_args(bin_name)
 
@@ -503,7 +550,7 @@ class PipProvider(BinProvider):
             self._pip(
                 ["show", "--no-input", str(bin_name)],
                 quiet=False,
-                timeout=self._version_timeout,
+                timeout=self.version_timeout,
             )
             .stdout.strip()
             .split("\n")
@@ -546,7 +593,7 @@ class PipProvider(BinProvider):
             self._pip(
                 ["show", "--no-input", str(bin_name)],
                 quiet=False,
-                timeout=self._version_timeout,
+                timeout=self.version_timeout,
             )
             .stdout.strip()
             .split("\n")

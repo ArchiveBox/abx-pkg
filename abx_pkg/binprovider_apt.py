@@ -8,6 +8,7 @@ import shutil
 from pydantic import model_validator, TypeAdapter
 
 from .base_types import BinProviderName, PATHStr, BinName, InstallArgs
+from .semver import SemVer
 from .binprovider import BinProvider, remap_kwargs
 from .logging import format_subprocess_output, get_logger, log_subprocess_error
 
@@ -52,7 +53,9 @@ class AptProvider(BinProvider):
         self,
         bin_name: BinName,
         install_args: InstallArgs | None = None,
-        **context,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
     ) -> str:
         global _LAST_UPDATE_CHECK
 
@@ -115,7 +118,9 @@ class AptProvider(BinProvider):
         self,
         bin_name: BinName,
         install_args: InstallArgs | None = None,
-        **context,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
     ) -> str:
         global _LAST_UPDATE_CHECK
 
@@ -180,7 +185,9 @@ class AptProvider(BinProvider):
         self,
         bin_name: BinName,
         install_args: InstallArgs | None = None,
-        **context,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
     ) -> bool:
         install_args = install_args or self.get_install_args(bin_name)
 

@@ -1,6 +1,5 @@
 __package__ = "abx_pkg"
 
-import os
 from typing import Any
 from typing import Self
 
@@ -17,7 +16,13 @@ from pydantic import (
 
 from .semver import SemVer
 from .shallowbinary import ShallowBinary
-from .binprovider import BinProvider, EnvProvider, BinaryOverrides, env_flag_is_true
+from .binprovider import (
+    BinProvider,
+    EnvProvider,
+    BinaryOverrides,
+    env_flag_is_true,
+    default_min_release_age,
+)
 from .logging import format_exception_with_output, get_logger, log_method_call
 from .exceptions import (
     BinaryInstallError,
@@ -69,14 +74,7 @@ class Binary(ShallowBinary):
         ),
     )
     min_release_age: float = Field(
-        default_factory=lambda: (
-            float(v)
-            if (v := os.getenv("ABX_PKG_MIN_RELEASE_AGE", "7"))
-            .replace(".", "", 1)
-            .lstrip("-")
-            .isdigit()
-            else 7.0
-        ),
+        default_factory=default_min_release_age,
         description=(
             "Minimum days since publication before a package can be installed. "
             "Defaults to ABX_PKG_MIN_RELEASE_AGE env var (7 if unset). "
@@ -106,6 +104,24 @@ class Binary(ShallowBinary):
                     **overrides_for_bin,
                     **self.overrides.get(binprovider.name, {}),
                 }
+
+        explicit_fields = self.model_fields_set
+        if "postinstall_scripts" not in explicit_fields:
+            provider_values = [
+                provider.postinstall_scripts for provider in self.binproviders_supported
+            ]
+            if provider_values and all(
+                value == provider_values[0] for value in provider_values
+            ):
+                self.postinstall_scripts = provider_values[0]
+        if "min_release_age" not in explicit_fields:
+            provider_values = [
+                provider.min_release_age for provider in self.binproviders_supported
+            ]
+            if provider_values and all(
+                value == provider_values[0] for value in provider_values
+            ):
+                self.min_release_age = provider_values[0]
         return self
 
     @field_validator("loaded_abspath", mode="before")

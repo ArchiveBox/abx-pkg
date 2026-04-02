@@ -17,6 +17,7 @@ from .base_types import (
     HostBinPath,
     bin_abspath,
 )
+from .semver import SemVer
 from .binprovider import BinProvider, DEFAULT_ENV_PATH, remap_kwargs
 from .logging import get_logger, log_subprocess_error
 
@@ -89,7 +90,13 @@ class NixProvider(BinProvider):
             )
         return self
 
-    def setup(self) -> None:
+    def setup(
+        self,
+        *,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
+    ) -> None:
         self.nix_profile.parent.mkdir(parents=True, exist_ok=True)
         if (
             self.nix_profile.exists()
@@ -125,9 +132,15 @@ class NixProvider(BinProvider):
         self,
         bin_name: str,
         install_args: InstallArgs | None = None,
-        **context,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
     ) -> str:
-        self.setup()
+        self.setup(
+            postinstall_scripts=postinstall_scripts,
+            min_release_age=min_release_age,
+            min_version=min_version,
+        )
 
         install_args = install_args or self.get_install_args(bin_name)
         if not self.INSTALLER_BIN_ABSPATH:
@@ -165,7 +178,9 @@ class NixProvider(BinProvider):
         self,
         bin_name: str,
         install_args: InstallArgs | None = None,
-        **context,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
     ) -> str:
         profile_element = self._profile_element_name(
             bin_name,
@@ -206,7 +221,9 @@ class NixProvider(BinProvider):
         self,
         bin_name: str,
         install_args: InstallArgs | None = None,
-        **context,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
     ) -> bool:
         profile_element = self._profile_element_name(
             bin_name,

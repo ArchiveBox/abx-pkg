@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from .base_types import BinProviderName, PATHStr, BinName, InstallArgs
+from .semver import SemVer
 from .binprovider import BinProvider, OPERATING_SYSTEM, DEFAULT_PATH, remap_kwargs
 
 
@@ -190,7 +191,9 @@ class AnsibleProvider(BinProvider):
         self,
         bin_name: str,
         install_args: InstallArgs | None = None,
-        **context,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
     ) -> str:
         install_args = install_args or self.get_install_args(bin_name)
 
@@ -214,7 +217,9 @@ class AnsibleProvider(BinProvider):
         self,
         bin_name: str,
         install_args: InstallArgs | None = None,
-        **context,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
     ) -> str:
         install_args = install_args or self.get_install_args(bin_name)
 
@@ -246,7 +251,9 @@ class AnsibleProvider(BinProvider):
         self,
         bin_name: str,
         install_args: InstallArgs | None = None,
-        **context,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
     ) -> bool:
         install_args = install_args or self.get_install_args(bin_name)
 

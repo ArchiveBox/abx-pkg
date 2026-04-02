@@ -91,6 +91,11 @@ def env_flag_is_true(name: str) -> bool:
     return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def default_min_release_age() -> float:
+    value = os.getenv("ABX_PKG_MIN_RELEASE_AGE", "7")
+    return float(value) if value.replace(".", "", 1).lstrip("-").isdigit() else 7.0
+
+
 ################## SUPPLY-CHAIN SECURITY HELPERS ######################
 
 
@@ -312,6 +317,14 @@ class BinProvider(BaseModel):
     INSTALLER_BIN: BinName = "env"
 
     euid: int | None = None
+    postinstall_scripts: bool = Field(
+        default_factory=lambda: env_flag_is_true("ABX_PKG_POSTINSTALL_SCRIPTS"),
+        repr=False,
+    )
+    min_release_age: float = Field(
+        default_factory=default_min_release_age,
+        repr=False,
+    )
 
     overrides: "BinProviderOverrides" = Field(
         default_factory=lambda: {
@@ -329,8 +342,8 @@ class BinProvider(BaseModel):
     )
 
     _dry_run: bool = False
-    _install_timeout: int = 120
-    _version_timeout: int = 10
+    install_timeout: int = Field(default=120, repr=False)
+    version_timeout: int = Field(default=10, repr=False)
     _cache: dict[str, dict[str, Any]] | None = None
     _INSTALLER_BIN_ABSPATH: HostBinPath | None = (
         None  # speed optimization only, faster to cache the abspath than to recompute it on every access
@@ -509,8 +522,12 @@ class BinProvider(BaseModel):
 
         # extra overrides that are also configurable, can add more in the future as-needed for tunable options
         updated_binprovider._dry_run = dry_run
-        updated_binprovider._install_timeout = install_timeout or self._install_timeout
-        updated_binprovider._version_timeout = version_timeout or self._version_timeout
+        updated_binprovider.install_timeout = (
+            self.install_timeout if install_timeout is None else install_timeout
+        )
+        updated_binprovider.version_timeout = (
+            self.version_timeout if version_timeout is None else version_timeout
+        )
 
         # overrides = {
         #     'wget': {
@@ -682,7 +699,7 @@ class BinProvider(BaseModel):
         dash_dash_version_result = self.exec(
             bin_name=abspath,
             cmd=["--version"],
-            timeout=self._version_timeout,
+            timeout=self.version_timeout,
             quiet=True,
         )
         dash_dash_version_out = (
@@ -702,7 +719,7 @@ class BinProvider(BaseModel):
         dash_version_result = self.exec(
             bin_name=abspath,
             cmd=["-version"],
-            timeout=self._version_timeout,
+            timeout=self.version_timeout,
             quiet=True,
         )
         dash_version_out = (
@@ -721,7 +738,7 @@ class BinProvider(BaseModel):
         dash_v_result = self.exec(
             bin_name=abspath,
             cmd=["-v"],
-            timeout=self._version_timeout,
+            timeout=self.version_timeout,
             quiet=True,
         )
         dash_v_out = dash_v_result.stdout.strip() or dash_v_result.stderr.strip()
@@ -761,9 +778,15 @@ class BinProvider(BaseModel):
         self,
         bin_name: BinName,
         install_args: InstallArgs | None = None,
-        **context,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
     ) -> "InstallFuncReturnValue":  # aka str
-        self.setup()
+        self.setup(
+            postinstall_scripts=postinstall_scripts,
+            min_release_age=min_release_age,
+            min_version=min_version,
+        )
         install_args = install_args or self.get_install_args(bin_name)
         self._require_installer_bin("install")
 
@@ -771,7 +794,7 @@ class BinProvider(BaseModel):
 
         # ... override the default install logic here ...
 
-        # proc = self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=['install', *install_args], timeout=self._install_timeout)
+        # proc = self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=['install', *install_args], timeout=self.install_timeout)
         # if not proc.returncode == 0:
         #     print(proc.stdout.strip())
         #     print(proc.stderr.strip())
@@ -785,7 +808,9 @@ class BinProvider(BaseModel):
         self,
         bin_name: BinName,
         install_args: InstallArgs | None = None,
-        **context,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
     ) -> "ActionFuncReturnValue":
         self._require_installer_bin("update")
         return f"{self.name} BinProvider does not implement any update method"
@@ -796,7 +821,9 @@ class BinProvider(BaseModel):
         self,
         bin_name: BinName,
         install_args: InstallArgs | None = None,
-        **context,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
     ) -> "ActionFuncReturnValue":
         self._require_installer_bin("uninstall")
         return False
@@ -1079,9 +1106,53 @@ class BinProvider(BaseModel):
         return self.get_install_args(bin_name, quiet=quiet, nocache=nocache)
 
     @log_method_call()
-    def setup(self) -> None:
+    def setup(
+        self,
+        *,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
+    ) -> None:
         """Override this to do any setup steps needed before installing packaged (e.g. create a venv, init an npm prefix, etc.)"""
         pass
+
+    def supports_min_release_age(self, action: Literal["install", "update"]) -> bool:
+        return False
+
+    def supports_postinstall_disable(
+        self,
+        action: Literal["install", "update"],
+    ) -> bool:
+        return False
+
+    def _assert_security_constraints_supported(
+        self,
+        action: Literal["install", "update"],
+        *,
+        postinstall_scripts: bool,
+        min_release_age: float,
+    ) -> None:
+        if min_release_age > 0 and not self.supports_min_release_age(action):
+            raise RuntimeError(
+                f"{self.__class__.__name__}.{action} cannot enforce min_release_age={min_release_age} for provider {self.name}",
+            )
+        if not postinstall_scripts and not self.supports_postinstall_disable(action):
+            raise RuntimeError(
+                f"{self.__class__.__name__}.{action} cannot disable postinstall_scripts for provider {self.name}",
+            )
+
+    def _assert_min_version_satisfied(
+        self,
+        *,
+        bin_name: BinName,
+        action: Literal["install", "update"],
+        loaded_version: SemVer | None,
+        min_version: SemVer | None,
+    ) -> None:
+        if min_version and loaded_version and loaded_version < min_version:
+            raise ValueError(
+                f"{self.__class__.__name__}.{action} resolved {bin_name} with version {loaded_version} which does not satisfy min_version {min_version}",
+            )
 
     @final
     @log_method_call(include_result=True)
@@ -1091,11 +1162,28 @@ class BinProvider(BaseModel):
         bin_name: BinName,
         quiet: bool = False,
         nocache: bool = False,
-        postinstall_scripts: bool = False,
-        min_release_age: float = 7.0,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
         min_version: SemVer | None = None,
     ) -> ShallowBinary | None:
-        self.setup()
+        postinstall_scripts = (
+            self.postinstall_scripts
+            if postinstall_scripts is None
+            else postinstall_scripts
+        )
+        min_release_age = (
+            self.min_release_age if min_release_age is None else min_release_age
+        )
+        self._assert_security_constraints_supported(
+            "install",
+            postinstall_scripts=postinstall_scripts,
+            min_release_age=min_release_age,
+        )
+        self.setup(
+            postinstall_scripts=postinstall_scripts,
+            min_release_age=min_release_age,
+            min_version=min_version,
+        )
 
         install_args = self.get_install_args(bin_name, quiet=quiet, nocache=nocache)
         logger.info(
@@ -1157,6 +1245,12 @@ class BinProvider(BaseModel):
             assert installed_version, (
                 f"{self.__class__.__name__} Unable to find version for {bin_name} after installing. ABSPATH={installed_abspath} LOG={install_log}"
             )
+        self._assert_min_version_satisfied(
+            bin_name=bin_name,
+            action="install",
+            loaded_version=installed_version,
+            min_version=min_version,
+        )
 
         sha256 = (
             self.get_sha256(bin_name, abspath=installed_abspath, nocache=nocache)
@@ -1194,11 +1288,28 @@ class BinProvider(BaseModel):
         bin_name: BinName,
         quiet: bool = False,
         nocache: bool = False,
-        postinstall_scripts: bool = False,
-        min_release_age: float = 7.0,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
         min_version: SemVer | None = None,
     ) -> ShallowBinary | None:
-        self.setup()
+        postinstall_scripts = (
+            self.postinstall_scripts
+            if postinstall_scripts is None
+            else postinstall_scripts
+        )
+        min_release_age = (
+            self.min_release_age if min_release_age is None else min_release_age
+        )
+        self._assert_security_constraints_supported(
+            "update",
+            postinstall_scripts=postinstall_scripts,
+            min_release_age=min_release_age,
+        )
+        self.setup(
+            postinstall_scripts=postinstall_scripts,
+            min_release_age=min_release_age,
+            min_version=min_version,
+        )
 
         install_args = self.get_install_args(bin_name, quiet=quiet, nocache=nocache)
         logger.info(
@@ -1258,6 +1369,12 @@ class BinProvider(BaseModel):
             assert updated_version, (
                 f"{self.__class__.__name__} Unable to find version for {bin_name} after updating. ABSPATH={updated_abspath} LOG={update_log}"
             )
+        self._assert_min_version_satisfied(
+            bin_name=bin_name,
+            action="update",
+            loaded_version=updated_version,
+            min_version=min_version,
+        )
 
         sha256 = (
             self.get_sha256(bin_name, abspath=updated_abspath, nocache=True)
@@ -1289,10 +1406,18 @@ class BinProvider(BaseModel):
         bin_name: BinName,
         quiet: bool = False,
         nocache: bool = False,
-        postinstall_scripts: bool = False,
-        min_release_age: float = 7.0,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
         min_version: SemVer | None = None,
     ) -> bool:
+        postinstall_scripts = (
+            self.postinstall_scripts
+            if postinstall_scripts is None
+            else postinstall_scripts
+        )
+        min_release_age = (
+            self.min_release_age if min_release_age is None else min_release_age
+        )
         install_args = self.get_install_args(bin_name, quiet=quiet, nocache=nocache)
         logger.info(
             "Uninstalling %s via provider %s with args %s",
@@ -1380,15 +1505,37 @@ class BinProvider(BaseModel):
         bin_name: BinName,
         quiet: bool = False,
         nocache: bool = False,
-        postinstall_scripts: bool = False,
-        min_release_age: float = 7.0,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
         min_version: SemVer | None = None,
     ) -> ShallowBinary | None:
+        postinstall_scripts = (
+            self.postinstall_scripts
+            if postinstall_scripts is None
+            else postinstall_scripts
+        )
+        min_release_age = (
+            self.min_release_age if min_release_age is None else min_release_age
+        )
         logger.info("Loading or installing %s via provider %s", bin_name, self.name)
         try:
             installed = self.load(bin_name=bin_name, quiet=True, nocache=nocache)
         except Exception:
             installed = None
+        if (
+            installed is not None
+            and min_version is not None
+            and installed.loaded_version is not None
+            and installed.loaded_version < min_version
+        ):
+            installed = self.update(
+                bin_name=bin_name,
+                quiet=quiet,
+                nocache=nocache,
+                postinstall_scripts=postinstall_scripts,
+                min_release_age=min_release_age,
+                min_version=min_version,
+            )
         if not installed:
             installed = self.install(
                 bin_name=bin_name,
@@ -1421,13 +1568,24 @@ class EnvProvider(BinProvider):
         },
     }
 
+    def supports_min_release_age(self, action: Literal["install", "update"]) -> bool:
+        return True
+
+    def supports_postinstall_disable(
+        self,
+        action: Literal["install", "update"],
+    ) -> bool:
+        return True
+
     @remap_kwargs({"packages": "install_args"})
     @log_method_call(include_result=True)
     def install_noop(
         self,
         bin_name: BinName,
         install_args: InstallArgs | None = None,
-        **context,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
     ) -> str:
         """The env BinProvider is ready-only and does not install any packages, so this is a no-op"""
         return "env is ready-only and just checks for existing binaries in $PATH"
@@ -1438,7 +1596,9 @@ class EnvProvider(BinProvider):
         self,
         bin_name: BinName,
         install_args: InstallArgs | None = None,
-        **context,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
     ) -> str:
         return "env is read-only and just checks for existing binaries in $PATH"
 
@@ -1448,7 +1608,9 @@ class EnvProvider(BinProvider):
         self,
         bin_name: BinName,
         install_args: InstallArgs | None = None,
-        **context,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
     ) -> bool:
         return False
 
@@ -1512,7 +1674,11 @@ class InstallFuncWithArgs(Protocol):
         _self,
         binprovider: "BinProvider",
         bin_name: BinName,
-        **context,
+        install_args: InstallArgs | None = None,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
+        **context: Any,
     ) -> "InstallFuncReturnValue": ...
 
 
@@ -1522,7 +1688,11 @@ class ActionFuncWithArgs(Protocol):
         _self,
         binprovider: "BinProvider",
         bin_name: BinName,
-        **context,
+        install_args: InstallArgs | None = None,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
+        **context: Any,
     ) -> "ActionFuncReturnValue": ...
 
 
