@@ -74,22 +74,23 @@ ALL_PROVIDERS = [
     AnsibleProvider,
     PyinfraProvider,
 ]
+
+
+def _provider_class(provider: type[BinProvider] | BinProvider) -> type[BinProvider]:
+    return provider if isinstance(provider, type) else type(provider)
+
+
 ALL_PROVIDER_NAMES = [
-    (provider if isinstance(provider, type) else type(provider))
-    .model_fields["name"]
-    .default
-    for provider in ALL_PROVIDERS
+    _provider_class(provider).model_fields["name"].default for provider in ALL_PROVIDERS
 ]  # pip, apt, brew, etc.
 ALL_PROVIDER_CLASS_NAMES = [
-    provider.__name__ for provider in ALL_PROVIDERS
+    _provider_class(provider).__name__ for provider in ALL_PROVIDERS
 ]  # PipProvider, AptProvider, BrewProvider, etc.
 
 # Lazy provider singletons: maps provider name -> class
 # e.g. 'apt' -> AptProvider, 'pip' -> PipProvider, 'env' -> EnvProvider
 _PROVIDER_CLASS_BY_NAME = {
-    (provider if isinstance(provider, type) else type(provider))
-    .model_fields["name"]
-    .default: provider
+    _provider_class(provider).model_fields["name"].default: _provider_class(provider)
     for provider in ALL_PROVIDERS
 }
 _provider_singletons: dict = {}
