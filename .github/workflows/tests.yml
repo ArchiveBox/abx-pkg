@@ -101,7 +101,27 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        os: [ubuntu-latest, macOS-latest]
+        include:
+        - os: ubuntu-latest
+          setup_docker: true
+          live_test_args: >-
+            tests/test_pipprovider.py::TestPipProvider::test_provider_direct_methods_exercise_real_lifecycle
+            tests/test_npmprovider.py::TestNpmProvider::test_provider_direct_methods_exercise_real_lifecycle
+            tests/test_cargoprovider.py::TestCargoProvider::test_provider_direct_methods_exercise_real_lifecycle
+            tests/test_gemprovider.py::TestGemProvider::test_provider_direct_methods_exercise_real_lifecycle
+            tests/test_gogetprovider.py::TestGoGetProvider::test_provider_direct_methods_exercise_real_lifecycle
+            tests/test_nixprovider.py::TestNixProvider::test_provider_direct_methods_exercise_real_lifecycle
+            tests/test_dockerprovider.py::TestDockerProvider::test_provider_direct_methods_exercise_real_lifecycle
+        - os: macOS-latest
+          setup_docker: false
+          live_test_args: >-
+            tests/test_brewprovider.py::TestBrewProvider::test_provider_direct_methods_exercise_real_lifecycle
+            tests/test_pipprovider.py::TestPipProvider::test_provider_direct_methods_exercise_real_lifecycle
+            tests/test_npmprovider.py::TestNpmProvider::test_provider_direct_methods_exercise_real_lifecycle
+            tests/test_cargoprovider.py::TestCargoProvider::test_provider_direct_methods_exercise_real_lifecycle
+            tests/test_gemprovider.py::TestGemProvider::test_provider_direct_methods_exercise_real_lifecycle
+            tests/test_gogetprovider.py::TestGoGetProvider::test_provider_direct_methods_exercise_real_lifecycle
+            tests/test_nixprovider.py::TestNixProvider::test_provider_direct_methods_exercise_real_lifecycle
 
     steps:
     - uses: actions/checkout@v6
@@ -131,7 +151,7 @@ jobs:
       uses: DeterminateSystems/nix-installer-action@v22
 
     - name: Setup Docker on macOS
-      if: runner.os == 'macOS'
+      if: matrix.setup_docker
       uses: docker/setup-docker-action@v5.0.0
       env:
         LIMA_START_ARGS: --vm-type=vz
@@ -153,39 +173,16 @@ jobs:
         echo "/nix/var/nix/profiles/default/bin" >> "$GITHUB_PATH"
 
     - name: Inspect Docker on macOS
-      if: runner.os == 'macOS'
+      if: matrix.setup_docker
       run: |
         docker version \
         && docker info
 
-    - name: Run non-root live package lifecycle tests on macOS
-      if: runner.os == 'macOS'
+    - name: Run non-root live package lifecycle tests
       run: |
         export PNPM_HOME="${RUNNER_TEMP}/pnpm"
         export PATH="$PNPM_HOME:$PATH"
-        uv run pytest \
-          tests/test_brewprovider.py::TestBrewProvider::test_provider_direct_methods_exercise_real_lifecycle \
-          tests/test_pipprovider.py::TestPipProvider::test_provider_direct_methods_exercise_real_lifecycle \
-          tests/test_npmprovider.py::TestNpmProvider::test_provider_direct_methods_exercise_real_lifecycle \
-          tests/test_cargoprovider.py::TestCargoProvider::test_provider_direct_methods_exercise_real_lifecycle \
-          tests/test_gemprovider.py::TestGemProvider::test_provider_direct_methods_exercise_real_lifecycle \
-          tests/test_gogetprovider.py::TestGoGetProvider::test_provider_direct_methods_exercise_real_lifecycle \
-          tests/test_nixprovider.py::TestNixProvider::test_provider_direct_methods_exercise_real_lifecycle \
-          tests/test_dockerprovider.py::TestDockerProvider::test_provider_direct_methods_exercise_real_lifecycle
-
-    - name: Run non-root live package lifecycle tests on Linux
-      if: runner.os == 'Linux'
-      run: |
-        export PNPM_HOME="${RUNNER_TEMP}/pnpm"
-        export PATH="$PNPM_HOME:$PATH"
-        uv run pytest \
-          tests/test_pipprovider.py::TestPipProvider::test_provider_direct_methods_exercise_real_lifecycle \
-          tests/test_npmprovider.py::TestNpmProvider::test_provider_direct_methods_exercise_real_lifecycle \
-          tests/test_cargoprovider.py::TestCargoProvider::test_provider_direct_methods_exercise_real_lifecycle \
-          tests/test_gemprovider.py::TestGemProvider::test_provider_direct_methods_exercise_real_lifecycle \
-          tests/test_gogetprovider.py::TestGoGetProvider::test_provider_direct_methods_exercise_real_lifecycle \
-          tests/test_nixprovider.py::TestNixProvider::test_provider_direct_methods_exercise_real_lifecycle \
-          tests/test_dockerprovider.py::TestDockerProvider::test_provider_direct_methods_exercise_real_lifecycle
+        uv run pytest ${{ matrix.live_test_args }}
 
     - name: Run root-required live package lifecycle tests on Linux
       if: runner.os == 'Linux'
