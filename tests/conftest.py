@@ -338,6 +338,19 @@ class TestMachine:
             "No safe missing brew formula candidates were available for a test-machine lifecycle test",
         )
 
+    def pick_missing_provider_binary(
+        self,
+        provider,
+        candidates: tuple[str, ...],
+    ) -> str:
+        for candidate in candidates:
+            if provider.load(candidate, quiet=True, nocache=True) is not None:
+                continue
+            return candidate
+        raise AssertionError(
+            "No safe missing provider binary candidates were available for a test-machine lifecycle test",
+        )
+
     def pick_missing_apt_package(self) -> str:
         provider = AptProvider(min_release_age=0)
         for package in ("jq", "tree", "rename"):

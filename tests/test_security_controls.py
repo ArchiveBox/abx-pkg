@@ -48,9 +48,11 @@ class TestSecurityControls:
                 npm_prefix=Path(tmpdir) / "npm",
                 postinstall_scripts=False,
                 min_release_age=36500,
+            ).get_provider_with_overrides(
+                overrides={"optipng": {"install_args": ["optipng-bin"]}},
             )
             binary = Binary(
-                name="gifsicle",
+                name="optipng",
                 binproviders=[provider],
                 postinstall_scripts=True,
                 min_release_age=0,

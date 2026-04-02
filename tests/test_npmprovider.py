@@ -201,29 +201,33 @@ class TestNpmProvider:
                 npm_prefix=Path(tmpdir) / "strict-npm",
                 postinstall_scripts=False,
                 min_release_age=0,
+            ).get_provider_with_overrides(
+                overrides={"optipng": {"install_args": ["optipng-bin"]}},
             )
-            strict_installed = strict_provider.install("gifsicle")
+            strict_installed = strict_provider.install("optipng")
             assert strict_installed is not None
             assert strict_installed.loaded_abspath is not None
             strict_proc = strict_installed.exec(cmd=("--version",), quiet=True)
             assert strict_proc.returncode != 0
 
             direct_override = strict_provider.install(
-                "gifsicle",
+                "optipng",
                 postinstall_scripts=True,
             )
             assert direct_override is not None
             proc = direct_override.exec(cmd=("--version",), quiet=True)
             assert proc.returncode == 0, proc.stderr or proc.stdout
-            assert strict_provider.uninstall("gifsicle", postinstall_scripts=True)
+            assert strict_provider.uninstall("optipng", postinstall_scripts=True)
 
             binary = Binary(
-                name="gifsicle",
+                name="optipng",
                 binproviders=[
                     NpmProvider(
                         npm_prefix=Path(tmpdir) / "binary-npm",
                         postinstall_scripts=False,
                         min_release_age=0,
+                    ).get_provider_with_overrides(
+                        overrides={"optipng": {"install_args": ["optipng-bin"]}},
                     ),
                 ],
                 postinstall_scripts=True,
@@ -235,12 +239,14 @@ class TestNpmProvider:
             assert proc.returncode == 0, proc.stderr or proc.stdout
 
             failing_binary = Binary(
-                name="gifsicle",
+                name="optipng",
                 binproviders=[
                     NpmProvider(
                         npm_prefix=Path(tmpdir) / "failing-npm",
                         postinstall_scripts=False,
                         min_release_age=0,
+                    ).get_provider_with_overrides(
+                        overrides={"optipng": {"install_args": ["optipng-bin"]}},
                     ),
                 ],
                 postinstall_scripts=False,

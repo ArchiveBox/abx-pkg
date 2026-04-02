@@ -68,7 +68,23 @@ class NpmProvider(BinProvider):
     _CACHED_LOCAL_NPM_PREFIX: Path | None = None
 
     def supports_min_release_age(self, action) -> bool:
-        return action in ("install", "update")
+        if action not in ("install", "update"):
+            return False
+
+        npm_abspath = self.INSTALLER_BIN_ABSPATH
+        if not npm_abspath or Path(npm_abspath).name != "npm":
+            return False
+
+        proc = self.exec(
+            bin_name=npm_abspath,
+            cmd=["install", "--help"],
+            quiet=True,
+            timeout=self.version_timeout,
+        )
+        help_text = "\n".join(
+            part.strip() for part in (proc.stdout, proc.stderr) if part.strip()
+        )
+        return proc.returncode == 0 and "--min-release-age" in help_text
 
     def supports_postinstall_disable(self, action) -> bool:
         return action in ("install", "update")

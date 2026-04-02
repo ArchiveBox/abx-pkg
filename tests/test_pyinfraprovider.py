@@ -12,18 +12,25 @@ from abx_pkg.exceptions import BinaryInstallError, BinaryLoadOrInstallError
 def _pyinfra_provider_for_host(test_machine):
     test_machine.require_tool("pyinfra")
     if shutil.which("apt-get") and os.geteuid() == 0:
-        assert os.geteuid() == 0, "pyinfra apt lifecycle tests require root on Linux"
-        return PyinfraProvider(
+        provider = PyinfraProvider(
             pyinfra_installer_module="operations.apt.packages",
             postinstall_scripts=True,
             min_release_age=0,
-        ), test_machine.pick_missing_apt_package()
+        )
+        return provider, test_machine.pick_missing_provider_binary(
+            provider,
+            ("tree", "rename", "jq"),
+        )
     test_machine.require_tool("brew")
-    return PyinfraProvider(
+    provider = PyinfraProvider(
         pyinfra_installer_module="operations.brew.packages",
         postinstall_scripts=True,
         min_release_age=0,
-    ), test_machine.pick_missing_brew_formula()
+    )
+    return provider, test_machine.pick_missing_provider_binary(
+        provider,
+        ("watch", "fzy", "jq"),
+    )
 
 
 class TestPyinfraProvider:

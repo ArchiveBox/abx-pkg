@@ -12,18 +12,25 @@ from abx_pkg.exceptions import BinaryInstallError, BinaryLoadOrInstallError
 def _ansible_provider_for_host(test_machine):
     test_machine.require_tool("ansible")
     if shutil.which("apt-get") and os.geteuid() == 0:
-        assert os.geteuid() == 0, "ansible apt lifecycle tests require root on Linux"
-        return AnsibleProvider(
+        provider = AnsibleProvider(
             ansible_installer_module="ansible.builtin.apt",
             postinstall_scripts=True,
             min_release_age=0,
-        ), test_machine.pick_missing_apt_package()
+        )
+        return provider, test_machine.pick_missing_provider_binary(
+            provider,
+            ("tree", "rename", "jq"),
+        )
     test_machine.require_tool("brew")
-    return AnsibleProvider(
+    provider = AnsibleProvider(
         ansible_installer_module="community.general.homebrew",
         postinstall_scripts=True,
         min_release_age=0,
-    ), test_machine.pick_missing_brew_formula()
+    )
+    return provider, test_machine.pick_missing_provider_binary(
+        provider,
+        ("watch", "fzy", "jq"),
+    )
 
 
 class TestAnsibleProvider:
