@@ -8,6 +8,7 @@ from abx_pkg.exceptions import BinaryInstallError
 
 
 @pytest.mark.skipif("darwin" in sys.platform, reason="apt is not available on macOS")
+@pytest.mark.root_required
 class TestAptProvider:
     def test_provider_direct_methods_exercise_real_lifecycle(self, test_machine):
         test_machine.require_tool("apt-get")

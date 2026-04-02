@@ -217,21 +217,21 @@ class TestPipProvider:
                 min_release_age=0,
             )
             with pytest.raises(Exception):
-                strict_provider.install("slimit")
-            test_machine.assert_provider_missing(strict_provider, "slimit")
+                strict_provider.install("saws")
+            test_machine.assert_provider_missing(strict_provider, "saws")
 
             direct_override = strict_provider.install(
-                "slimit",
+                "saws",
                 postinstall_scripts=True,
             )
             test_machine.assert_shallow_binary_loaded(
                 direct_override,
                 assert_version_command=False,
             )
-            assert strict_provider.uninstall("slimit")
+            assert strict_provider.uninstall("saws")
 
             binary = Binary(
-                name="slimit",
+                name="saws",
                 binproviders=[
                     PipProvider(
                         pip_venv=Path(tmpdir) / "binary-venv",
@@ -249,7 +249,7 @@ class TestPipProvider:
             )
 
             failing_binary = Binary(
-                name="slimit",
+                name="saws",
                 binproviders=[
                     PipProvider(
                         pip_venv=Path(tmpdir) / "failing-venv",

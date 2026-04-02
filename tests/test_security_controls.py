@@ -31,7 +31,7 @@ class TestSecurityControls:
                 min_release_age=36500,
             )
             binary = Binary(
-                name="slimit",
+                name="saws",
                 binproviders=[provider],
                 postinstall_scripts=True,
                 min_release_age=0,
@@ -62,7 +62,7 @@ class TestSecurityControls:
     def test_pip_provider_default_security_settings_fail_closed_without_override(self):
         with pytest.raises(BinaryInstallError):
             Binary(
-                name="slimit",
+                name="saws",
                 binproviders=[
                     PipProvider(
                         postinstall_scripts=False,

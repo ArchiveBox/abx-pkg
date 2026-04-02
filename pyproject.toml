@@ -109,6 +109,10 @@ pythonPlatform = "Linux"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "root_required: tests that require root privileges and run in the privileged live-integration job",
+    "docker_required: tests that require a working Docker daemon and run in the Linux live-integration job",
+]
 
 [tool.ty.src]
 exclude = [

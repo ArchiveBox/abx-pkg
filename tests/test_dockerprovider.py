@@ -7,6 +7,7 @@ from abx_pkg import Binary, DockerProvider, SemVer
 from abx_pkg.exceptions import BinaryInstallError
 
 
+@pytest.mark.docker_required
 class TestDockerProvider:
     def test_bin_dir_alias_without_explicit_install_root_uses_parent_as_root(
         self,

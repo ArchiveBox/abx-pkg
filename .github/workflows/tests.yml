@@ -80,8 +80,7 @@ jobs:
       with:
         go-version: '1.25'
 
-    - name: Install Nix on macOS
-      if: runner.os == 'macOS'
+    - name: Install Nix
       uses: DeterminateSystems/nix-installer-action@v22
 
     - name: Setup venv and install pip dependencies
@@ -99,7 +98,7 @@ jobs:
       run: |
         export PNPM_HOME="${RUNNER_TEMP}/pnpm"
         export PATH="$PNPM_HOME:$PATH"
-        uv run pytest
+        uv run pytest -m "not root_required and not docker_required"
 
   live-integration:
     runs-on: ${{ matrix.os }}
