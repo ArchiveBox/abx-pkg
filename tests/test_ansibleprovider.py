@@ -5,30 +5,8 @@ import subprocess
 import pytest
 
 from abx_pkg import Binary, SemVer
-from abx_pkg import AptProvider, BrewProvider
 from abx_pkg.binprovider_ansible import AnsibleProvider
 from abx_pkg.exceptions import BinaryInstallError, BinaryLoadOrInstallError
-
-
-def _pick_formula_or_package_for_host(provider_name: str) -> str:
-    if provider_name == "brew":
-        probe = BrewProvider(postinstall_scripts=True, min_release_age=0)
-        candidates = ("hello", "jq", "watch", "fzy")
-    else:
-        probe = AptProvider(postinstall_scripts=True, min_release_age=0)
-        candidates = ("hello", "jq", "tree", "sl", "rename")
-
-    for package in candidates:
-        if probe.load(package, quiet=True, nocache=True) is None:
-            return package
-    for package in candidates:
-        try:
-            probe.uninstall(package, quiet=True, nocache=True)
-        except Exception:
-            continue
-        if probe.load(package, quiet=True, nocache=True) is None:
-            return package
-    raise AssertionError(f"Unable to find a live {provider_name} package candidate")
 
 
 def _ansible_provider_for_host(test_machine):
@@ -39,13 +17,13 @@ def _ansible_provider_for_host(test_machine):
             ansible_installer_module="ansible.builtin.apt",
             postinstall_scripts=True,
             min_release_age=0,
-        ), _pick_formula_or_package_for_host("apt")
+        ), test_machine.pick_missing_apt_package()
     test_machine.require_tool("brew")
     return AnsibleProvider(
         ansible_installer_module="community.general.homebrew",
         postinstall_scripts=True,
         min_release_age=0,
-    ), _pick_formula_or_package_for_host("brew")
+    ), test_machine.pick_missing_brew_formula()
 
 
 class TestAnsibleProvider:
