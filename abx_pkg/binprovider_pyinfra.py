@@ -87,8 +87,10 @@ def pyinfra_package_install(
         },
     }
 
-    with tempfile.TemporaryDirectory(dir=SYSTEM_TEMP_DIR) as temp_dir:
-        deploy_path = Path(temp_dir) / "deploy.py"
+    temp_dir = Path(tempfile.mkdtemp(dir=SYSTEM_TEMP_DIR))
+    sudo_bin = None
+    try:
+        deploy_path = temp_dir / "deploy.py"
         deploy_path.write_text(
             "\n".join(
                 [
@@ -147,6 +149,29 @@ def pyinfra_package_install(
                 env=env,
                 timeout=timeout,
             )
+    finally:
+        if os.geteuid() != 0 and sudo_bin:
+            chown_proc = subprocess.run(
+                [
+                    sudo_bin,
+                    "-n",
+                    "chown",
+                    "-R",
+                    f"{os.geteuid()}:{os.getegid()}",
+                    str(temp_dir),
+                ],
+                capture_output=True,
+                text=True,
+            )
+            if chown_proc.returncode != 0:
+                log_subprocess_output(
+                    logger,
+                    "pyinfra sudo chown",
+                    chown_proc.stdout,
+                    chown_proc.stderr,
+                    level=py_logging.DEBUG,
+                )
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
     succeeded = proc.returncode == 0
     result_text = f"Installing {pkg_names} on {OPERATING_SYSTEM} using Pyinfra {installer_module} {['failed', 'succeeded'][succeeded]}\n{proc.stdout}\n{proc.stderr}".strip()

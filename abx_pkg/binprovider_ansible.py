@@ -111,12 +111,13 @@ def ansible_package_install(
             module_extra_yaml=module_extra_yaml,
         )
 
-    # create a temporary directory using the context manager
-    with tempfile.TemporaryDirectory(dir=SYSTEM_TEMP_DIR) as temp_dir:
-        ansible_home = Path(temp_dir) / "tmp"
+    temp_dir = Path(tempfile.mkdtemp(dir=SYSTEM_TEMP_DIR))
+    sudo_bin = None
+    try:
+        ansible_home = temp_dir / "tmp"
         ansible_home.mkdir(exist_ok=True)
 
-        playbook_path = Path(temp_dir) / "install_playbook.yml"
+        playbook_path = temp_dir / "install_playbook.yml"
         playbook_path.write_text(playbook)
 
         env = os.environ.copy()
@@ -182,17 +183,38 @@ def ansible_package_install(
         succeeded = proc.returncode == 0
         result_text = f"Installing {pkg_names} on {OPERATING_SYSTEM} using Ansible {installer_module} {['failed', 'succeeded'][succeeded]}:{proc.stdout}\n{proc.stderr}".strip()
 
-        # check for success/failure
         if succeeded:
             return result_text
-        else:
-            if "Permission denied" in result_text:
-                raise PermissionError(
-                    f"Installing {pkg_names} failed! Need to be root to use package manager (retry with sudo, or install manually)",
-                )
-            raise Exception(
-                f"Installing {pkg_names} failed! (retry with sudo, or install manually)\n{result_text}",
+        if "Permission denied" in result_text:
+            raise PermissionError(
+                f"Installing {pkg_names} failed! Need to be root to use package manager (retry with sudo, or install manually)",
             )
+        raise Exception(
+            f"Installing {pkg_names} failed! (retry with sudo, or install manually)\n{result_text}",
+        )
+    finally:
+        if os.geteuid() != 0 and sudo_bin:
+            chown_proc = subprocess.run(
+                [
+                    sudo_bin,
+                    "-n",
+                    "chown",
+                    "-R",
+                    f"{os.geteuid()}:{os.getegid()}",
+                    str(temp_dir),
+                ],
+                capture_output=True,
+                text=True,
+            )
+            if chown_proc.returncode != 0:
+                log_subprocess_output(
+                    logger,
+                    "ansible sudo chown",
+                    chown_proc.stdout,
+                    chown_proc.stderr,
+                    level=py_logging.DEBUG,
+                )
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 class AnsibleProvider(BinProvider):
