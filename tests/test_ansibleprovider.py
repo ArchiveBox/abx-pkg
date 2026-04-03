@@ -18,14 +18,20 @@ def _ansible_provider_for_host(test_machine):
             postinstall_scripts=True,
             min_release_age=0,
         )
-        return provider, test_machine.pick_missing_apt_package()
+        return provider, test_machine.pick_missing_provider_binary(
+            provider,
+            ("tree", "rename", "jq", "tmux", "screen"),
+        )
     test_machine.require_tool("brew")
     provider = AnsibleProvider(
         ansible_installer_module="community.general.homebrew",
         postinstall_scripts=True,
         min_release_age=0,
     )
-    return provider, test_machine.pick_missing_brew_formula()
+    return provider, test_machine.pick_missing_provider_binary(
+        provider,
+        ("hello", "jq", "watch", "fzy", "tree"),
+    )
 
 
 class TestAnsibleProvider:
