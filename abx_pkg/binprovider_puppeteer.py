@@ -4,6 +4,7 @@ __package__ = "abx_pkg"
 
 import os
 import re
+import shlex
 import shutil
 import subprocess
 from pathlib import Path
@@ -247,6 +248,8 @@ class PuppeteerProvider(BinProvider):
         ]
         if parsed_matches:
             return max(parsed_matches, key=lambda item: item[0])[1]
+        if len(matches) == 1:
+            return matches[0][1]
         return None
 
     def _resolve_installed_browser_path(
@@ -267,6 +270,8 @@ class PuppeteerProvider(BinProvider):
         ]
         if parsed_candidates:
             return max(parsed_candidates, key=lambda item: item[0])[1]
+        if len(candidates) == 1:
+            return candidates[0][1]
         return None
 
     def _symlink_path(self, bin_name: str) -> Path:
@@ -277,6 +282,13 @@ class PuppeteerProvider(BinProvider):
         link_path.parent.mkdir(parents=True, exist_ok=True)
         if link_path.exists() or link_path.is_symlink():
             link_path.unlink(missing_ok=True)
+        if os.name == "posix" and ".app/Contents/MacOS/" in str(target):
+            link_path.write_text(
+                f'#!/bin/sh\nexec {shlex.quote(str(target))} "$@"\n',
+                encoding="utf-8",
+            )
+            link_path.chmod(0o755)
+            return link_path
         link_path.symlink_to(target)
         return link_path
 

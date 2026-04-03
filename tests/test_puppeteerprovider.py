@@ -5,51 +5,50 @@ from abx_pkg import Binary, PuppeteerProvider
 
 
 PUPPETEER_CHROMEDRIVER_ARGS = ["chromedriver@stable"]
-TEMP_ROOT = Path(tempfile.gettempdir()) / "puppeteer"
 
 
 class TestPuppeteerProvider:
-    def test_version_resolution_uses_semver_ordering(self):
-        class StubPuppeteerProvider(PuppeteerProvider):
-            def _list_installed_browsers(self) -> list[tuple[str, str, Path]]:
-                return [
-                    ("chrome", "9.0", TEMP_ROOT / "cache/chrome/9.0/chrome"),
-                    (
-                        "chrome",
-                        "100.0",
-                        TEMP_ROOT / "cache/chrome/100.0/chrome",
-                    ),
-                    (
-                        "chromedriver",
-                        "124.0.6367.207",
-                        TEMP_ROOT / "cache/chromedriver/124.0.6367.207/chromedriver",
-                    ),
-                ]
+    def test_chrome_alias_installs_real_browser_binary(self, test_machine):
+        test_machine.require_tool("node")
+        test_machine.require_tool("npm")
 
-        provider = StubPuppeteerProvider(
-            puppeteer_root=TEMP_ROOT.parent / "puppeteer-root",
-            browser_bin_dir=TEMP_ROOT.parent / "puppeteer-root/bin",
-            postinstall_scripts=True,
-            min_release_age=0,
-        )
-
-        installed_output = "\n".join(
-            (
-                f"chrome@9.0 {TEMP_ROOT / 'cache/chrome/9.0/chrome'}",
-                f"chrome@100.0 {TEMP_ROOT / 'cache/chrome/100.0/chrome'}",
-                f"chromedriver@124.0.6367.207 {TEMP_ROOT / 'cache/chromedriver/124.0.6367.207/chromedriver'}",
-            ),
-        )
-        assert (
-            provider._parse_installed_browser_path(
-                installed_output,
-                "chrome",
+        with tempfile.TemporaryDirectory() as temp_dir:
+            puppeteer_root = Path(temp_dir) / "puppeteer-root"
+            provider = PuppeteerProvider(
+                puppeteer_root=puppeteer_root,
+                browser_bin_dir=puppeteer_root / "bin",
+                postinstall_scripts=True,
+                min_release_age=0,
+            ).get_provider_with_overrides(
+                overrides={"chrome": {"install_args": ["chromium@latest"]}},
             )
-            == TEMP_ROOT / "cache/chrome/100.0/chrome"
-        )
-        assert provider._resolve_installed_browser_path("chrome") == (
-            TEMP_ROOT / "cache/chrome/100.0/chrome"
-        )
+
+            installed = provider.install("chrome", nocache=True)
+            assert installed is not None
+            test_machine.assert_shallow_binary_loaded(installed)
+            assert installed.name == "chrome"
+            assert installed.loaded_abspath is not None
+            assert installed.loaded_abspath.exists()
+            assert "@latest" not in installed.name
+            assert "@" not in installed.loaded_abspath.name
+            assert installed.loaded_abspath.parent == provider.bin_dir
+            assert installed.loaded_abspath == provider.bin_dir / "chrome"
+            assert (provider.cache_dir / "chromium").exists()
+
+            loaded = provider.load("chrome", nocache=True)
+            test_machine.assert_shallow_binary_loaded(loaded)
+            assert loaded is not None
+            assert loaded.loaded_abspath is not None
+            assert loaded.loaded_abspath.resolve() == installed.loaded_abspath.resolve()
+
+            loaded_or_installed = provider.load_or_install("chrome", nocache=True)
+            test_machine.assert_shallow_binary_loaded(loaded_or_installed)
+            assert loaded_or_installed is not None
+            assert loaded_or_installed.loaded_abspath is not None
+            assert (
+                loaded_or_installed.loaded_abspath.resolve()
+                == installed.loaded_abspath.resolve()
+            )
 
     def test_install_root_alias_without_explicit_bin_dir_uses_root_bin(
         self,
