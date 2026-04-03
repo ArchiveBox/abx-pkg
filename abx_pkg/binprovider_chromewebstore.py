@@ -11,7 +11,12 @@ from typing import Any, ClassVar, Self
 from pydantic import Field, computed_field, model_validator
 
 from .base_types import BinName, BinProviderName, PATHStr
-from .binprovider import BinProvider, BinProviderOverrides, remap_kwargs
+from .binprovider import (
+    BinProvider,
+    BinProviderOverrides,
+    env_flag_is_true,
+    remap_kwargs,
+)
 from .logging import format_subprocess_output, get_logger
 
 logger = get_logger(__name__)
@@ -29,7 +34,11 @@ class ChromeWebstoreProvider(BinProvider):
     BIN_DIR_FIELD: ClassVar[str | None] = "extensions_dir"
 
     PATH: PATHStr = ""
-    min_release_age: float = Field(default=0, repr=False)
+    postinstall_scripts: bool | None = Field(
+        default_factory=lambda: env_flag_is_true("ABX_PKG_POSTINSTALL_SCRIPTS"),
+        repr=False,
+    )
+    min_release_age: float | None = Field(default=0, repr=False)
 
     extensions_root: Path | None = None
     extensions_dir: Path | None = None
@@ -181,7 +190,7 @@ class ChromeWebstoreProvider(BinProvider):
         **context,
     ) -> str:
         install_args = list(install_args or self.get_install_args(bin_name))
-        if self.DRY_RUN:
+        if self.dry_run:
             return f"DRY_RUN would install Chrome Web Store extension {bin_name}"
 
         chrome_utils_path = self.resolved_chrome_utils_path

@@ -313,3 +313,29 @@ class TestBinary:
             )
             assert loaded_after_dry_run is not None
             assert loaded_after_dry_run.loaded_version == SemVer("23.1.0")
+
+    def test_binary_action_args_override_binary_and_provider_defaults(
+        self,
+        test_machine,
+    ):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            provider = PipProvider(
+                pip_venv=Path(tmpdir) / "venv",
+                dry_run=True,
+                postinstall_scripts=False,
+                min_release_age=36500,
+            )
+            binary = Binary(
+                name="black",
+                binproviders=[provider],
+                postinstall_scripts=False,
+                min_release_age=36500,
+            )
+
+            installed = binary.install(
+                dry_run=False,
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+
+            test_machine.assert_shallow_binary_loaded(installed)

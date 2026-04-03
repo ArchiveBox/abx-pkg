@@ -184,14 +184,14 @@ INSTALLER_BIN = "env"
 PATH = str(Path(sys.executable).parent)
 postinstall_scripts = False          # or ABX_PKG_POSTINSTALL_SCRIPTS=1
 min_release_age = 7.0                # or ABX_PKG_MIN_RELEASE_AGE=<days>
-install_timeout = 120
-version_timeout = 10
-DRY_RUN = False                      # or DRY_RUN=1
+install_timeout = 120                # or ABX_PKG_INSTALL_TIMEOUT=120
+version_timeout = 10                 # or ABX_PKG_VERSION_TIMEOUT=10
+DRY_RUN = False                      # or ABX_PKG_DRY_RUN=1 / DRY_RUN=1
 ```
 
-- `DRY_RUN`: use `provider.get_provider_with_overrides(dry_run=True)` or `DRY_RUN=1`. Provider subprocesses are logged and skipped, `install()` / `update()` return a placeholder loaded binary, and `uninstall()` returns `True` without mutating the host.
-- `install_timeout`: shared provider-level timeout used by `install()`, `update()`, and `uninstall()` handler execution paths.
-- `version_timeout`: shared provider-level timeout used by version / metadata probes such as `--version`, `npm show`, `npm list`, `pip show`, `go version -m`, and brew lookups.
+- `DRY_RUN`: use `provider.get_provider_with_overrides(dry_run=True)`, `ABX_PKG_DRY_RUN=1`, or `DRY_RUN=1`. If both env vars are set, `ABX_PKG_DRY_RUN` wins. Provider subprocesses are logged and skipped, `install()` / `update()` return a placeholder loaded binary, and `uninstall()` returns `True` without mutating the host.
+- `install_timeout`: shared provider-level timeout used by `install()`, `update()`, and `uninstall()` handler execution paths. Can also be set with `ABX_PKG_INSTALL_TIMEOUT`.
+- `version_timeout`: shared provider-level timeout used by version / metadata probes such as `--version`, `npm show`, `npm list`, `pip show`, `go version -m`, and brew lookups. Can also be set with `ABX_PKG_VERSION_TIMEOUT`.
 - Security controls fail closed: if `min_release_age > 0` or `postinstall_scripts=False` is requested on a provider that does not support that control for that action, `install()` / `update()` raises instead of silently ignoring it.
 
 Supported override keys are the same everywhere:

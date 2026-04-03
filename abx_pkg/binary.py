@@ -16,13 +16,7 @@ from pydantic import (
 
 from .semver import SemVer
 from .shallowbinary import ShallowBinary
-from .binprovider import (
-    BinProvider,
-    EnvProvider,
-    BinaryOverrides,
-    env_flag_is_true,
-    default_min_release_age,
-)
+from .binprovider import BinProvider, EnvProvider, BinaryOverrides
 from .logging import format_exception_with_output, get_logger, log_method_call
 from .exceptions import (
     BinaryInstallError,
@@ -65,19 +59,18 @@ class Binary(ShallowBinary):
 
     min_version: SemVer | None = None
 
-    postinstall_scripts: bool = Field(
-        default_factory=lambda: env_flag_is_true("ABX_PKG_POSTINSTALL_SCRIPTS"),
+    postinstall_scripts: bool | None = Field(
+        default=None,
         description=(
             "Allow post-install scripts during package installation. "
-            "Defaults to ABX_PKG_POSTINSTALL_SCRIPTS env var (False if unset)."
+            "Defaults to the selected provider's configured behavior if unset."
         ),
     )
-    min_release_age: float = Field(
-        default_factory=default_min_release_age,
+    min_release_age: float | None = Field(
+        default=None,
         description=(
             "Minimum days since publication before a package can be installed. "
-            "Defaults to ABX_PKG_MIN_RELEASE_AGE env var (7 if unset). "
-            "Set to 0 to disable."
+            "Defaults to the selected provider's configured behavior if unset."
         ),
     )
 
@@ -107,7 +100,7 @@ class Binary(ShallowBinary):
             provider_values = [
                 provider.postinstall_scripts for provider in self.binproviders
             ]
-            if provider_values and all(
+            if len(provider_values) == len(self.binproviders) and all(
                 value == provider_values[0] for value in provider_values
             ):
                 self.postinstall_scripts = provider_values[0]
@@ -115,7 +108,7 @@ class Binary(ShallowBinary):
             provider_values = [
                 provider.min_release_age for provider in self.binproviders
             ]
-            if provider_values and all(
+            if len(provider_values) == len(self.binproviders) and all(
                 value == provider_values[0] for value in provider_values
             ):
                 self.min_release_age = provider_values[0]
@@ -273,6 +266,9 @@ class Binary(ShallowBinary):
     def install(
         self,
         binproviders: list[BinProviderName] | None = None,
+        dry_run: bool | None = None,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
         **extra_overrides,
     ) -> Self:
         assert self.name, f"No binary name was provided! {self}"
@@ -287,6 +283,14 @@ class Binary(ShallowBinary):
         logger.info("Installing %s binary", self.name)
         inner_exc: Exception | None = None
         errors = {}
+        postinstall_scripts = (
+            self.postinstall_scripts
+            if postinstall_scripts is None
+            else postinstall_scripts
+        )
+        min_release_age = (
+            self.min_release_age if min_release_age is None else min_release_age
+        )
         for binprovider in self.binproviders:
             if binproviders and (binprovider.name not in binproviders):
                 continue
@@ -295,12 +299,14 @@ class Binary(ShallowBinary):
             try:
                 provider = self.get_binprovider(
                     binprovider_name=binprovider.name,
+                    dry_run=dry_run,
                     **extra_overrides,
                 )
                 installed_bin = provider.install(
                     self.name,
-                    postinstall_scripts=self.postinstall_scripts,
-                    min_release_age=self.min_release_age,
+                    dry_run=dry_run,
+                    postinstall_scripts=postinstall_scripts,
+                    min_release_age=min_release_age,
                     min_version=self.min_version,
                 )
                 if installed_bin is not None and installed_bin.loaded_abspath:
@@ -384,6 +390,9 @@ class Binary(ShallowBinary):
         self,
         binproviders: list[BinProviderName] | None = None,
         nocache: bool = False,
+        dry_run: bool | None = None,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
         **extra_overrides,
     ) -> Self:
         assert self.name, f"No binary name was provided! {self}"
@@ -405,6 +414,14 @@ class Binary(ShallowBinary):
         logger.info("Loading or installing %s binary", self.name)
         inner_exc: Exception | None = None
         errors = {}
+        postinstall_scripts = (
+            self.postinstall_scripts
+            if postinstall_scripts is None
+            else postinstall_scripts
+        )
+        min_release_age = (
+            self.min_release_age if min_release_age is None else min_release_age
+        )
         for binprovider in self.binproviders:
             if binproviders and binprovider.name not in binproviders:
                 continue
@@ -413,13 +430,15 @@ class Binary(ShallowBinary):
             try:
                 provider = self.get_binprovider(
                     binprovider_name=binprovider.name,
+                    dry_run=dry_run,
                     **extra_overrides,
                 )
                 installed_bin = provider.load_or_install(
                     self.name,
                     nocache=nocache,
-                    postinstall_scripts=self.postinstall_scripts,
-                    min_release_age=self.min_release_age,
+                    dry_run=dry_run,
+                    postinstall_scripts=postinstall_scripts,
+                    min_release_age=min_release_age,
                     min_version=self.min_version,
                 )
                 if installed_bin is not None and installed_bin.loaded_abspath:
@@ -448,6 +467,9 @@ class Binary(ShallowBinary):
     def update(
         self,
         binproviders: list[BinProviderName] | None = None,
+        dry_run: bool | None = None,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
         **extra_overrides,
     ) -> Self:
         assert self.name, f"No binary name was provided! {self}"
@@ -462,6 +484,14 @@ class Binary(ShallowBinary):
         logger.info("Updating %s binary", self.name)
         inner_exc: Exception | None = None
         errors = {}
+        postinstall_scripts = (
+            self.postinstall_scripts
+            if postinstall_scripts is None
+            else postinstall_scripts
+        )
+        min_release_age = (
+            self.min_release_age if min_release_age is None else min_release_age
+        )
         for binprovider in self.binproviders:
             if binproviders and binprovider.name not in binproviders:
                 continue
@@ -470,12 +500,14 @@ class Binary(ShallowBinary):
             try:
                 provider = self.get_binprovider(
                     binprovider_name=binprovider.name,
+                    dry_run=dry_run,
                     **extra_overrides,
                 )
                 updated_bin = provider.update(
                     self.name,
-                    postinstall_scripts=self.postinstall_scripts,
-                    min_release_age=self.min_release_age,
+                    dry_run=dry_run,
+                    postinstall_scripts=postinstall_scripts,
+                    min_release_age=min_release_age,
                     min_version=self.min_version,
                 )
                 if updated_bin is not None and updated_bin.loaded_abspath:
@@ -500,6 +532,9 @@ class Binary(ShallowBinary):
     def uninstall(
         self,
         binproviders: list[BinProviderName] | None = None,
+        dry_run: bool | None = None,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
         **extra_overrides,
     ) -> Self:
         assert self.name, f"No binary name was provided! {self}"
@@ -514,6 +549,14 @@ class Binary(ShallowBinary):
         logger.info("Uninstalling %s binary", self.name)
         inner_exc: Exception | None = None
         errors = {}
+        postinstall_scripts = (
+            self.postinstall_scripts
+            if postinstall_scripts is None
+            else postinstall_scripts
+        )
+        min_release_age = (
+            self.min_release_age if min_release_age is None else min_release_age
+        )
         for binprovider in self.binproviders:
             if binproviders and binprovider.name not in binproviders:
                 continue
@@ -522,12 +565,14 @@ class Binary(ShallowBinary):
             try:
                 provider = self.get_binprovider(
                     binprovider_name=binprovider.name,
+                    dry_run=dry_run,
                     **extra_overrides,
                 )
                 uninstalled = provider.uninstall(
                     self.name,
-                    postinstall_scripts=self.postinstall_scripts,
-                    min_release_age=self.min_release_age,
+                    dry_run=dry_run,
+                    postinstall_scripts=postinstall_scripts,
+                    min_release_age=min_release_age,
                     min_version=self.min_version,
                 )
                 if uninstalled:

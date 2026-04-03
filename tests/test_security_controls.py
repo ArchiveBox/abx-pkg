@@ -8,6 +8,18 @@ from abx_pkg.exceptions import BinaryInstallError, BinaryLoadError
 
 
 class TestSecurityControls:
+    def test_env_provider_defaults_do_not_fail_closed(self, test_machine):
+        installed = EnvProvider().install("python")
+        test_machine.assert_shallow_binary_loaded(installed)
+
+    def test_binary_defaults_do_not_break_unsupported_provider(self):
+        binary = Binary(name="python", binproviders=[EnvProvider()])
+        installed = binary.install()
+
+        assert installed.loaded_binprovider is not None
+        assert installed.loaded_abspath is not None
+        assert installed.loaded_version is not None
+
     def test_binary_load_enforces_final_min_version(self):
         binary = Binary(
             name="python",

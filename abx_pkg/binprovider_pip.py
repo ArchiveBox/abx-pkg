@@ -14,7 +14,7 @@ from platformdirs import user_cache_path
 
 from pathlib import Path
 from typing import ClassVar, Self
-from pydantic import model_validator, TypeAdapter, computed_field
+from pydantic import Field, model_validator, TypeAdapter, computed_field
 
 from .base_types import (
     BinProviderName,
@@ -29,6 +29,7 @@ from .semver import SemVer
 from .binprovider import (
     BinProvider,
     DEFAULT_ENV_PATH,
+    env_flag_is_true,
     remap_kwargs,
 )
 from .logging import format_subprocess_output
@@ -56,6 +57,14 @@ class PipProvider(BinProvider):
     INSTALL_ROOT_FIELD: ClassVar[str | None] = "pip_venv"
 
     PATH: PATHStr = ""
+    postinstall_scripts: bool | None = Field(
+        default_factory=lambda: env_flag_is_true("ABX_PKG_POSTINSTALL_SCRIPTS"),
+        repr=False,
+    )
+    min_release_age: float | None = Field(
+        default_factory=lambda: float(os.environ.get("ABX_PKG_MIN_RELEASE_AGE", "7")),
+        repr=False,
+    )
 
     pip_venv: Path | None = (
         None  # None = system site-packages (user or global), otherwise it's a path e.g. DATA_DIR/lib/pip/venv
@@ -241,6 +250,10 @@ class PipProvider(BinProvider):
         min_release_age = (
             self.min_release_age if min_release_age is None else min_release_age
         )
+        postinstall_scripts = (
+            False if postinstall_scripts is None else postinstall_scripts
+        )
+        min_release_age = 0 if min_release_age is None else min_release_age
         if not self._ensure_writable_cache_dir(self.cache_dir):
             self.cache_arg = "--no-cache-dir"
 

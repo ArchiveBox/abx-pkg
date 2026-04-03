@@ -11,7 +11,7 @@ import subprocess
 from pathlib import Path
 from typing import ClassVar, Self
 
-from pydantic import model_validator, TypeAdapter, computed_field
+from pydantic import Field, model_validator, TypeAdapter, computed_field
 from platformdirs import user_cache_path
 
 from .base_types import (
@@ -23,7 +23,11 @@ from .base_types import (
     bin_abspath,
 )
 from .semver import SemVer
-from .binprovider import BinProvider, remap_kwargs
+from .binprovider import (
+    BinProvider,
+    env_flag_is_true,
+    remap_kwargs,
+)
 from .logging import get_logger, format_subprocess_output
 
 logger = get_logger(__name__)
@@ -52,6 +56,14 @@ class NpmProvider(BinProvider):
     INSTALL_ROOT_FIELD: ClassVar[str | None] = "npm_prefix"
 
     PATH: PATHStr = ""
+    postinstall_scripts: bool | None = Field(
+        default_factory=lambda: env_flag_is_true("ABX_PKG_POSTINSTALL_SCRIPTS"),
+        repr=False,
+    )
+    min_release_age: float | None = Field(
+        default_factory=lambda: float(os.environ.get("ABX_PKG_MIN_RELEASE_AGE", "7")),
+        repr=False,
+    )
 
     npm_prefix: Path | None = None  # None = -g global, otherwise it's a path
 

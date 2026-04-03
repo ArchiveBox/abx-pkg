@@ -8,7 +8,7 @@ import platform
 from pathlib import Path
 from typing import ClassVar
 
-from pydantic import model_validator, TypeAdapter, computed_field
+from pydantic import Field, model_validator, TypeAdapter, computed_field
 
 from .base_types import (
     BinProviderName,
@@ -19,7 +19,7 @@ from .base_types import (
     bin_abspath,
 )
 from .semver import SemVer
-from .binprovider import BinProvider, remap_kwargs
+from .binprovider import BinProvider, env_flag_is_true, remap_kwargs
 from .logging import format_subprocess_output
 
 OS = platform.system().lower()
@@ -42,6 +42,10 @@ class BrewProvider(BinProvider):
     INSTALL_ROOT_FIELD: ClassVar[str | None] = "brew_prefix"
 
     PATH: PATHStr = f"{DEFAULT_LINUX_DIR}:{NEW_MACOS_DIR}:{OLD_MACOS_DIR}"
+    postinstall_scripts: bool | None = Field(
+        default_factory=lambda: env_flag_is_true("ABX_PKG_POSTINSTALL_SCRIPTS"),
+        repr=False,
+    )
 
     brew_prefix: Path = GUESSED_BREW_PREFIX
 

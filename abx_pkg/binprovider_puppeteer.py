@@ -14,7 +14,7 @@ from pydantic import Field, computed_field, model_validator
 
 from .base_types import BinName, BinProviderName, HostBinPath, InstallArgs, PATHStr
 from .binary import Binary
-from .binprovider import BinProvider, EnvProvider, remap_kwargs
+from .binprovider import BinProvider, EnvProvider, env_flag_is_true, remap_kwargs
 from .binprovider_npm import NpmProvider
 from .logging import format_subprocess_output, get_logger, log_subprocess_output
 
@@ -37,7 +37,11 @@ class PuppeteerProvider(BinProvider):
     BIN_DIR_FIELD: ClassVar[str | None] = "browser_bin_dir"
 
     PATH: PATHStr = ""
-    min_release_age: float = Field(default=0, repr=False)
+    postinstall_scripts: bool | None = Field(
+        default_factory=lambda: env_flag_is_true("ABX_PKG_POSTINSTALL_SCRIPTS"),
+        repr=False,
+    )
+    min_release_age: float | None = Field(default=0, repr=False)
 
     puppeteer_root: Path | None = None
     browser_bin_dir: Path | None = None
@@ -135,6 +139,10 @@ class PuppeteerProvider(BinProvider):
         min_release_age = (
             self.min_release_age if min_release_age is None else min_release_age
         )
+        postinstall_scripts = (
+            False if postinstall_scripts is None else postinstall_scripts
+        )
+        min_release_age = 0 if min_release_age is None else min_release_age
 
         self.install_root.mkdir(parents=True, exist_ok=True)
         self.bin_dir.mkdir(parents=True, exist_ok=True)
@@ -417,7 +425,7 @@ class PuppeteerProvider(BinProvider):
         browser_name = self._browser_name(bin_name, install_args)
         normalized_install_args = self._normalize_install_args(install_args)
 
-        if self.DRY_RUN:
+        if self.dry_run:
             return f"DRY_RUN would install {browser_name} via @puppeteer/browsers"
 
         installer_bin = self._require_installer_bin()
