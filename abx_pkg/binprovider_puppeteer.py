@@ -42,7 +42,7 @@ class PuppeteerProvider(BinProvider):
         default_factory=lambda: env_flag_is_true("ABX_PKG_POSTINSTALL_SCRIPTS"),
         repr=False,
     )
-    min_release_age: float | None = Field(default=0, repr=False)
+    min_release_age: float | None = Field(default=None, repr=False)
 
     puppeteer_root: Path | None = None
     browser_bin_dir: Path | None = None

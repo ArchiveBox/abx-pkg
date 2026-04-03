@@ -1,16 +1,51 @@
+import logging
 import tempfile
 from pathlib import Path
 
 import pytest
 
-from abx_pkg import Binary, EnvProvider, NpmProvider, PipProvider, SemVer
+from abx_pkg import (
+    Binary,
+    CustomProvider,
+    EnvProvider,
+    NpmProvider,
+    PipProvider,
+    SemVer,
+)
 from abx_pkg.exceptions import BinaryInstallError, BinaryLoadError
 
 
 class TestSecurityControls:
+    def test_env_defaults_only_apply_to_supported_providers(self, monkeypatch):
+        monkeypatch.setenv("ABX_PKG_MIN_RELEASE_AGE", "7")
+        monkeypatch.setenv("ABX_PKG_POSTINSTALL_SCRIPTS", "true")
+
+        assert PipProvider().min_release_age == 7
+        assert PipProvider().postinstall_scripts is True
+        assert EnvProvider().min_release_age is None
+        assert EnvProvider().postinstall_scripts is None
+        assert CustomProvider().min_release_age is None
+        assert CustomProvider().postinstall_scripts is None
+
     def test_env_provider_defaults_do_not_fail_closed(self, test_machine):
         installed = EnvProvider().install("python")
         test_machine.assert_shallow_binary_loaded(installed)
+
+    def test_unsupported_provider_security_options_warn_and_continue(
+        self,
+        caplog,
+        test_machine,
+    ):
+        with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+            installed = EnvProvider().install(
+                "python",
+                postinstall_scripts=False,
+                min_release_age=7,
+            )
+
+        test_machine.assert_shallow_binary_loaded(installed)
+        assert "ignoring unsupported min_release_age=7" in caplog.text
+        assert "ignoring unsupported postinstall_scripts=False" in caplog.text
 
     def test_binary_defaults_do_not_break_unsupported_provider(self):
         binary = Binary(name="python", binproviders=[EnvProvider()])

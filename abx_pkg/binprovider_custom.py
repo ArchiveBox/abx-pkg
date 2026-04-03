@@ -14,7 +14,6 @@ from .binprovider import (
     BinProviderOverrides,
     EnvProvider,
     HandlerType,
-    env_flag_is_true,
     remap_kwargs,
 )
 from .logging import format_subprocess_output
@@ -32,11 +31,8 @@ class CustomProvider(EnvProvider):
     BIN_DIR_FIELD: ClassVar[str | None] = "custom_bin_dir"
 
     PATH: PATHStr = ""
-    postinstall_scripts: bool | None = Field(
-        default_factory=lambda: env_flag_is_true("ABX_PKG_POSTINSTALL_SCRIPTS"),
-        repr=False,
-    )
-    min_release_age: float | None = Field(default=0, repr=False)
+    postinstall_scripts: bool | None = Field(default=None, repr=False)
+    min_release_age: float | None = Field(default=None, repr=False)
 
     custom_root: Path | None = None
     custom_bin_dir: Path | None = None

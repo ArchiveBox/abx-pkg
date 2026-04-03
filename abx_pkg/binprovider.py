@@ -1231,15 +1231,23 @@ class BinProvider(BaseModel):
             and min_release_age > 0
             and not self.supports_min_release_age("install")
         ):
-            raise RuntimeError(
-                f"{self.__class__.__name__}.install cannot enforce min_release_age={min_release_age} for provider {self.name}",
+            logger.warning(
+                "%s.install ignoring unsupported min_release_age=%s for provider %s",
+                self.__class__.__name__,
+                min_release_age,
+                self.name,
             )
+            min_release_age = None
         if postinstall_scripts is False and not self.supports_postinstall_disable(
             "install",
         ):
-            raise RuntimeError(
-                f"{self.__class__.__name__}.install cannot disable postinstall_scripts for provider {self.name}",
+            logger.warning(
+                "%s.install ignoring unsupported postinstall_scripts=%s for provider %s",
+                self.__class__.__name__,
+                postinstall_scripts,
+                self.name,
             )
+            postinstall_scripts = None
         self.setup(
             postinstall_scripts=postinstall_scripts,
             min_release_age=min_release_age,
@@ -1377,15 +1385,23 @@ class BinProvider(BaseModel):
             and min_release_age > 0
             and not self.supports_min_release_age("update")
         ):
-            raise RuntimeError(
-                f"{self.__class__.__name__}.update cannot enforce min_release_age={min_release_age} for provider {self.name}",
+            logger.warning(
+                "%s.update ignoring unsupported min_release_age=%s for provider %s",
+                self.__class__.__name__,
+                min_release_age,
+                self.name,
             )
+            min_release_age = None
         if postinstall_scripts is False and not self.supports_postinstall_disable(
             "update",
         ):
-            raise RuntimeError(
-                f"{self.__class__.__name__}.update cannot disable postinstall_scripts for provider {self.name}",
+            logger.warning(
+                "%s.update ignoring unsupported postinstall_scripts=%s for provider %s",
+                self.__class__.__name__,
+                postinstall_scripts,
+                self.name,
             )
+            postinstall_scripts = None
         self.setup(
             postinstall_scripts=postinstall_scripts,
             min_release_age=min_release_age,
