@@ -1,10 +1,10 @@
 import tempfile
 from pathlib import Path
+import logging
 
 import pytest
 
 from abx_pkg import Binary, GoGetProvider, SemVer
-from abx_pkg.exceptions import BinaryInstallError
 
 
 class TestGoGetProvider:
@@ -253,68 +253,42 @@ class TestGoGetProvider:
                 expected_version=SemVer("3.8.0"),
             )
 
-    def test_unsupported_security_controls_fail_closed_and_binary_override_wins(
+    def test_unsupported_security_controls_warn_and_continue(
         self,
         test_machine,
+        caplog,
     ):
         test_machine.require_tool("go")
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            with pytest.raises(RuntimeError):
-                GoGetProvider(
-                    gobin=Path(temp_dir) / "bad-go/bin",
-                    gopath=Path(temp_dir) / "bad-go",
-                    postinstall_scripts=False,
-                    min_release_age=0,
-                ).get_provider_with_overrides(
-                    overrides={
-                        "shfmt": {
-                            "install_args": ["mvdan.cc/sh/v3/cmd/shfmt@latest"],
+            with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+                installed = (
+                    GoGetProvider(
+                        gobin=Path(temp_dir) / "bad-go/bin",
+                        gopath=Path(temp_dir) / "bad-go",
+                        postinstall_scripts=False,
+                        min_release_age=1,
+                    )
+                    .get_provider_with_overrides(
+                        overrides={
+                            "shfmt": {
+                                "install_args": ["mvdan.cc/sh/v3/cmd/shfmt@latest"],
+                            },
                         },
-                    },
-                ).install("shfmt")
+                    )
+                    .install("shfmt")
+                )
+            test_machine.assert_shallow_binary_loaded(installed)
+            assert "ignoring unsupported min_release_age=1" in caplog.text
+            assert "ignoring unsupported postinstall_scripts=False" in caplog.text
 
-            with pytest.raises(RuntimeError):
-                GoGetProvider(
-                    gobin=Path(temp_dir) / "bad-age-go/bin",
-                    gopath=Path(temp_dir) / "bad-age-go",
-                    postinstall_scripts=True,
-                    min_release_age=1,
-                ).get_provider_with_overrides(
-                    overrides={
-                        "shfmt": {
-                            "install_args": ["mvdan.cc/sh/v3/cmd/shfmt@latest"],
-                        },
-                    },
-                ).install("shfmt")
-
+            caplog.clear()
             binary = Binary(
                 name="shfmt",
                 binproviders=[
                     GoGetProvider(
                         gobin=Path(temp_dir) / "ok-go/bin",
                         gopath=Path(temp_dir) / "ok-go",
-                        postinstall_scripts=False,
-                        min_release_age=1,
-                    ),
-                ],
-                postinstall_scripts=True,
-                min_release_age=0,
-                overrides={
-                    "goget": {
-                        "install_args": ["mvdan.cc/sh/v3/cmd/shfmt@latest"],
-                    },
-                },
-            )
-            installed = binary.install()
-            test_machine.assert_shallow_binary_loaded(installed)
-
-            failing_binary = Binary(
-                name="shfmt",
-                binproviders=[
-                    GoGetProvider(
-                        gobin=Path(temp_dir) / "failing-go/bin",
-                        gopath=Path(temp_dir) / "failing-go",
                         postinstall_scripts=False,
                         min_release_age=1,
                     ),
@@ -327,8 +301,11 @@ class TestGoGetProvider:
                     },
                 },
             )
-            with pytest.raises(BinaryInstallError):
-                failing_binary.install()
+            with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+                installed = binary.install()
+            test_machine.assert_shallow_binary_loaded(installed)
+            assert "ignoring unsupported min_release_age=1" in caplog.text
+            assert "ignoring unsupported postinstall_scripts=False" in caplog.text
 
     def test_binary_direct_methods_exercise_real_lifecycle(self, test_machine):
         test_machine.require_tool("go")

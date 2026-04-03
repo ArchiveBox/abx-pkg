@@ -66,6 +66,20 @@ all = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build.targets.wheel.force-include]
+"abx_pkg/js/base/config.json" = "abx_pkg/js/base/config.json"
+"abx_pkg/js/base/utils.js" = "abx_pkg/js/base/utils.js"
+"abx_pkg/js/chrome/config.json" = "abx_pkg/js/chrome/config.json"
+"abx_pkg/js/chrome/chrome_utils.js" = "abx_pkg/js/chrome/chrome_utils.js"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "abx_pkg/js/base/config.json",
+    "abx_pkg/js/base/utils.js",
+    "abx_pkg/js/chrome/config.json",
+    "abx_pkg/js/chrome/chrome_utils.js",
+]
+
 [dependency-groups]
 dev = [
     "mypy>=1.19.1",

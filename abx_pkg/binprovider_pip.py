@@ -14,7 +14,7 @@ from platformdirs import user_cache_path
 
 from pathlib import Path
 from typing import ClassVar, Self
-from pydantic import model_validator, TypeAdapter, computed_field
+from pydantic import Field, model_validator, TypeAdapter, computed_field
 
 from .base_types import (
     BinProviderName,
@@ -29,11 +29,10 @@ from .semver import SemVer
 from .binprovider import (
     BinProvider,
     DEFAULT_ENV_PATH,
+    env_flag_is_true,
     remap_kwargs,
 )
-from .logging import format_subprocess_output, get_logger, log_subprocess_error
-
-logger = get_logger(__name__)
+from .logging import format_subprocess_output
 
 ACTIVE_VENV = os.getenv("VIRTUAL_ENV", None)
 _CACHED_GLOBAL_PIP_BIN_DIRS: set[str] | None = None
@@ -58,6 +57,14 @@ class PipProvider(BinProvider):
     INSTALL_ROOT_FIELD: ClassVar[str | None] = "pip_venv"
 
     PATH: PATHStr = ""
+    postinstall_scripts: bool | None = Field(
+        default_factory=lambda: env_flag_is_true("ABX_PKG_POSTINSTALL_SCRIPTS"),
+        repr=False,
+    )
+    min_release_age: float | None = Field(
+        default_factory=lambda: float(os.environ.get("ABX_PKG_MIN_RELEASE_AGE", "7")),
+        repr=False,
+    )
 
     pip_venv: Path | None = (
         None  # None = system site-packages (user or global), otherwise it's a path e.g. DATA_DIR/lib/pip/venv
@@ -86,6 +93,14 @@ class PipProvider(BinProvider):
 
     def supports_postinstall_disable(self, action) -> bool:
         return action in ("install", "update")
+
+    @staticmethod
+    def _install_args_have_option(args: InstallArgs, *options: str) -> bool:
+        return any(
+            arg == option or arg.startswith(f"{option}=")
+            for arg in args
+            for option in options
+        )
 
     @computed_field
     @property
@@ -235,6 +250,10 @@ class PipProvider(BinProvider):
         min_release_age = (
             self.min_release_age if min_release_age is None else min_release_age
         )
+        postinstall_scripts = (
+            False if postinstall_scripts is None else postinstall_scripts
+        )
+        min_release_age = 0 if min_release_age is None else min_release_age
         if not self._ensure_writable_cache_dir(self.cache_dir):
             self.cache_arg = "--no-cache-dir"
 
@@ -286,9 +305,7 @@ class PipProvider(BinProvider):
                 min_release_age=min_release_age,
             )  # setuptools is not installed by default after python >= 3.12, and uv is needed for fast pip-compatible installs
             if proc.returncode != 0:
-                raise Exception(
-                    f"{self.__class__.__name__}: setup got returncode {proc.returncode} while bootstrapping {self.pip_bootstrap_packages}\n{format_subprocess_output(proc.stdout, proc.stderr)}".strip(),
-                )
+                self._raise_proc_error("install", self.pip_bootstrap_packages, proc)
 
     def _uv_pip_target_args(self) -> list[str]:
         if self.pip_venv:
@@ -317,11 +334,7 @@ class PipProvider(BinProvider):
         postinstall_scripts: bool = False,
         min_release_age: float = 7.0,
     ) -> subprocess.CompletedProcess:
-        pip_abspath = self.INSTALLER_BIN_ABSPATH
-        if not pip_abspath:
-            raise Exception(
-                f"{self.__class__.__name__} install method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
-            )
+        pip_abspath = self._require_installer_bin()
 
         uv_abspath = bin_abspath("uv", PATH=DEFAULT_ENV_PATH) or shutil.which("uv")
         pip_binary = os.getenv("PIP_BINARY")
@@ -329,13 +342,16 @@ class PipProvider(BinProvider):
             uv_abspath = None
         subcommand, *pip_args = pip_cmd
         is_install = subcommand == "install"
-        has_release_age_flag = self._args_have_option(
+        has_release_age_flag = self._install_args_have_option(
             pip_args,
             "--exclude-newer",
             "--uploaded-prior-to",
         )
-        has_no_build_flag = self._args_have_option(pip_args, "--no-build")
-        has_only_binary_flag = self._args_have_option(pip_args, "--only-binary")
+        has_no_build_flag = self._install_args_have_option(pip_args, "--no-build")
+        has_only_binary_flag = self._install_args_have_option(
+            pip_args,
+            "--only-binary",
+        )
 
         # supply-chain security: compute ISO-8601 cutoff once, used by both uv and pip
         if is_install and min_release_age > 0:
@@ -430,7 +446,6 @@ class PipProvider(BinProvider):
 
         install_args = install_args or self.get_install_args(bin_name)
         if min_version:
-            # append >=X.Y.Z to each package spec that doesn't already have a version constraint
             install_args = [
                 f"{arg}>={min_version}"
                 if arg
@@ -439,6 +454,18 @@ class PipProvider(BinProvider):
                 else arg
                 for arg in install_args
             ]
+        postinstall_scripts = (
+            False if postinstall_scripts is None else postinstall_scripts
+        )
+        min_release_age = 7.0 if min_release_age is None else min_release_age
+        if self._install_args_have_option(install_args, "--no-build", "--only-binary"):
+            postinstall_scripts = False
+        if self._install_args_have_option(
+            install_args,
+            "--exclude-newer",
+            "--uploaded-prior-to",
+        ):
+            min_release_age = 0
 
         proc = self._pip(
             [
@@ -449,24 +476,13 @@ class PipProvider(BinProvider):
                 *install_args,
             ],
             timeout=timeout,
-            postinstall_scripts=False
-            if postinstall_scripts is None
-            else postinstall_scripts,
-            min_release_age=7.0 if min_release_age is None else min_release_age,
+            postinstall_scripts=postinstall_scripts,
+            min_release_age=min_release_age,
         )
 
         if proc.returncode != 0:
-            log_subprocess_error(
-                logger,
-                f"{self.__class__.__name__} install",
-                proc.stdout,
-                proc.stderr,
-            )
-            raise Exception(
-                f"{self.__class__.__name__}: install got returncode {proc.returncode} while installing {install_args}: {install_args}\n{format_subprocess_output(proc.stdout, proc.stderr)}".strip(),
-            )
-
-        return proc.stderr.strip() + "\n" + proc.stdout.strip()
+            self._raise_proc_error("install", install_args, proc)
+        return format_subprocess_output(proc.stdout, proc.stderr)
 
     @remap_kwargs({"packages": "install_args"})
     def default_update_handler(
@@ -495,6 +511,18 @@ class PipProvider(BinProvider):
                 else arg
                 for arg in install_args
             ]
+        postinstall_scripts = (
+            False if postinstall_scripts is None else postinstall_scripts
+        )
+        min_release_age = 7.0 if min_release_age is None else min_release_age
+        if self._install_args_have_option(install_args, "--no-build", "--only-binary"):
+            postinstall_scripts = False
+        if self._install_args_have_option(
+            install_args,
+            "--exclude-newer",
+            "--uploaded-prior-to",
+        ):
+            min_release_age = 0
 
         proc = self._pip(
             [
@@ -506,24 +534,13 @@ class PipProvider(BinProvider):
                 *install_args,
             ],
             timeout=timeout,
-            postinstall_scripts=False
-            if postinstall_scripts is None
-            else postinstall_scripts,
-            min_release_age=7.0 if min_release_age is None else min_release_age,
+            postinstall_scripts=postinstall_scripts,
+            min_release_age=min_release_age,
         )
 
         if proc.returncode != 0:
-            log_subprocess_error(
-                logger,
-                f"{self.__class__.__name__} update",
-                proc.stdout,
-                proc.stderr,
-            )
-            raise Exception(
-                f"{self.__class__.__name__}: update got returncode {proc.returncode} while updating {install_args}: {install_args}\n{format_subprocess_output(proc.stdout, proc.stderr)}".strip(),
-            )
-
-        return proc.stderr.strip() + "\n" + proc.stdout.strip()
+            self._raise_proc_error("update", install_args, proc)
+        return format_subprocess_output(proc.stdout, proc.stderr)
 
     @remap_kwargs({"packages": "install_args"})
     def default_uninstall_handler(
@@ -547,15 +564,7 @@ class PipProvider(BinProvider):
         )
 
         if proc.returncode != 0:
-            log_subprocess_error(
-                logger,
-                f"{self.__class__.__name__} uninstall",
-                proc.stdout,
-                proc.stderr,
-            )
-            raise Exception(
-                f"{self.__class__.__name__}: uninstall got returncode {proc.returncode} while uninstalling {install_args}: {install_args}\n{format_subprocess_output(proc.stdout, proc.stderr)}".strip(),
-            )
+            self._raise_proc_error("uninstall", install_args, proc)
 
         return True
 

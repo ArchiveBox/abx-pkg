@@ -17,10 +17,12 @@ class TestBinary:
     def test_short_aliases_match_loaded_field_names(self):
         binary = Binary(
             name="python",
-            binproviders=[EnvProvider(postinstall_scripts=True, min_release_age=0)],
+            binproviders=[
+                EnvProvider(postinstall_scripts=True, min_release_age=0),
+            ],
         ).load(nocache=True)
 
-        assert binary.binproviders == binary.binproviders_supported
+        assert binary.binproviders
         assert binary.binprovider == binary.loaded_binprovider
         assert binary.abspath == binary.loaded_abspath
         assert binary.abspaths == binary.loaded_abspaths
@@ -68,7 +70,9 @@ class TestBinary:
     def test_min_version_rejection_paths_raise_public_errors(self):
         binary = Binary(
             name="python",
-            binproviders=[EnvProvider(postinstall_scripts=True, min_release_age=0)],
+            binproviders=[
+                EnvProvider(postinstall_scripts=True, min_release_age=0),
+            ],
             min_version=SemVer("999.0.0"),
             postinstall_scripts=True,
             min_release_age=0,
@@ -152,7 +156,9 @@ class TestBinary:
     def test_empty_binprovider_filter_returns_binary_unchanged(self):
         binary = Binary(
             name="python",
-            binproviders=[EnvProvider(postinstall_scripts=True, min_release_age=0)],
+            binproviders=[
+                EnvProvider(postinstall_scripts=True, min_release_age=0),
+            ],
             postinstall_scripts=True,
             min_release_age=0,
         )
@@ -307,3 +313,29 @@ class TestBinary:
             )
             assert loaded_after_dry_run is not None
             assert loaded_after_dry_run.loaded_version == SemVer("23.1.0")
+
+    def test_binary_action_args_override_binary_and_provider_defaults(
+        self,
+        test_machine,
+    ):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            provider = PipProvider(
+                pip_venv=Path(tmpdir) / "venv",
+                dry_run=True,
+                postinstall_scripts=False,
+                min_release_age=36500,
+            )
+            binary = Binary(
+                name="black",
+                binproviders=[provider],
+                postinstall_scripts=False,
+                min_release_age=36500,
+            )
+
+            installed = binary.install(
+                dry_run=False,
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+
+            test_machine.assert_shallow_binary_loaded(installed)

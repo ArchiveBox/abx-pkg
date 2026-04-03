@@ -85,7 +85,7 @@ def binary_detail_view(request: HttpRequest, key: str, **kwargs) -> ItemContext:
         "is_executable": str(binary.is_executable),
         "is_valid": str(binary.is_valid),
         "overrides": str(binary.overrides),
-        "providers": str(binary.binproviders_supported),
+        "providers": str(binary.binproviders),
     }
     data: list[SectionData] = [
         {

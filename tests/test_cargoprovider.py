@@ -1,10 +1,9 @@
 import tempfile
 from pathlib import Path
+import logging
 
-import pytest
 
 from abx_pkg import Binary, CargoProvider, SemVer
-from abx_pkg.exceptions import BinaryInstallError
 
 
 class TestCargoProvider:
@@ -177,29 +176,26 @@ class TestCargoProvider:
             assert ambient_installed.loaded_version is not None
             assert installed.loaded_version > ambient_installed.loaded_version
 
-    def test_unsupported_security_controls_fail_closed_and_binary_override_wins(
+    def test_unsupported_security_controls_warn_and_continue(
         self,
         test_machine,
+        caplog,
     ):
         test_machine.require_tool("cargo")
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            with pytest.raises(RuntimeError):
-                CargoProvider(
+            with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+                installed = CargoProvider(
                     cargo_root=Path(temp_dir) / "bad-cargo",
                     cargo_home=Path(temp_dir) / "bad-home",
                     postinstall_scripts=False,
-                    min_release_age=0,
-                ).install("choose")
-
-            with pytest.raises(RuntimeError):
-                CargoProvider(
-                    cargo_root=Path(temp_dir) / "bad-age-cargo",
-                    cargo_home=Path(temp_dir) / "bad-age-home",
-                    postinstall_scripts=True,
                     min_release_age=1,
                 ).install("choose")
+            test_machine.assert_shallow_binary_loaded(installed)
+            assert "ignoring unsupported min_release_age=1" in caplog.text
+            assert "ignoring unsupported postinstall_scripts=False" in caplog.text
 
+            caplog.clear()
             binary = Binary(
                 name="choose",
                 binproviders=[
@@ -210,27 +206,14 @@ class TestCargoProvider:
                         min_release_age=1,
                     ),
                 ],
-                postinstall_scripts=True,
-                min_release_age=0,
-            )
-            installed = binary.install()
-            test_machine.assert_shallow_binary_loaded(installed)
-
-            failing_binary = Binary(
-                name="choose",
-                binproviders=[
-                    CargoProvider(
-                        cargo_root=Path(temp_dir) / "failing-cargo",
-                        cargo_home=Path(temp_dir) / "failing-home",
-                        postinstall_scripts=False,
-                        min_release_age=1,
-                    ),
-                ],
                 postinstall_scripts=False,
                 min_release_age=1,
             )
-            with pytest.raises(BinaryInstallError):
-                failing_binary.install()
+            with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+                installed = binary.install()
+            test_machine.assert_shallow_binary_loaded(installed)
+            assert "ignoring unsupported min_release_age=1" in caplog.text
+            assert "ignoring unsupported postinstall_scripts=False" in caplog.text
 
     def test_binary_direct_methods_exercise_real_lifecycle(self, test_machine):
         test_machine.require_tool("cargo")

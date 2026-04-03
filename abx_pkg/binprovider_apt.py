@@ -10,9 +10,7 @@ from pydantic import model_validator, TypeAdapter
 from .base_types import BinProviderName, PATHStr, BinName, InstallArgs
 from .semver import SemVer
 from .binprovider import BinProvider, remap_kwargs
-from .logging import format_subprocess_output, get_logger, log_subprocess_error
-
-logger = get_logger(__name__)
+from .logging import format_subprocess_output
 
 _LAST_UPDATE_CHECK = None
 UPDATE_CHECK_INTERVAL = 60 * 60 * 24  # 1 day
@@ -62,7 +60,8 @@ class AptProvider(BinProvider):
 
         install_args = install_args or self.get_install_args(bin_name)
 
-        if not (self.INSTALLER_BIN_ABSPATH and shutil.which("dpkg")):
+        installer_bin = self.INSTALLER_BIN_ABSPATH
+        if not (installer_bin and shutil.which("dpkg")):
             raise Exception(
                 f"{self.__class__.__name__}.INSTALLER_BIN is not available on this host: {self.INSTALLER_BIN}",
             )
@@ -94,30 +93,23 @@ class AptProvider(BinProvider):
         ):
             # only update if we haven't checked in the last day
             self.exec(
-                bin_name=self.INSTALLER_BIN_ABSPATH,
+                bin_name=installer_bin,
                 cmd=["update", "-qq"],
                 timeout=timeout,
             )
             _LAST_UPDATE_CHECK = time.time()
 
         proc = self.exec(
-            bin_name=self.INSTALLER_BIN_ABSPATH,
+            bin_name=installer_bin,
             cmd=["install", "-y", "-qq", "--no-install-recommends", *install_args],
             timeout=timeout,
         )
         if proc.returncode != 0:
-            log_subprocess_error(
-                logger,
-                f"{self.__class__.__name__} install",
-                proc.stdout,
-                proc.stderr,
-            )
-            raise Exception(
-                f"{self.__class__.__name__} install got returncode {proc.returncode} while installing {install_args}: {install_args}\n{format_subprocess_output(proc.stdout, proc.stderr)}".strip(),
-            )
-
-            return proc.stderr.strip() + "\n" + proc.stdout.strip()
-        return f"Installed {install_args} successfully."
+            self._raise_proc_error("install", install_args, proc)
+        return (
+            format_subprocess_output(proc.stdout, proc.stderr)
+            or f"Installed {install_args} successfully."
+        )
 
     @remap_kwargs({"packages": "install_args"})
     def default_update_handler(
@@ -133,7 +125,8 @@ class AptProvider(BinProvider):
 
         install_args = install_args or self.get_install_args(bin_name)
 
-        if not (self.INSTALLER_BIN_ABSPATH and shutil.which("dpkg")):
+        installer_bin = self.INSTALLER_BIN_ABSPATH
+        if not (installer_bin and shutil.which("dpkg")):
             raise Exception(
                 f"{self.__class__.__name__}.INSTALLER_BIN is not available on this host: {self.INSTALLER_BIN}",
             )
@@ -161,14 +154,14 @@ class AptProvider(BinProvider):
             or (time.time() - _LAST_UPDATE_CHECK) > UPDATE_CHECK_INTERVAL
         ):
             self.exec(
-                bin_name=self.INSTALLER_BIN_ABSPATH,
+                bin_name=installer_bin,
                 cmd=["update", "-qq"],
                 timeout=timeout,
             )
             _LAST_UPDATE_CHECK = time.time()
 
         proc = self.exec(
-            bin_name=self.INSTALLER_BIN_ABSPATH,
+            bin_name=installer_bin,
             cmd=[
                 "install",
                 "--only-upgrade",
@@ -180,17 +173,11 @@ class AptProvider(BinProvider):
             timeout=timeout,
         )
         if proc.returncode != 0:
-            log_subprocess_error(
-                logger,
-                f"{self.__class__.__name__} update",
-                proc.stdout,
-                proc.stderr,
-            )
-            raise Exception(
-                f"{self.__class__.__name__} update got returncode {proc.returncode} while updating {install_args}: {install_args}\n{format_subprocess_output(proc.stdout, proc.stderr)}".strip(),
-            )
-
-        return f"Updated {install_args} successfully."
+            self._raise_proc_error("update", install_args, proc)
+        return (
+            format_subprocess_output(proc.stdout, proc.stderr)
+            or f"Updated {install_args} successfully."
+        )
 
     @remap_kwargs({"packages": "install_args"})
     def default_uninstall_handler(
@@ -204,7 +191,8 @@ class AptProvider(BinProvider):
     ) -> bool:
         install_args = install_args or self.get_install_args(bin_name)
 
-        if not (self.INSTALLER_BIN_ABSPATH and shutil.which("dpkg")):
+        installer_bin = self.INSTALLER_BIN_ABSPATH
+        if not (installer_bin and shutil.which("dpkg")):
             raise Exception(
                 f"{self.__class__.__name__}.INSTALLER_BIN is not available on this host: {self.INSTALLER_BIN}",
             )
@@ -230,20 +218,12 @@ class AptProvider(BinProvider):
             return True
 
         proc = self.exec(
-            bin_name=self.INSTALLER_BIN_ABSPATH,
+            bin_name=installer_bin,
             cmd=["remove", "-y", "-qq", *install_args],
             timeout=timeout,
         )
         if proc.returncode != 0:
-            log_subprocess_error(
-                logger,
-                f"{self.__class__.__name__} uninstall",
-                proc.stdout,
-                proc.stderr,
-            )
-            raise Exception(
-                f"{self.__class__.__name__} uninstall got returncode {proc.returncode} while removing {install_args}: {install_args}\n{format_subprocess_output(proc.stdout, proc.stderr)}".strip(),
-            )
+            self._raise_proc_error("uninstall", install_args, proc)
 
         return True
 

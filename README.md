@@ -89,7 +89,7 @@ from abx_pkg import Binary, BinProvider, BrewProvider, EnvProvider
 # or define binaries as classes for type checking
 class CurlBinary(Binary):
     name: str = 'curl'
-    binproviders_supported: list[InstanceOf[BinProvider]] = [BrewProvider(), EnvProvider()]
+    binproviders: list[InstanceOf[BinProvider]] = [BrewProvider(), EnvProvider()]
 
 curl = CurlBinary().install()
 assert isinstance(curl, CurlBinary)                                 # CurlBinary is a unique type you can use in annotations now
@@ -184,14 +184,14 @@ INSTALLER_BIN = "env"
 PATH = str(Path(sys.executable).parent)
 postinstall_scripts = False          # or ABX_PKG_POSTINSTALL_SCRIPTS=1
 min_release_age = 7.0                # or ABX_PKG_MIN_RELEASE_AGE=<days>
-install_timeout = 120
-version_timeout = 10
-DRY_RUN = False                      # or DRY_RUN=1
+install_timeout = 120                # or ABX_PKG_INSTALL_TIMEOUT=120
+version_timeout = 10                 # or ABX_PKG_VERSION_TIMEOUT=10
+DRY_RUN = False                      # or ABX_PKG_DRY_RUN=1 / DRY_RUN=1
 ```
 
-- `DRY_RUN`: use `provider.get_provider_with_overrides(dry_run=True)` or `DRY_RUN=1`. Provider subprocesses are logged and skipped, `install()` / `update()` return a placeholder loaded binary, and `uninstall()` returns `True` without mutating the host.
-- `install_timeout`: shared provider-level timeout used by `install()`, `update()`, and `uninstall()` handler execution paths.
-- `version_timeout`: shared provider-level timeout used by version / metadata probes such as `--version`, `npm show`, `npm list`, `pip show`, `go version -m`, and brew lookups.
+- `DRY_RUN`: use `provider.get_provider_with_overrides(dry_run=True)`, `ABX_PKG_DRY_RUN=1`, or `DRY_RUN=1`. If both env vars are set, `ABX_PKG_DRY_RUN` wins. Provider subprocesses are logged and skipped, `install()` / `update()` return a placeholder loaded binary, and `uninstall()` returns `True` without mutating the host.
+- `install_timeout`: shared provider-level timeout used by `install()`, `update()`, and `uninstall()` handler execution paths. Can also be set with `ABX_PKG_INSTALL_TIMEOUT`.
+- `version_timeout`: shared provider-level timeout used by version / metadata probes such as `--version`, `npm show`, `npm list`, `pip show`, `go version -m`, and brew lookups. Can also be set with `ABX_PKG_VERSION_TIMEOUT`.
 - Security controls fail closed: if `min_release_age > 0` or `postinstall_scripts=False` is requested on a provider that does not support that control for that action, `install()` / `update()` raises instead of silently ignoring it.
 
 Supported override keys are the same everywhere:
@@ -292,7 +292,7 @@ pip_bootstrap_packages = ["pip", "setuptools", "uv"]
 - `DRY_RUN`: shared behavior.
 - Security: supports both `min_release_age` and `postinstall_scripts=False`.
 - Overrides: `install_args` is passed as pip requirement specs; unpinned specs get a `>=min_version` floor when `min_version` is supplied.
-- Notes: `postinstall_scripts=False` uses `uv pip --no-build` or plain `pip --only-binary :all:`. `min_release_age` is enforced with `uv --exclude-newer=<cutoff>` or plain `pip --uploaded-prior-to=<cutoff>` when the host pip is new enough.
+- Notes: `postinstall_scripts=False` uses `uv pip --no-build` or plain `pip --only-binary :all:`. `min_release_age` is enforced with `uv --exclude-newer=<cutoff>` or plain `pip --uploaded-prior-to=<cutoff>` when the host pip is new enough. Explicit conflicting flags already present in `install_args` win over the derived defaults.
 
 #### 📦 [`NpmProvider`](./abx_pkg/binprovider_npm.py) (`npm`)
 
@@ -311,7 +311,7 @@ npm_install_args = ["--force", "--no-audit", "--no-fund", "--loglevel=error"]
 - `DRY_RUN`: shared behavior.
 - Security: supports both `min_release_age` and `postinstall_scripts=False`.
 - Overrides: `install_args` is passed as npm package specs; unpinned specs get rewritten to `pkg@>=<min_version>` when `min_version` is supplied.
-- Notes: direct npm mode uses `--ignore-scripts` and `--min-release-age=<days>`. pnpm mode writes `pnpm-workspace.yaml` with `minimumReleaseAge`; that is how release-age enforcement is configured there.
+- Notes: direct npm mode uses `--ignore-scripts` and `--min-release-age=<days>`. pnpm mode writes `pnpm-workspace.yaml` with `minimumReleaseAge`; that is how release-age enforcement is configured there. Explicit conflicting flags already present in `install_args` win over the derived defaults.
 
 #### 🦀 [`CargoProvider`](./abx_pkg/binprovider_cargo.py) (`cargo`)
 
@@ -453,7 +453,7 @@ It can define one or more `BinProvider`s that it supports, along with overrides 
 
 `Binary`s implement the following interface:
 - `load()`, `install()`, `update()`, `uninstall()`, `load_or_install()` `->` `Binary`
-- `binproviders` / `binproviders_supported`
+- `binproviders`
 - `binprovider` / `loaded_binprovider`
 - `abspath` / `loaded_abspath`
 - `abspaths` / `loaded_abspaths`
@@ -480,8 +480,8 @@ class YtdlpBinary(Binary):
     name: BinName = 'ytdlp'
     description: str = 'YT-DLP (Replacement for YouTube-DL) Media Downloader'
 
-    # use the real field name on subclasses; `binproviders` is the runtime alias
-    binproviders_supported: list[InstanceOf[BinProvider]] = [env, pip, apt, CustomBrewProvider()]
+    # define the providers this binary supports
+    binproviders: list[InstanceOf[BinProvider]] = [env, pip, apt, CustomBrewProvider()]
     
     # customize installed package names for specific package managers
     overrides: dict[BinProviderName, HandlerDict] = {
@@ -517,8 +517,8 @@ from abx_pkg import env, apt
 class DockerBinary(Binary):
     name: BinName = 'docker'
 
-    # use the real field name on subclasses; `binproviders` is the runtime alias
-    binproviders_supported: list[InstanceOf[BinProvider]] = [env, apt]
+    # define the providers this binary supports
+    binproviders: list[InstanceOf[BinProvider]] = [env, apt]
     
     overrides: dict[BinProviderName, HandlerDict] = {
         'env': {

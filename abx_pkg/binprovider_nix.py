@@ -19,9 +19,7 @@ from .base_types import (
 )
 from .semver import SemVer
 from .binprovider import BinProvider, DEFAULT_ENV_PATH, remap_kwargs
-from .logging import get_logger, log_subprocess_error
-
-logger = get_logger(__name__)
+from .logging import format_subprocess_output
 
 
 DEFAULT_NIX_PROFILE = Path(
@@ -155,13 +153,10 @@ class NixProvider(BinProvider):
         )
 
         install_args = install_args or self.get_install_args(bin_name)
-        if not self.INSTALLER_BIN_ABSPATH:
-            raise Exception(
-                f"{self.__class__.__name__} install method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
-            )
+        installer_bin = self._require_installer_bin()
 
         proc = self.exec(
-            bin_name=self.INSTALLER_BIN_ABSPATH,
+            bin_name=installer_bin,
             cmd=[
                 "profile",
                 "install",
@@ -174,17 +169,9 @@ class NixProvider(BinProvider):
             timeout=timeout,
         )
         if proc.returncode != 0:
-            log_subprocess_error(
-                logger,
-                f"{self.__class__.__name__} install",
-                proc.stdout,
-                proc.stderr,
-            )
-            raise Exception(
-                f"{self.__class__.__name__}: install got returncode {proc.returncode} while installing {install_args}: {install_args}",
-            )
+            self._raise_proc_error("install", install_args, proc)
 
-        return (proc.stderr.strip() + "\n" + proc.stdout.strip()).strip()
+        return format_subprocess_output(proc.stdout, proc.stderr)
 
     @remap_kwargs({"packages": "install_args"})
     def default_update_handler(
@@ -200,13 +187,10 @@ class NixProvider(BinProvider):
             bin_name,
             install_args=install_args,
         )
-        if not self.INSTALLER_BIN_ABSPATH:
-            raise Exception(
-                f"{self.__class__.__name__} update method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
-            )
+        installer_bin = self._require_installer_bin()
 
         proc = self.exec(
-            bin_name=self.INSTALLER_BIN_ABSPATH,
+            bin_name=installer_bin,
             cmd=[
                 "profile",
                 "upgrade",
@@ -219,17 +203,9 @@ class NixProvider(BinProvider):
             timeout=timeout,
         )
         if proc.returncode != 0:
-            log_subprocess_error(
-                logger,
-                f"{self.__class__.__name__} update",
-                proc.stdout,
-                proc.stderr,
-            )
-            raise Exception(
-                f"{self.__class__.__name__}: update got returncode {proc.returncode} while updating {profile_element}",
-            )
+            self._raise_proc_error("update", profile_element, proc)
 
-        return (proc.stderr.strip() + "\n" + proc.stdout.strip()).strip()
+        return format_subprocess_output(proc.stdout, proc.stderr)
 
     @remap_kwargs({"packages": "install_args"})
     def default_uninstall_handler(
@@ -245,13 +221,10 @@ class NixProvider(BinProvider):
             bin_name,
             install_args=install_args,
         )
-        if not self.INSTALLER_BIN_ABSPATH:
-            raise Exception(
-                f"{self.__class__.__name__} uninstall method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
-            )
+        installer_bin = self._require_installer_bin()
 
         proc = self.exec(
-            bin_name=self.INSTALLER_BIN_ABSPATH,
+            bin_name=installer_bin,
             cmd=[
                 "profile",
                 "remove",
@@ -264,14 +237,6 @@ class NixProvider(BinProvider):
             timeout=timeout,
         )
         if proc.returncode not in (0, 1):
-            log_subprocess_error(
-                logger,
-                f"{self.__class__.__name__} uninstall",
-                proc.stdout,
-                proc.stderr,
-            )
-            raise Exception(
-                f"{self.__class__.__name__}: uninstall got returncode {proc.returncode} while uninstalling {profile_element}",
-            )
+            self._raise_proc_error("uninstall", profile_element, proc)
 
         return True

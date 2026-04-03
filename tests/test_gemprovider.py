@@ -1,10 +1,10 @@
 import tempfile
 from pathlib import Path
+import logging
 
 import pytest
 
 from abx_pkg import Binary, GemProvider, SemVer
-from abx_pkg.exceptions import BinaryInstallError
 
 
 class TestGemProvider:
@@ -186,29 +186,26 @@ class TestGemProvider:
                 expected_version=SemVer("100.0.0"),
             )
 
-    def test_unsupported_security_controls_fail_closed_and_binary_override_wins(
+    def test_unsupported_security_controls_warn_and_continue(
         self,
         test_machine,
+        caplog,
     ):
         test_machine.require_tool("gem")
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            with pytest.raises(RuntimeError):
-                GemProvider(
+            with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+                installed = GemProvider(
                     gem_home=Path(temp_dir) / "bad-home",
                     gem_bindir=Path(temp_dir) / "bad-home/bin",
                     postinstall_scripts=False,
-                    min_release_age=0,
-                ).install("lolcat")
-
-            with pytest.raises(RuntimeError):
-                GemProvider(
-                    gem_home=Path(temp_dir) / "bad-age-home",
-                    gem_bindir=Path(temp_dir) / "bad-age-home/bin",
-                    postinstall_scripts=True,
                     min_release_age=1,
                 ).install("lolcat")
+            test_machine.assert_shallow_binary_loaded(installed)
+            assert "ignoring unsupported min_release_age=1" in caplog.text
+            assert "ignoring unsupported postinstall_scripts=False" in caplog.text
 
+            caplog.clear()
             binary = Binary(
                 name="lolcat",
                 binproviders=[
@@ -219,27 +216,14 @@ class TestGemProvider:
                         min_release_age=1,
                     ),
                 ],
-                postinstall_scripts=True,
-                min_release_age=0,
-            )
-            installed = binary.install()
-            test_machine.assert_shallow_binary_loaded(installed)
-
-            failing_binary = Binary(
-                name="lolcat",
-                binproviders=[
-                    GemProvider(
-                        gem_home=Path(temp_dir) / "failing-home",
-                        gem_bindir=Path(temp_dir) / "failing-home/bin",
-                        postinstall_scripts=False,
-                        min_release_age=1,
-                    ),
-                ],
                 postinstall_scripts=False,
                 min_release_age=1,
             )
-            with pytest.raises(BinaryInstallError):
-                failing_binary.install()
+            with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+                installed = binary.install()
+            test_machine.assert_shallow_binary_loaded(installed)
+            assert "ignoring unsupported min_release_age=1" in caplog.text
+            assert "ignoring unsupported postinstall_scripts=False" in caplog.text
 
     def test_binary_direct_methods_exercise_real_lifecycle(self, test_machine):
         test_machine.require_tool("gem")

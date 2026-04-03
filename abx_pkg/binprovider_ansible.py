@@ -5,6 +5,7 @@ import os
 import sys
 import json
 import shutil
+import logging as py_logging
 import subprocess
 import tempfile
 from pathlib import Path
@@ -13,9 +14,13 @@ from typing import Any
 from .base_types import BinProviderName, PATHStr, BinName, InstallArgs
 from .semver import SemVer
 from .binprovider import BinProvider, OPERATING_SYSTEM, DEFAULT_PATH, remap_kwargs
+from .logging import format_subprocess_output, get_logger, log_subprocess_output
+
+logger = get_logger(__name__)
 
 
 ANSIBLE_INSTALLED = shutil.which("ansible-playbook") is not None
+SYSTEM_TEMP_DIR = tempfile.gettempdir()
 
 
 ANSIBLE_INSTALL_PLAYBOOK_TEMPLATE = """
@@ -106,12 +111,13 @@ def ansible_package_install(
             module_extra_yaml=module_extra_yaml,
         )
 
-    # create a temporary directory using the context manager
-    with tempfile.TemporaryDirectory() as temp_dir:
-        ansible_home = Path(temp_dir) / "tmp"
+    temp_dir = Path(tempfile.mkdtemp(dir=SYSTEM_TEMP_DIR))
+    sudo_bin = None
+    try:
+        ansible_home = temp_dir / "tmp"
         ansible_home.mkdir(exist_ok=True)
 
-        playbook_path = Path(temp_dir) / "install_playbook.yml"
+        playbook_path = temp_dir / "install_playbook.yml"
         playbook_path.write_text(playbook)
 
         env = os.environ.copy()
@@ -119,41 +125,105 @@ def ansible_package_install(
         env["ANSIBLE_LOCALHOST_WARNING"] = "False"
         env["ANSIBLE_HOME"] = str(ansible_home)
         env["ANSIBLE_PYTHON_INTERPRETER"] = sys.executable
+        env["TMPDIR"] = SYSTEM_TEMP_DIR
         env["PATH"] = ":".join(
             [str(Path(sys.executable).parent), env.get("PATH", "")],
         ).strip(":")
         ansible_playbook = (
             shutil.which("ansible-playbook", path=env["PATH"]) or "ansible-playbook"
         )
-        proc = subprocess.run(
-            [
-                ansible_playbook,
-                "-i",
-                "localhost,",
-                "-c",
-                "local",
-                str(playbook_path),
-            ],
-            capture_output=True,
-            text=True,
-            cwd=temp_dir,
-            env=env,
-            timeout=timeout,
-        )
+        cmd = [
+            ansible_playbook,
+            "-i",
+            "localhost,",
+            "-c",
+            "local",
+            str(playbook_path),
+        ]
+        proc = None
+        sudo_failure_output = None
+        if (
+            OPERATING_SYSTEM != "darwin"
+            and installer_module != "community.general.homebrew"
+        ):
+            sudo_bin = shutil.which("sudo", path=env["PATH"]) or shutil.which("sudo")
+            if os.geteuid() != 0 and sudo_bin:
+                sudo_proc = subprocess.run(
+                    [
+                        sudo_bin,
+                        "-n",
+                        "--preserve-env=PATH,HOME,LOGNAME,USER,TMPDIR,ANSIBLE_INVENTORY_UNPARSED_WARNING,ANSIBLE_LOCALHOST_WARNING,ANSIBLE_HOME,ANSIBLE_PYTHON_INTERPRETER",
+                        "--",
+                        *cmd,
+                    ],
+                    capture_output=True,
+                    text=True,
+                    cwd=temp_dir,
+                    env=env,
+                    timeout=timeout,
+                )
+                if sudo_proc.returncode == 0:
+                    proc = sudo_proc
+                else:
+                    log_subprocess_output(
+                        logger,
+                        "ansible sudo exec",
+                        sudo_proc.stdout,
+                        sudo_proc.stderr,
+                        level=py_logging.DEBUG,
+                    )
+                    sudo_failure_output = format_subprocess_output(
+                        sudo_proc.stdout,
+                        sudo_proc.stderr,
+                    )
+        if proc is None:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                cwd=temp_dir,
+                env=env,
+                timeout=timeout,
+            )
         succeeded = proc.returncode == 0
         result_text = f"Installing {pkg_names} on {OPERATING_SYSTEM} using Ansible {installer_module} {['failed', 'succeeded'][succeeded]}:{proc.stdout}\n{proc.stderr}".strip()
+        if sudo_failure_output and not succeeded:
+            result_text = (
+                f"{result_text}\n\nPrevious sudo attempt failed:\n{sudo_failure_output}"
+            )
 
-        # check for success/failure
         if succeeded:
             return result_text
-        else:
-            if "Permission denied" in result_text:
-                raise PermissionError(
-                    f"Installing {pkg_names} failed! Need to be root to use package manager (retry with sudo, or install manually)",
-                )
-            raise Exception(
-                f"Installing {pkg_names} failed! (retry with sudo, or install manually)\n{result_text}",
+        if "Permission denied" in result_text:
+            raise PermissionError(
+                f"Installing {pkg_names} failed! Need to be root to use package manager (retry with sudo, or install manually)",
             )
+        raise Exception(
+            f"Installing {pkg_names} failed! (retry with sudo, or install manually)\n{result_text}",
+        )
+    finally:
+        if os.geteuid() != 0 and sudo_bin:
+            chown_proc = subprocess.run(
+                [
+                    sudo_bin,
+                    "-n",
+                    "chown",
+                    "-R",
+                    f"{os.geteuid()}:{os.getegid()}",
+                    str(temp_dir),
+                ],
+                capture_output=True,
+                text=True,
+            )
+            if chown_proc.returncode != 0:
+                log_subprocess_output(
+                    logger,
+                    "ansible sudo chown",
+                    chown_proc.stdout,
+                    chown_proc.stderr,
+                    level=py_logging.DEBUG,
+                )
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 class AnsibleProvider(BinProvider):

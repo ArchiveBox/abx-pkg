@@ -287,3 +287,20 @@ class TestPipProvider:
                 min_release_age=0,
             )
             test_machine.exercise_provider_dry_run(provider, bin_name="black")
+
+    def test_provider_action_args_override_provider_defaults(self, test_machine):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            provider = PipProvider(
+                pip_venv=Path(temp_dir) / "venv",
+                dry_run=True,
+                postinstall_scripts=False,
+                min_release_age=36500,
+            )
+
+            installed = provider.install(
+                "black",
+                dry_run=False,
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+            test_machine.assert_shallow_binary_loaded(installed)

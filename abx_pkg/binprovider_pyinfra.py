@@ -6,6 +6,7 @@ import sys
 import shutil
 import importlib
 import inspect
+import logging as py_logging
 import subprocess
 import tempfile
 from pathlib import Path
@@ -15,8 +16,12 @@ from typing import Any
 from .base_types import BinProviderName, PATHStr, BinName, InstallArgs
 from .semver import SemVer
 from .binprovider import BinProvider, OPERATING_SYSTEM, DEFAULT_PATH, remap_kwargs
+from .logging import format_subprocess_output, get_logger, log_subprocess_output
+
+logger = get_logger(__name__)
 
 PYINFRA_INSTALLED = shutil.which("pyinfra") is not None
+SYSTEM_TEMP_DIR = tempfile.gettempdir()
 
 
 def pyinfra_package_install(
@@ -82,8 +87,10 @@ def pyinfra_package_install(
         },
     }
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        deploy_path = Path(temp_dir) / "deploy.py"
+    temp_dir = Path(tempfile.mkdtemp(dir=SYSTEM_TEMP_DIR))
+    sudo_bin = None
+    try:
+        deploy_path = temp_dir / "deploy.py"
         deploy_path.write_text(
             "\n".join(
                 [
@@ -105,16 +112,78 @@ def pyinfra_package_install(
             shutil.which("pyinfra", path=os.environ.get("PATH", DEFAULT_PATH))
             or "pyinfra"
         )
-        proc = subprocess.run(
-            [pyinfra_bin, "--yes", "@local", str(deploy_path)],
-            capture_output=True,
-            text=True,
-            cwd=temp_dir,
-            timeout=timeout,
-        )
+        cmd = [pyinfra_bin, "--yes", "@local", str(deploy_path)]
+        env = os.environ.copy()
+        env["TMPDIR"] = SYSTEM_TEMP_DIR
+        proc = None
+        sudo_failure_output = None
+        if (
+            OPERATING_SYSTEM != "darwin"
+            and installer_module != "operations.brew.packages"
+        ):
+            sudo_bin = shutil.which("sudo", path=os.environ.get("PATH", DEFAULT_PATH))
+            if os.geteuid() != 0 and sudo_bin:
+                sudo_proc = subprocess.run(
+                    [sudo_bin, "-n", "--", *cmd],
+                    capture_output=True,
+                    text=True,
+                    cwd=temp_dir,
+                    env=env,
+                    timeout=timeout,
+                )
+                if sudo_proc.returncode == 0:
+                    proc = sudo_proc
+                else:
+                    log_subprocess_output(
+                        logger,
+                        "pyinfra sudo exec",
+                        sudo_proc.stdout,
+                        sudo_proc.stderr,
+                        level=py_logging.DEBUG,
+                    )
+                    sudo_failure_output = format_subprocess_output(
+                        sudo_proc.stdout,
+                        sudo_proc.stderr,
+                    )
+        if proc is None:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                cwd=temp_dir,
+                env=env,
+                timeout=timeout,
+            )
+    finally:
+        if os.geteuid() != 0 and sudo_bin:
+            chown_proc = subprocess.run(
+                [
+                    sudo_bin,
+                    "-n",
+                    "chown",
+                    "-R",
+                    f"{os.geteuid()}:{os.getegid()}",
+                    str(temp_dir),
+                ],
+                capture_output=True,
+                text=True,
+            )
+            if chown_proc.returncode != 0:
+                log_subprocess_output(
+                    logger,
+                    "pyinfra sudo chown",
+                    chown_proc.stdout,
+                    chown_proc.stderr,
+                    level=py_logging.DEBUG,
+                )
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
     succeeded = proc.returncode == 0
     result_text = f"Installing {pkg_names} on {OPERATING_SYSTEM} using Pyinfra {installer_module} {['failed', 'succeeded'][succeeded]}\n{proc.stdout}\n{proc.stderr}".strip()
+    if sudo_failure_output and not succeeded:
+        result_text = (
+            f"{result_text}\n\nPrevious sudo attempt failed:\n{sudo_failure_output}"
+        )
 
     if succeeded:
         return result_text

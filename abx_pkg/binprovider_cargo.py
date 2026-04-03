@@ -11,9 +11,7 @@ from typing import ClassVar, Self
 from .base_types import BinProviderName, PATHStr, BinName, InstallArgs
 from .semver import SemVer
 from .binprovider import BinProvider, remap_kwargs
-from .logging import format_subprocess_output, get_logger, log_subprocess_error
-
-logger = get_logger(__name__)
+from .logging import format_subprocess_output
 
 
 DEFAULT_CARGO_HOME = Path(os.environ.get("CARGO_HOME", "~/.cargo")).expanduser()
@@ -154,35 +152,19 @@ class CargoProvider(BinProvider):
         )
 
         install_args = install_args or self.get_install_args(bin_name)
-        if not self.INSTALLER_BIN_ABSPATH:
-            raise Exception(
-                f"{self.__class__.__name__} install method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
-            )
-
-        version_args = (
-            ["--version", f">={min_version}"]
-            if min_version and not self._args_have_option(install_args, "--version")
-            else []
-        )
+        if min_version and not any(arg.startswith("--version") for arg in install_args):
+            install_args = ["--version", f">={min_version}", *install_args]
+        installer_bin = self._require_installer_bin()
 
         proc = self.exec(
-            bin_name=self.INSTALLER_BIN_ABSPATH,
-            cmd=["install", *self._cargo_install_args(), *version_args, *install_args],
+            bin_name=installer_bin,
+            cmd=["install", *self._cargo_install_args(), *install_args],
             env=self._cargo_env(),
             timeout=timeout,
         )
         if proc.returncode != 0:
-            log_subprocess_error(
-                logger,
-                f"{self.__class__.__name__} install",
-                proc.stdout,
-                proc.stderr,
-            )
-            raise Exception(
-                f"{self.__class__.__name__}: install got returncode {proc.returncode} while installing {install_args}: {install_args}\n{format_subprocess_output(proc.stdout, proc.stderr)}".strip(),
-            )
-
-        return (proc.stderr.strip() + "\n" + proc.stdout.strip()).strip()
+            self._raise_proc_error("install", install_args, proc)
+        return format_subprocess_output(proc.stdout, proc.stderr)
 
     @remap_kwargs({"packages": "install_args"})
     def default_update_handler(
@@ -201,41 +183,24 @@ class CargoProvider(BinProvider):
         )
 
         install_args = install_args or self.get_install_args(bin_name)
-        if not self.INSTALLER_BIN_ABSPATH:
-            raise Exception(
-                f"{self.__class__.__name__} update method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
-            )
-
-        version_args = (
-            ["--version", f">={min_version}"]
-            if min_version and not self._args_have_option(install_args, "--version")
-            else []
-        )
+        if min_version and not any(arg.startswith("--version") for arg in install_args):
+            install_args = ["--version", f">={min_version}", *install_args]
+        installer_bin = self._require_installer_bin()
 
         proc = self.exec(
-            bin_name=self.INSTALLER_BIN_ABSPATH,
+            bin_name=installer_bin,
             cmd=[
                 "install",
                 "--force",
                 *self._cargo_install_args(),
-                *version_args,
                 *install_args,
             ],
             env=self._cargo_env(),
             timeout=timeout,
         )
         if proc.returncode != 0:
-            log_subprocess_error(
-                logger,
-                f"{self.__class__.__name__} update",
-                proc.stdout,
-                proc.stderr,
-            )
-            raise Exception(
-                f"{self.__class__.__name__}: update got returncode {proc.returncode} while updating {install_args}: {install_args}\n{format_subprocess_output(proc.stdout, proc.stderr)}".strip(),
-            )
-
-        return (proc.stderr.strip() + "\n" + proc.stdout.strip()).strip()
+            self._raise_proc_error("update", install_args, proc)
+        return format_subprocess_output(proc.stdout, proc.stderr)
 
     @remap_kwargs({"packages": "install_args"})
     def default_uninstall_handler(
@@ -252,13 +217,10 @@ class CargoProvider(BinProvider):
             bin_name,
             install_args=install_args,
         )
-        if not self.INSTALLER_BIN_ABSPATH:
-            raise Exception(
-                f"{self.__class__.__name__} uninstall method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
-            )
+        installer_bin = self._require_installer_bin()
 
         proc = self.exec(
-            bin_name=self.INSTALLER_BIN_ABSPATH,
+            bin_name=installer_bin,
             cmd=[
                 "uninstall",
                 *(["--root", str(self.cargo_root)] if self.cargo_root else []),
@@ -268,14 +230,6 @@ class CargoProvider(BinProvider):
             timeout=timeout,
         )
         if proc.returncode != 0 and "did not match any packages" not in proc.stderr:
-            log_subprocess_error(
-                logger,
-                f"{self.__class__.__name__} uninstall",
-                proc.stdout,
-                proc.stderr,
-            )
-            raise Exception(
-                f"{self.__class__.__name__}: uninstall got returncode {proc.returncode} while uninstalling {package_specs}: {package_specs}\n{format_subprocess_output(proc.stdout, proc.stderr)}".strip(),
-            )
+            self._raise_proc_error("uninstall", package_specs, proc)
 
         return True

@@ -42,14 +42,52 @@ jobs:
     - name: Run pre-commit checks
       run: uv run prek run --all-files
 
-  build:
+  discover-standard-tests:
     needs: precheck
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
+    outputs:
+      test-files: ${{ steps.set-matrix.outputs.test-files }}
+
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Discover standard test files
+      id: set-matrix
+      run: |
+        json_array="["
+        first=true
+        for test_file in $(find tests -maxdepth 1 -name 'test_*.py' -type f | sort); do
+          if [ "$first" = true ]; then
+            first=false
+          else
+            json_array+=","
+          fi
+
+          test_name=$(basename "$test_file" .py | sed 's/^test_//')
+          json_array+="{\"path\":\"$test_file\",\"name\":\"$test_name\"}"
+        done
+        json_array+="]"
+
+        echo "test-files=$json_array" >> "$GITHUB_OUTPUT"
+        echo "$json_array"
+
+  build:
+    name: ${{ matrix.target.os }} py${{ matrix.target.python_version }} ${{ matrix.test.name }}
+    needs: [precheck, discover-standard-tests]
+    runs-on: ${{ matrix.target.os }}
+    if: ${{ needs.discover-standard-tests.outputs.test-files != '[]' }}
     strategy:
-      fail-fast: true
+      fail-fast: false
+      max-parallel: 20
       matrix:
-        python_version: ['3.11', '3.12', '3.13', '3.14']
-        os: [ubuntu-latest, macOS-latest]  # TODO: windows-latest
+        target:
+        - os: ubuntu-latest
+          python_version: '3.11'
+        - os: ubuntu-latest
+          python_version: '3.14'
+        - os: macOS-latest
+          python_version: '3.13'
+        test: ${{ fromJson(needs.discover-standard-tests.outputs.test-files) }}
 
     steps:
     - uses: actions/checkout@v6
@@ -57,7 +95,7 @@ jobs:
     - name: Setup Python
       uses: actions/setup-python@v6
       with:
-        python-version: ${{ matrix.python_version }}
+        python-version: ${{ matrix.target.python_version }}
    
     - name: Install uv
       uses: astral-sh/setup-uv@v8.0.0
@@ -86,7 +124,7 @@ jobs:
     - name: Setup venv and install pip dependencies
       run: |
         export PNPM_HOME="${RUNNER_TEMP}/pnpm"
-        uv venv --python "${{ matrix.python_version }}"
+        uv venv --python "${{ matrix.target.python_version }}"
         uv sync --all-extras
         uv pip install pip
         mkdir -p "$PNPM_HOME"
@@ -94,38 +132,69 @@ jobs:
         echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
         if [ -d /nix/var/nix/profiles/default/bin ]; then echo "/nix/var/nix/profiles/default/bin" >> "$GITHUB_PATH"; fi
 
-    - name: Run standard test suite
+    - name: Run standard test file
       run: |
         export PNPM_HOME="${RUNNER_TEMP}/pnpm"
         export PATH="$PNPM_HOME:$PATH"
-        uv run pytest -m "not root_required and not docker_required"
+        set +e
+        uv run pytest -m "not root_required and not docker_required" "${{ matrix.test.path }}"
+        status=$?
+        set -e
+        if [ "$status" -eq 0 ] || [ "$status" -eq 5 ]; then
+          exit 0
+        fi
+        exit "$status"
+
+  discover-live-tests:
+    needs: precheck
+    runs-on: ubuntu-latest
+    outputs:
+      live-tests: ${{ steps.set-matrix.outputs.live-tests }}
+
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Discover live integration test files
+      id: set-matrix
+      run: |
+        json_array="["
+        first=true
+        for test_file in $(rg -l "def test_provider_direct_methods_exercise_real_lifecycle" tests/test_*.py | sort); do
+          test_name=$(basename "$test_file" .py | sed 's/^test_//')
+          needs_docker=false
+          if grep -q "@pytest.mark.docker_required" "$test_file"; then
+            needs_docker=true
+          fi
+
+          os_targets="ubuntu-latest macOS-latest"
+          if grep -q "@pytest.mark.docker_required" "$test_file" || grep -q "@pytest.mark.root_required" "$test_file" || grep -q 'skipif("darwin"' "$test_file"; then
+            os_targets="ubuntu-latest"
+          elif grep -q 'require_tool("brew")' "$test_file" && ! grep -q 'require_tool("apt-get")' "$test_file" && ! grep -q "operations.apt.packages" "$test_file" && ! grep -q "ansible.builtin.apt" "$test_file"; then
+            os_targets="macOS-latest"
+          fi
+
+          for os_target in $os_targets; do
+            os_name=$(printf '%s' "$os_target" | tr '[:upper:]' '[:lower:]' | sed 's/-latest//')
+            entry="{\"name\":\"${test_name}-${os_name}\",\"path\":\"$test_file\",\"os\":\"$os_target\",\"needs_docker\":$needs_docker}"
+            if [ "$first" = true ]; then first=false; else json_array+=","; fi
+            json_array+="$entry"
+          done
+        done
+        json_array+="]"
+
+        echo "live-tests=$json_array" >> "$GITHUB_OUTPUT"
+        echo "$json_array"
 
   live-integration:
-    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.live.name }}
+    needs: [precheck, discover-live-tests]
+    runs-on: ${{ matrix.live.os }}
+    if: ${{ needs.discover-live-tests.outputs.live-tests != '[]' }}
     strategy:
-      fail-fast: true
+      fail-fast: false
+      max-parallel: 20
       matrix:
-        include:
-        - os: ubuntu-latest
-          setup_docker: true
-          live_test_args: >-
-            tests/test_pipprovider.py::TestPipProvider::test_provider_direct_methods_exercise_real_lifecycle
-            tests/test_npmprovider.py::TestNpmProvider::test_provider_direct_methods_exercise_real_lifecycle
-            tests/test_cargoprovider.py::TestCargoProvider::test_provider_direct_methods_exercise_real_lifecycle
-            tests/test_gemprovider.py::TestGemProvider::test_provider_direct_methods_exercise_real_lifecycle
-            tests/test_gogetprovider.py::TestGoGetProvider::test_provider_direct_methods_exercise_real_lifecycle
-            tests/test_nixprovider.py::TestNixProvider::test_provider_direct_methods_exercise_real_lifecycle
-            tests/test_dockerprovider.py::TestDockerProvider::test_provider_direct_methods_exercise_real_lifecycle
-        - os: macOS-latest
-          setup_docker: false
-          live_test_args: >-
-            tests/test_brewprovider.py::TestBrewProvider::test_provider_direct_methods_exercise_real_lifecycle
-            tests/test_pipprovider.py::TestPipProvider::test_provider_direct_methods_exercise_real_lifecycle
-            tests/test_npmprovider.py::TestNpmProvider::test_provider_direct_methods_exercise_real_lifecycle
-            tests/test_cargoprovider.py::TestCargoProvider::test_provider_direct_methods_exercise_real_lifecycle
-            tests/test_gemprovider.py::TestGemProvider::test_provider_direct_methods_exercise_real_lifecycle
-            tests/test_gogetprovider.py::TestGoGetProvider::test_provider_direct_methods_exercise_real_lifecycle
-            tests/test_nixprovider.py::TestNixProvider::test_provider_direct_methods_exercise_real_lifecycle
+        live: ${{ fromJson(needs.discover-live-tests.outputs.live-tests) }}
 
     steps:
     - uses: actions/checkout@v6
@@ -159,8 +228,8 @@ jobs:
     - name: Install Nix
       uses: DeterminateSystems/nix-installer-action@v22
 
-    - name: Setup Docker on macOS
-      if: matrix.setup_docker
+    - name: Setup Docker
+      if: ${{ matrix.live.needs_docker }}
       uses: docker/setup-docker-action@v5.0.0
       env:
         LIMA_START_ARGS: --vm-type=vz
@@ -181,23 +250,14 @@ jobs:
         echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
         echo "/nix/var/nix/profiles/default/bin" >> "$GITHUB_PATH"
 
-    - name: Inspect Docker on macOS
-      if: matrix.setup_docker
+    - name: Inspect Docker
+      if: ${{ matrix.live.needs_docker }}
       run: |
         docker version \
         && docker info
 
-    - name: Run non-root live package lifecycle tests
+    - name: Run live package lifecycle test
       run: |
         export PNPM_HOME="${RUNNER_TEMP}/pnpm"
-        export PATH="$PNPM_HOME:$PATH"
-        uv run pytest ${{ matrix.live_test_args }}
-
-    - name: Run root-required live package lifecycle tests on Linux
-      if: runner.os == 'Linux'
-      run: |
-        export PNPM_HOME="${RUNNER_TEMP}/pnpm"
-        sudo env "PATH=$PNPM_HOME:$PATH:/nix/var/nix/profiles/default/bin:$PATH" "$(command -v uv)" run pytest \
-          tests/test_aptprovider.py::TestAptProvider::test_provider_direct_methods_exercise_real_lifecycle \
-          tests/test_pyinfraprovider.py::TestPyinfraProvider::test_provider_direct_methods_exercise_real_lifecycle \
-          tests/test_ansibleprovider.py::TestAnsibleProvider::test_provider_direct_methods_exercise_real_lifecycle
+        export PATH="$PNPM_HOME:$PATH:/nix/var/nix/profiles/default/bin:$PATH"
+        uv run pytest "${{ matrix.live.path }}" -k test_provider_direct_methods_exercise_real_lifecycle

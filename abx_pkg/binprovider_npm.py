@@ -11,7 +11,7 @@ import subprocess
 from pathlib import Path
 from typing import ClassVar, Self
 
-from pydantic import model_validator, TypeAdapter, computed_field
+from pydantic import Field, model_validator, TypeAdapter, computed_field
 from platformdirs import user_cache_path
 
 from .base_types import (
@@ -23,8 +23,12 @@ from .base_types import (
     bin_abspath,
 )
 from .semver import SemVer
-from .binprovider import BinProvider, remap_kwargs
-from .logging import format_subprocess_output, get_logger, log_subprocess_error
+from .binprovider import (
+    BinProvider,
+    env_flag_is_true,
+    remap_kwargs,
+)
+from .logging import get_logger, format_subprocess_output
 
 logger = get_logger(__name__)
 
@@ -52,6 +56,14 @@ class NpmProvider(BinProvider):
     INSTALL_ROOT_FIELD: ClassVar[str | None] = "npm_prefix"
 
     PATH: PATHStr = ""
+    postinstall_scripts: bool | None = Field(
+        default_factory=lambda: env_flag_is_true("ABX_PKG_POSTINSTALL_SCRIPTS"),
+        repr=False,
+    )
+    min_release_age: float | None = Field(
+        default_factory=lambda: float(os.environ.get("ABX_PKG_MIN_RELEASE_AGE", "7")),
+        repr=False,
+    )
 
     npm_prefix: Path | None = None  # None = -g global, otherwise it's a path
 
@@ -89,28 +101,52 @@ class NpmProvider(BinProvider):
     def supports_postinstall_disable(self, action) -> bool:
         return action in ("install", "update")
 
-    def _coerce_security_constraints_from_install_args(
-        self,
-        *,
-        install_args: InstallArgs,
-        postinstall_scripts: bool,
-        min_release_age: float,
-    ) -> tuple[bool, float]:
-        if self._args_have_option(install_args, "--ignore-scripts"):
-            postinstall_scripts = False
+    @staticmethod
+    def _install_args_have_option(args: InstallArgs, *options: str) -> bool:
+        return any(
+            arg == option or arg.startswith(f"{option}=")
+            for arg in args
+            for option in options
+        )
 
-        explicit_min_release_age = self._get_option_value(
+    @staticmethod
+    def _install_arg_value(args: InstallArgs, *options: str) -> str | None:
+        for idx, arg in enumerate(args):
+            for option in options:
+                if arg == option and idx + 1 < len(args):
+                    return args[idx + 1]
+                if arg.startswith(f"{option}="):
+                    return arg.split("=", 1)[1]
+        return None
+
+    def _resolve_security_constraints(
+        self,
+        install_args: InstallArgs,
+        *,
+        postinstall_scripts: bool,
+        min_release_age: float | None,
+    ) -> tuple[bool, float]:
+        effective_postinstall_scripts = postinstall_scripts
+        if self._install_args_have_option(install_args, "--ignore-scripts"):
+            effective_postinstall_scripts = False
+
+        explicit_min_release_age = self._install_arg_value(
             install_args,
             "--min-release-age",
         )
-        if explicit_min_release_age is None:
-            return postinstall_scripts, min_release_age
-        try:
-            return postinstall_scripts, float(explicit_min_release_age)
-        except ValueError as err:
-            raise ValueError(
-                f"{self.__class__.__name__} got invalid --min-release-age value: {explicit_min_release_age!r}",
-            ) from err
+        if explicit_min_release_age is not None:
+            try:
+                effective_min_release_age = float(explicit_min_release_age)
+            except ValueError as err:
+                raise ValueError(
+                    f"{self.__class__.__name__} got invalid --min-release-age value: {explicit_min_release_age!r}",
+                ) from err
+        else:
+            effective_min_release_age = (
+                7.0 if min_release_age is None else min_release_age
+            )
+
+        return effective_postinstall_scripts, effective_min_release_age
 
     @computed_field
     @property
@@ -307,24 +343,6 @@ class NpmProvider(BinProvider):
 
         logger.debug("Wrote %s with minimumReleaseAge=%d", config_path, minutes)
 
-    def _coerce_min_release_age(
-        self,
-        min_release_age: float | None,
-        install_args: InstallArgs,
-    ) -> float:
-        explicit_min_release_age = self._get_option_value(
-            install_args,
-            "--min-release-age",
-        )
-        if explicit_min_release_age is None:
-            return 7.0 if min_release_age is None else min_release_age
-        try:
-            return float(explicit_min_release_age)
-        except ValueError as err:
-            raise ValueError(
-                f"{self.__class__.__name__} got invalid --min-release-age value: {explicit_min_release_age!r}",
-            ) from err
-
     def _npm(
         self,
         npm_cmd: list[str],
@@ -334,11 +352,7 @@ class NpmProvider(BinProvider):
         global _CACHED_GLOBAL_NPM_PREFIX
         env = os.environ.copy()
 
-        npm_abspath = self.INSTALLER_BIN_ABSPATH
-        if not npm_abspath:
-            raise Exception(
-                f"{self.__class__.__name__} install method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
-            )
+        npm_abspath = self._require_installer_bin()
 
         # `pnpm` is close enough to npm for the operations we use, but its CLI
         # shape differs enough that we normalize subcommands and flags in one
@@ -422,15 +436,7 @@ class NpmProvider(BinProvider):
             False if postinstall_scripts is None else postinstall_scripts
         )
         install_args = install_args or self.get_install_args(bin_name)
-        min_release_age = self._coerce_min_release_age(min_release_age, install_args)
-        self._write_pnpm_workspace_config(min_release_age=min_release_age)
-        if not self.INSTALLER_BIN_ABSPATH:
-            raise Exception(
-                f"{self.__class__.__name__} install method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
-            )
-
         if min_version:
-            # npm uses pkg@>=1.2.3 syntax for version constraints
             install_args = [
                 f"{arg}@>={min_version}"
                 if arg
@@ -440,6 +446,13 @@ class NpmProvider(BinProvider):
                 else arg
                 for arg in install_args
             ]
+        postinstall_scripts, min_release_age = self._resolve_security_constraints(
+            install_args,
+            postinstall_scripts=postinstall_scripts,
+            min_release_age=min_release_age,
+        )
+        self._write_pnpm_workspace_config(min_release_age=min_release_age)
+        self._require_installer_bin()
 
         min_release_age_days = f"{min_release_age:g}"
         explicit_npm_args = [*self.npm_install_args, self.cache_arg, *install_args]
@@ -450,7 +463,7 @@ class NpmProvider(BinProvider):
                 ["--ignore-scripts"]
                 if (
                     not postinstall_scripts
-                    and not self._args_have_option(
+                    and not self._install_args_have_option(
                         explicit_npm_args,
                         "--ignore-scripts",
                     )
@@ -460,7 +473,10 @@ class NpmProvider(BinProvider):
             *(
                 [f"--min-release-age={min_release_age_days}"]
                 if min_release_age > 0
-                and not self._args_have_option(explicit_npm_args, "--min-release-age")
+                and not self._install_args_have_option(
+                    explicit_npm_args,
+                    "--min-release-age",
+                )
                 else []
             ),
         ]
@@ -479,17 +495,8 @@ class NpmProvider(BinProvider):
         )
 
         if proc.returncode != 0:
-            log_subprocess_error(
-                logger,
-                f"{self.__class__.__name__} install",
-                proc.stdout,
-                proc.stderr,
-            )
-            raise Exception(
-                f"{self.__class__.__name__}: install got returncode {proc.returncode} while installing {install_args}: {install_args}\n{format_subprocess_output(proc.stdout, proc.stderr)}".strip(),
-            )
-
-        return (proc.stderr.strip() + "\n" + proc.stdout.strip()).strip()
+            self._raise_proc_error("install", install_args, proc)
+        return format_subprocess_output(proc.stdout, proc.stderr)
 
     @remap_kwargs({"packages": "install_args"})
     def default_update_handler(
@@ -510,13 +517,6 @@ class NpmProvider(BinProvider):
             False if postinstall_scripts is None else postinstall_scripts
         )
         install_args = install_args or self.get_install_args(bin_name)
-        min_release_age = self._coerce_min_release_age(min_release_age, install_args)
-        self._write_pnpm_workspace_config(min_release_age=min_release_age)
-        if not self.INSTALLER_BIN_ABSPATH:
-            raise Exception(
-                f"{self.__class__.__name__} update method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
-            )
-
         if min_version:
             install_args = [
                 f"{arg}@>={min_version}"
@@ -527,6 +527,13 @@ class NpmProvider(BinProvider):
                 else arg
                 for arg in install_args
             ]
+        postinstall_scripts, min_release_age = self._resolve_security_constraints(
+            install_args,
+            postinstall_scripts=postinstall_scripts,
+            min_release_age=min_release_age,
+        )
+        self._write_pnpm_workspace_config(min_release_age=min_release_age)
+        self._require_installer_bin()
 
         min_release_age_days = f"{min_release_age:g}"
         explicit_update_args = [*self.npm_install_args, self.cache_arg, *install_args]
@@ -537,7 +544,7 @@ class NpmProvider(BinProvider):
                 ["--ignore-scripts"]
                 if (
                     not postinstall_scripts
-                    and not self._args_have_option(
+                    and not self._install_args_have_option(
                         explicit_update_args,
                         "--ignore-scripts",
                     )
@@ -547,7 +554,7 @@ class NpmProvider(BinProvider):
             *(
                 [f"--min-release-age={min_release_age_days}"]
                 if min_release_age > 0
-                and not self._args_have_option(
+                and not self._install_args_have_option(
                     explicit_update_args,
                     "--min-release-age",
                 )
@@ -565,17 +572,8 @@ class NpmProvider(BinProvider):
         )
 
         if proc.returncode != 0:
-            log_subprocess_error(
-                logger,
-                f"{self.__class__.__name__} update",
-                proc.stdout,
-                proc.stderr,
-            )
-            raise Exception(
-                f"{self.__class__.__name__}: update got returncode {proc.returncode} while updating {install_args}: {install_args}\n{format_subprocess_output(proc.stdout, proc.stderr)}".strip(),
-            )
-
-        return (proc.stderr.strip() + "\n" + proc.stdout.strip()).strip()
+            self._raise_proc_error("update", install_args, proc)
+        return format_subprocess_output(proc.stdout, proc.stderr)
 
     @remap_kwargs({"packages": "install_args"})
     def default_uninstall_handler(
@@ -591,12 +589,13 @@ class NpmProvider(BinProvider):
             False if postinstall_scripts is None else postinstall_scripts
         )
         install_args = install_args or self.get_install_args(bin_name)
-        min_release_age = self._coerce_min_release_age(min_release_age, install_args)
+        postinstall_scripts, min_release_age = self._resolve_security_constraints(
+            install_args,
+            postinstall_scripts=postinstall_scripts,
+            min_release_age=min_release_age,
+        )
         self._write_pnpm_workspace_config(min_release_age=min_release_age)
-        if not self.INSTALLER_BIN_ABSPATH:
-            raise Exception(
-                f"{self.__class__.__name__} uninstall method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
-            )
+        self._require_installer_bin()
 
         explicit_uninstall_args = [
             *self.npm_install_args,
@@ -610,7 +609,7 @@ class NpmProvider(BinProvider):
                 ["--ignore-scripts"]
                 if (
                     not postinstall_scripts
-                    and not self._args_have_option(
+                    and not self._install_args_have_option(
                         explicit_uninstall_args,
                         "--ignore-scripts",
                     )
@@ -629,15 +628,7 @@ class NpmProvider(BinProvider):
         )
 
         if proc.returncode != 0:
-            log_subprocess_error(
-                logger,
-                f"{self.__class__.__name__} uninstall",
-                proc.stdout,
-                proc.stderr,
-            )
-            raise Exception(
-                f"{self.__class__.__name__}: uninstall got returncode {proc.returncode} while uninstalling {install_args}: {install_args}\n{format_subprocess_output(proc.stdout, proc.stderr)}".strip(),
-            )
+            self._raise_proc_error("uninstall", install_args, proc)
 
         return True
 

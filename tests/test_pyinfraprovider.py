@@ -1,17 +1,17 @@
-import os
 import shutil
 import subprocess
+import logging
 
 import pytest
 
 from abx_pkg import Binary, SemVer
 from abx_pkg.binprovider_pyinfra import PyinfraProvider
-from abx_pkg.exceptions import BinaryInstallError, BinaryLoadOrInstallError
+from abx_pkg.exceptions import BinaryLoadOrInstallError
 
 
 def _pyinfra_provider_for_host(test_machine):
     test_machine.require_tool("pyinfra")
-    if shutil.which("apt-get") and os.geteuid() == 0:
+    if shutil.which("apt-get"):
         provider = PyinfraProvider(
             pyinfra_installer_module="operations.apt.packages",
             postinstall_scripts=True,
@@ -19,7 +19,7 @@ def _pyinfra_provider_for_host(test_machine):
         )
         return provider, test_machine.pick_missing_provider_binary(
             provider,
-            ("tree", "rename", "jq"),
+            ("tree", "rename", "jq", "tmux", "screen"),
         )
     test_machine.require_tool("brew")
     provider = PyinfraProvider(
@@ -29,7 +29,7 @@ def _pyinfra_provider_for_host(test_machine):
     )
     return provider, test_machine.pick_missing_provider_binary(
         provider,
-        ("watch", "fzy", "jq"),
+        ("hello", "jq", "watch", "fzy", "tree"),
     )
 
 
@@ -68,20 +68,14 @@ class TestPyinfraProvider:
 
         test_machine.exercise_provider_lifecycle(provider, bin_name=package)
 
-    def test_unsupported_security_controls_fail_closed_and_binary_override_wins(
+    def test_unsupported_security_controls_warn_and_continue(
         self,
         test_machine,
         test_machine_dependencies,
+        caplog,
     ):
         del test_machine_dependencies
         provider, package = _pyinfra_provider_for_host(test_machine)
-
-        with pytest.raises(RuntimeError):
-            PyinfraProvider(
-                pyinfra_installer_module=provider.pyinfra_installer_module,
-            ).install(
-                package,
-            )
 
         cleanup_provider = PyinfraProvider(
             pyinfra_installer_module=provider.pyinfra_installer_module,
@@ -89,6 +83,19 @@ class TestPyinfraProvider:
             min_release_age=0,
         )
         try:
+            with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+                installed = PyinfraProvider(
+                    pyinfra_installer_module=provider.pyinfra_installer_module,
+                ).install(
+                    package,
+                    postinstall_scripts=False,
+                    min_release_age=1,
+                )
+            test_machine.assert_shallow_binary_loaded(installed)
+            assert "ignoring unsupported min_release_age=1" in caplog.text
+            assert "ignoring unsupported postinstall_scripts=False" in caplog.text
+
+            caplog.clear()
             binary = Binary(
                 name=package,
                 binproviders=[
@@ -96,22 +103,14 @@ class TestPyinfraProvider:
                         pyinfra_installer_module=provider.pyinfra_installer_module,
                     ),
                 ],
-                postinstall_scripts=True,
-                min_release_age=0,
+                postinstall_scripts=False,
+                min_release_age=1,
             )
-            installed = binary.install()
+            with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+                installed = binary.install()
             test_machine.assert_shallow_binary_loaded(installed)
-
-            failing_binary = Binary(
-                name=package,
-                binproviders=[
-                    PyinfraProvider(
-                        pyinfra_installer_module=provider.pyinfra_installer_module,
-                    ),
-                ],
-            )
-            with pytest.raises(BinaryInstallError):
-                failing_binary.install()
+            assert "ignoring unsupported min_release_age=1" in caplog.text
+            assert "ignoring unsupported postinstall_scripts=False" in caplog.text
         finally:
             cleanup_provider.uninstall(package, quiet=True, nocache=True)
 

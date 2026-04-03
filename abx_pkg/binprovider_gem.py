@@ -11,9 +11,7 @@ from typing import ClassVar, Self
 from .base_types import BinProviderName, PATHStr, BinName, InstallArgs
 from .semver import SemVer
 from .binprovider import BinProvider, DEFAULT_ENV_PATH, remap_kwargs
-from .logging import get_logger, log_subprocess_error
-
-logger = get_logger(__name__)
+from .logging import format_subprocess_output
 
 
 DEFAULT_GEM_HOME = Path(os.environ.get("GEM_HOME", "~/.local/share/gem")).expanduser()
@@ -149,36 +147,21 @@ class GemProvider(BinProvider):
         )
 
         install_args = install_args or self.get_install_args(bin_name)
-        if not self.INSTALLER_BIN_ABSPATH:
-            raise Exception(
-                f"{self.__class__.__name__} install method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
-            )
-
-        version_args = (
-            ["--version", f">={min_version}"]
-            if min_version and not self._args_have_option(install_args, "--version")
-            else []
-        )
+        if min_version and not any(arg.startswith("--version") for arg in install_args):
+            install_args = ["--version", f">={min_version}", *install_args]
+        installer_bin = self._require_installer_bin()
 
         proc = self.exec(
-            bin_name=self.INSTALLER_BIN_ABSPATH,
-            cmd=["install", *self._gem_install_args(), *version_args, *install_args],
+            bin_name=installer_bin,
+            cmd=["install", *self._gem_install_args(), *install_args],
             env=self._gem_env(),
             timeout=timeout,
         )
         if proc.returncode != 0:
-            log_subprocess_error(
-                logger,
-                f"{self.__class__.__name__} install",
-                proc.stdout,
-                proc.stderr,
-            )
-            raise Exception(
-                f"{self.__class__.__name__}: install got returncode {proc.returncode} while installing {install_args}: {install_args}",
-            )
+            self._raise_proc_error("install", install_args, proc)
 
         self._patch_generated_wrappers()
-        return (proc.stderr.strip() + "\n" + proc.stdout.strip()).strip()
+        return format_subprocess_output(proc.stdout, proc.stderr)
 
     @remap_kwargs({"packages": "install_args"})
     def default_update_handler(
@@ -197,36 +180,21 @@ class GemProvider(BinProvider):
         )
 
         install_args = install_args or self.get_install_args(bin_name)
-        if not self.INSTALLER_BIN_ABSPATH:
-            raise Exception(
-                f"{self.__class__.__name__} update method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
-            )
-
-        version_args = (
-            ["--version", f">={min_version}"]
-            if min_version and not self._args_have_option(install_args, "--version")
-            else []
-        )
+        if min_version and not any(arg.startswith("--version") for arg in install_args):
+            install_args = ["--version", f">={min_version}", *install_args]
+        installer_bin = self._require_installer_bin()
 
         proc = self.exec(
-            bin_name=self.INSTALLER_BIN_ABSPATH,
-            cmd=["update", *self._gem_install_args(), *version_args, *install_args],
+            bin_name=installer_bin,
+            cmd=["update", *self._gem_install_args(), *install_args],
             env=self._gem_env(),
             timeout=timeout,
         )
         if proc.returncode != 0:
-            log_subprocess_error(
-                logger,
-                f"{self.__class__.__name__} update",
-                proc.stdout,
-                proc.stderr,
-            )
-            raise Exception(
-                f"{self.__class__.__name__}: update got returncode {proc.returncode} while updating {install_args}: {install_args}",
-            )
+            self._raise_proc_error("update", install_args, proc)
 
         self._patch_generated_wrappers()
-        return (proc.stderr.strip() + "\n" + proc.stdout.strip()).strip()
+        return format_subprocess_output(proc.stdout, proc.stderr)
 
     @remap_kwargs({"packages": "install_args"})
     def default_uninstall_handler(
@@ -239,13 +207,10 @@ class GemProvider(BinProvider):
         timeout: int | None = None,
     ) -> bool:
         install_args = install_args or self.get_install_args(bin_name)
-        if not self.INSTALLER_BIN_ABSPATH:
-            raise Exception(
-                f"{self.__class__.__name__} uninstall method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
-            )
+        installer_bin = self._require_installer_bin()
 
         proc = self.exec(
-            bin_name=self.INSTALLER_BIN_ABSPATH,
+            bin_name=installer_bin,
             cmd=[
                 "uninstall",
                 "--all",
@@ -259,15 +224,7 @@ class GemProvider(BinProvider):
             timeout=timeout,
         )
         if proc.returncode != 0 and "is not installed in GEM_HOME" not in proc.stderr:
-            log_subprocess_error(
-                logger,
-                f"{self.__class__.__name__} uninstall",
-                proc.stdout,
-                proc.stderr,
-            )
-            raise Exception(
-                f"{self.__class__.__name__}: uninstall got returncode {proc.returncode} while uninstalling {install_args}: {install_args}",
-            )
+            self._raise_proc_error("uninstall", install_args, proc)
 
         bindir = self.bin_dir
         for install_arg in install_args:
