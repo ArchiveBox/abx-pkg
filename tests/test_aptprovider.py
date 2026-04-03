@@ -1,10 +1,10 @@
 import os
 import sys
+import logging
 
 import pytest
 
 from abx_pkg import AptProvider, Binary
-from abx_pkg.exceptions import BinaryInstallError
 
 
 @pytest.mark.skipif("darwin" in sys.platform, reason="apt is not available on macOS")
@@ -20,32 +20,37 @@ class TestAptProvider:
             bin_name=test_machine.pick_missing_apt_package(),
         )
 
-    def test_unsupported_security_controls_fail_closed_and_binary_override_wins(
+    def test_unsupported_security_controls_warn_and_continue(
         self,
         test_machine,
+        caplog,
     ):
         test_machine.require_tool("apt-get")
         assert os.geteuid() == 0, "apt lifecycle tests require root on Linux"
         package = test_machine.pick_missing_apt_package()
 
-        with pytest.raises(RuntimeError):
-            AptProvider().install(package)
-
-        binary = Binary(
-            name=package,
-            binproviders=[AptProvider()],
-            postinstall_scripts=True,
-            min_release_age=0,
-        )
-        installed = binary.install()
+        with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+            installed = AptProvider().install(
+                package,
+                postinstall_scripts=False,
+                min_release_age=1,
+            )
         test_machine.assert_shallow_binary_loaded(installed)
+        assert "ignoring unsupported min_release_age=1" in caplog.text
+        assert "ignoring unsupported postinstall_scripts=False" in caplog.text
 
-        failing_binary = Binary(
+        caplog.clear()
+        binary = Binary(
             name=test_machine.pick_missing_apt_package(),
             binproviders=[AptProvider()],
+            postinstall_scripts=False,
+            min_release_age=1,
         )
-        with pytest.raises(BinaryInstallError):
-            failing_binary.install()
+        with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+            installed = binary.install()
+        test_machine.assert_shallow_binary_loaded(installed)
+        assert "ignoring unsupported min_release_age=1" in caplog.text
+        assert "ignoring unsupported postinstall_scripts=False" in caplog.text
 
     def test_binary_direct_methods_exercise_real_lifecycle(self, test_machine):
         test_machine.require_tool("apt-get")

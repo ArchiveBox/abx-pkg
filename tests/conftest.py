@@ -328,7 +328,7 @@ class TestMachine:
 
     def pick_missing_brew_formula(self) -> str:
         provider = BrewProvider(min_release_age=0)
-        for formula in ("hello", "jq", "watch", "fzy"):
+        for formula in ("hello", "tree", "rename", "jq", "watch", "fzy"):
             if _brew_formula_is_installed(formula):
                 continue
             if provider.load(formula, quiet=True, nocache=True) is not None:
@@ -353,7 +353,7 @@ class TestMachine:
 
     def pick_missing_apt_package(self) -> str:
         provider = AptProvider(min_release_age=0)
-        for package in ("jq", "tree", "rename"):
+        for package in ("hello", "tree", "rename", "jq", "cowsay"):
             if _apt_package_is_installed(package):
                 continue
             if provider.load(package, quiet=True, nocache=True) is not None:

@@ -1,10 +1,10 @@
 import tempfile
 from pathlib import Path
+import logging
 
 import pytest
 
 from abx_pkg import Binary, DockerProvider, SemVer
-from abx_pkg.exceptions import BinaryInstallError
 
 
 @pytest.mark.docker_required
@@ -207,58 +207,40 @@ class TestDockerProvider:
             assert installed is not None
             assert installed.loaded_version is not None
 
-    def test_unsupported_security_controls_fail_closed_and_binary_override_wins(
+    def test_unsupported_security_controls_warn_and_continue(
         self,
         test_machine,
+        caplog,
     ):
         test_machine.require_docker_daemon()
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            with pytest.raises(RuntimeError):
-                DockerProvider(
-                    docker_shim_dir=Path(temp_dir) / "bad/bin",
-                    postinstall_scripts=False,
-                    min_release_age=0,
-                ).get_provider_with_overrides(
-                    overrides={
-                        "shellcheck": {"install_args": ["koalaman/shellcheck:v0.10.0"]},
-                    },
-                ).install("shellcheck")
+            with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+                installed = (
+                    DockerProvider(
+                        docker_shim_dir=Path(temp_dir) / "bad/bin",
+                        postinstall_scripts=False,
+                        min_release_age=1,
+                    )
+                    .get_provider_with_overrides(
+                        overrides={
+                            "shellcheck": {
+                                "install_args": ["koalaman/shellcheck:v0.10.0"],
+                            },
+                        },
+                    )
+                    .install("shellcheck")
+                )
+            test_machine.assert_shallow_binary_loaded(installed)
+            assert "ignoring unsupported min_release_age=1" in caplog.text
+            assert "ignoring unsupported postinstall_scripts=False" in caplog.text
 
-            with pytest.raises(RuntimeError):
-                DockerProvider(
-                    docker_shim_dir=Path(temp_dir) / "bad-age/bin",
-                    postinstall_scripts=True,
-                    min_release_age=1,
-                ).get_provider_with_overrides(
-                    overrides={
-                        "shellcheck": {"install_args": ["koalaman/shellcheck:v0.10.0"]},
-                    },
-                ).install("shellcheck")
-
+            caplog.clear()
             binary = Binary(
                 name="shellcheck",
                 binproviders=[
                     DockerProvider(
                         docker_shim_dir=Path(temp_dir) / "ok/bin",
-                        postinstall_scripts=False,
-                        min_release_age=1,
-                    ),
-                ],
-                postinstall_scripts=True,
-                min_release_age=0,
-                overrides={
-                    "docker": {"install_args": ["koalaman/shellcheck:v0.10.0"]},
-                },
-            )
-            installed = binary.install()
-            test_machine.assert_shallow_binary_loaded(installed)
-
-            failing_binary = Binary(
-                name="shellcheck",
-                binproviders=[
-                    DockerProvider(
-                        docker_shim_dir=Path(temp_dir) / "failing/bin",
                         postinstall_scripts=False,
                         min_release_age=1,
                     ),
@@ -269,8 +251,11 @@ class TestDockerProvider:
                     "docker": {"install_args": ["koalaman/shellcheck:v0.10.0"]},
                 },
             )
-            with pytest.raises(BinaryInstallError):
-                failing_binary.install()
+            with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+                installed = binary.install()
+            test_machine.assert_shallow_binary_loaded(installed)
+            assert "ignoring unsupported min_release_age=1" in caplog.text
+            assert "ignoring unsupported postinstall_scripts=False" in caplog.text
 
     def test_binary_direct_methods_exercise_real_lifecycle(self, test_machine):
         test_machine.require_docker_daemon()

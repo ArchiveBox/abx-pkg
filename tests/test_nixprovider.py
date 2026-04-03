@@ -1,10 +1,10 @@
 import tempfile
 from pathlib import Path
+import logging
 
 import pytest
 
 from abx_pkg import Binary, NixProvider, SemVer
-from abx_pkg.exceptions import BinaryInstallError
 
 
 class TestNixProvider:
@@ -125,29 +125,26 @@ class TestNixProvider:
             assert provider.load("jq", quiet=True, nocache=True) is None
             assert provider.load("hello", quiet=True, nocache=True) is not None
 
-    def test_unsupported_security_controls_fail_closed_and_binary_override_wins(
+    def test_unsupported_security_controls_warn_and_continue(
         self,
         test_machine,
+        caplog,
     ):
         assert NixProvider().INSTALLER_BIN_ABSPATH, "nix is required on this host"
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            with pytest.raises(RuntimeError):
-                NixProvider(
+            with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+                installed = NixProvider(
                     nix_profile=Path(temp_dir) / "bad-profile",
                     nix_state_dir=Path(temp_dir) / "bad-state",
                     postinstall_scripts=False,
-                    min_release_age=0,
-                ).install("jq")
-
-            with pytest.raises(RuntimeError):
-                NixProvider(
-                    nix_profile=Path(temp_dir) / "bad-age-profile",
-                    nix_state_dir=Path(temp_dir) / "bad-age-state",
-                    postinstall_scripts=True,
                     min_release_age=1,
                 ).install("jq")
+            test_machine.assert_shallow_binary_loaded(installed)
+            assert "ignoring unsupported min_release_age=1" in caplog.text
+            assert "ignoring unsupported postinstall_scripts=False" in caplog.text
 
+            caplog.clear()
             binary = Binary(
                 name="jq",
                 binproviders=[
@@ -158,27 +155,14 @@ class TestNixProvider:
                         min_release_age=1,
                     ),
                 ],
-                postinstall_scripts=True,
-                min_release_age=0,
-            )
-            installed = binary.install()
-            test_machine.assert_shallow_binary_loaded(installed)
-
-            failing_binary = Binary(
-                name="jq",
-                binproviders=[
-                    NixProvider(
-                        nix_profile=Path(temp_dir) / "failing-profile",
-                        nix_state_dir=Path(temp_dir) / "failing-state",
-                        postinstall_scripts=False,
-                        min_release_age=1,
-                    ),
-                ],
                 postinstall_scripts=False,
                 min_release_age=1,
             )
-            with pytest.raises(BinaryInstallError):
-                failing_binary.install()
+            with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+                installed = binary.install()
+            test_machine.assert_shallow_binary_loaded(installed)
+            assert "ignoring unsupported min_release_age=1" in caplog.text
+            assert "ignoring unsupported postinstall_scripts=False" in caplog.text
 
     def test_binary_direct_methods_exercise_real_lifecycle(self, test_machine):
         assert NixProvider().INSTALLER_BIN_ABSPATH, "nix is required on this host"

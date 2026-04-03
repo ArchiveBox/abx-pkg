@@ -1,7 +1,9 @@
+import logging
+
 import pytest
 
 from abx_pkg import Binary, BrewProvider, SemVer
-from abx_pkg.exceptions import BinaryInstallError, BinaryLoadOrInstallError
+from abx_pkg.exceptions import BinaryLoadOrInstallError
 
 
 def _pick_formula_for_live_cycle() -> str:
@@ -37,36 +39,38 @@ class TestBrewProvider:
         assert installed.loaded_abspath is not None
         assert installed.loaded_abspath.is_relative_to(provider.install_root)
 
-    def test_unsupported_min_release_age_fails_closed_and_binary_override_wins(
+    def test_unsupported_min_release_age_warns_and_continues(
         self,
         test_machine,
+        caplog,
     ):
         test_machine.require_tool("brew")
         formula = _pick_formula_for_live_cycle()
-
-        with pytest.raises(RuntimeError):
-            BrewProvider().install(formula)
 
         provider_for_cleanup = BrewProvider(
             postinstall_scripts=False,
             min_release_age=0,
         )
         try:
+            with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+                installed = BrewProvider().install(
+                    formula,
+                    min_release_age=1,
+                )
+            test_machine.assert_shallow_binary_loaded(installed)
+            assert "ignoring unsupported min_release_age=1" in caplog.text
+
+            caplog.clear()
             binary = Binary(
                 name=formula,
                 binproviders=[BrewProvider()],
                 postinstall_scripts=False,
-                min_release_age=0,
+                min_release_age=1,
             )
-            installed = binary.install()
+            with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+                installed = binary.install()
             test_machine.assert_shallow_binary_loaded(installed)
-
-            failing_binary = Binary(
-                name=formula,
-                binproviders=[BrewProvider()],
-            )
-            with pytest.raises(BinaryInstallError):
-                failing_binary.install()
+            assert "ignoring unsupported min_release_age=1" in caplog.text
         finally:
             provider_for_cleanup.uninstall(formula, quiet=True, nocache=True)
 
