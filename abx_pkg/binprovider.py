@@ -987,6 +987,7 @@ class BinProvider(BaseModel):
         if self.dry_run:
             return subprocess.CompletedProcess(cmd, 0, "", "skipped (dry run)")
 
+        sudo_failure_output = None
         if current_euid != 0 and run_as_uid != current_euid:
             sudo_abspath = shutil.which("sudo", path=env["PATH"]) or shutil.which(
                 "sudo",
@@ -1013,8 +1014,12 @@ class BinProvider(BaseModel):
                     sudo_proc.stderr,
                     level=py_logging.DEBUG,
                 )
+                sudo_failure_output = format_subprocess_output(
+                    sudo_proc.stdout,
+                    sudo_proc.stderr,
+                )
 
-        return subprocess.run(
+        proc = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
@@ -1023,6 +1028,21 @@ class BinProvider(BaseModel):
             preexec_fn=drop_privileges,
             **kwargs,
         )
+        if sudo_failure_output and proc.returncode != 0:
+            return subprocess.CompletedProcess(
+                proc.args,
+                proc.returncode,
+                proc.stdout,
+                "\n".join(
+                    part
+                    for part in (
+                        proc.stderr,
+                        f"Previous sudo attempt failed:\n{sudo_failure_output}",
+                    )
+                    if part
+                ),
+            )
+        return proc
 
     # CALLING API, DONT OVERRIDE THESE:
 

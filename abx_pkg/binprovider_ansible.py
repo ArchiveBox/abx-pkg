@@ -14,7 +14,7 @@ from typing import Any
 from .base_types import BinProviderName, PATHStr, BinName, InstallArgs
 from .semver import SemVer
 from .binprovider import BinProvider, OPERATING_SYSTEM, DEFAULT_PATH, remap_kwargs
-from .logging import get_logger, log_subprocess_output
+from .logging import format_subprocess_output, get_logger, log_subprocess_output
 
 logger = get_logger(__name__)
 
@@ -141,6 +141,7 @@ def ansible_package_install(
             str(playbook_path),
         ]
         proc = None
+        sudo_failure_output = None
         if (
             OPERATING_SYSTEM != "darwin"
             and installer_module != "community.general.homebrew"
@@ -171,6 +172,10 @@ def ansible_package_install(
                         sudo_proc.stderr,
                         level=py_logging.DEBUG,
                     )
+                    sudo_failure_output = format_subprocess_output(
+                        sudo_proc.stdout,
+                        sudo_proc.stderr,
+                    )
         if proc is None:
             proc = subprocess.run(
                 cmd,
@@ -182,6 +187,10 @@ def ansible_package_install(
             )
         succeeded = proc.returncode == 0
         result_text = f"Installing {pkg_names} on {OPERATING_SYSTEM} using Ansible {installer_module} {['failed', 'succeeded'][succeeded]}:{proc.stdout}\n{proc.stderr}".strip()
+        if sudo_failure_output and not succeeded:
+            result_text = (
+                f"{result_text}\n\nPrevious sudo attempt failed:\n{sudo_failure_output}"
+            )
 
         if succeeded:
             return result_text
