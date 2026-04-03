@@ -5,6 +5,7 @@ import os
 import sys
 import json
 import shutil
+import logging as py_logging
 import subprocess
 import tempfile
 from pathlib import Path
@@ -13,6 +14,9 @@ from typing import Any
 from .base_types import BinProviderName, PATHStr, BinName, InstallArgs
 from .semver import SemVer
 from .binprovider import BinProvider, OPERATING_SYSTEM, DEFAULT_PATH, remap_kwargs
+from .logging import get_logger, log_subprocess_output
+
+logger = get_logger(__name__)
 
 
 ANSIBLE_INSTALLED = shutil.which("ansible-playbook") is not None
@@ -125,21 +129,54 @@ def ansible_package_install(
         ansible_playbook = (
             shutil.which("ansible-playbook", path=env["PATH"]) or "ansible-playbook"
         )
-        proc = subprocess.run(
-            [
-                ansible_playbook,
-                "-i",
-                "localhost,",
-                "-c",
-                "local",
-                str(playbook_path),
-            ],
-            capture_output=True,
-            text=True,
-            cwd=temp_dir,
-            env=env,
-            timeout=timeout,
-        )
+        cmd = [
+            ansible_playbook,
+            "-i",
+            "localhost,",
+            "-c",
+            "local",
+            str(playbook_path),
+        ]
+        proc = None
+        if (
+            OPERATING_SYSTEM != "darwin"
+            and installer_module != "community.general.homebrew"
+        ):
+            sudo_bin = shutil.which("sudo", path=env["PATH"]) or shutil.which("sudo")
+            if os.geteuid() != 0 and sudo_bin:
+                sudo_proc = subprocess.run(
+                    [
+                        sudo_bin,
+                        "-n",
+                        "--preserve-env=PATH,HOME,LOGNAME,USER,ANSIBLE_INVENTORY_UNPARSED_WARNING,ANSIBLE_LOCALHOST_WARNING,ANSIBLE_HOME,ANSIBLE_PYTHON_INTERPRETER",
+                        "--",
+                        *cmd,
+                    ],
+                    capture_output=True,
+                    text=True,
+                    cwd=temp_dir,
+                    env=env,
+                    timeout=timeout,
+                )
+                if sudo_proc.returncode == 0:
+                    proc = sudo_proc
+                else:
+                    log_subprocess_output(
+                        logger,
+                        "ansible sudo exec",
+                        sudo_proc.stdout,
+                        sudo_proc.stderr,
+                        level=py_logging.DEBUG,
+                    )
+        if proc is None:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                cwd=temp_dir,
+                env=env,
+                timeout=timeout,
+            )
         succeeded = proc.returncode == 0
         result_text = f"Installing {pkg_names} on {OPERATING_SYSTEM} using Ansible {installer_module} {['failed', 'succeeded'][succeeded]}:{proc.stdout}\n{proc.stderr}".strip()
 

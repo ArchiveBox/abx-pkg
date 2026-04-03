@@ -1,4 +1,3 @@
-import os
 import sys
 import logging
 
@@ -12,7 +11,6 @@ from abx_pkg import AptProvider, Binary
 class TestAptProvider:
     def test_provider_direct_methods_exercise_real_lifecycle(self, test_machine):
         test_machine.require_tool("apt-get")
-        assert os.geteuid() == 0, "apt lifecycle tests require root on Linux"
 
         provider = AptProvider(postinstall_scripts=True, min_release_age=0)
         test_machine.exercise_provider_lifecycle(
@@ -26,7 +24,6 @@ class TestAptProvider:
         caplog,
     ):
         test_machine.require_tool("apt-get")
-        assert os.geteuid() == 0, "apt lifecycle tests require root on Linux"
         package = test_machine.pick_missing_apt_package()
 
         with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
@@ -54,7 +51,6 @@ class TestAptProvider:
 
     def test_binary_direct_methods_exercise_real_lifecycle(self, test_machine):
         test_machine.require_tool("apt-get")
-        assert os.geteuid() == 0, "apt lifecycle tests require root on Linux"
 
         binary = Binary(
             name=test_machine.pick_missing_apt_package(),
@@ -68,7 +64,6 @@ class TestAptProvider:
 
     def test_provider_dry_run_does_not_install_package(self, test_machine):
         test_machine.require_tool("apt-get")
-        assert os.geteuid() == 0, "apt lifecycle tests require root on Linux"
         provider = AptProvider(postinstall_scripts=True, min_release_age=0)
         test_machine.exercise_provider_dry_run(
             provider,
@@ -77,7 +72,6 @@ class TestAptProvider:
 
     def test_helper_install_args_used_by_pyinfra_ansible_backends(self, test_machine):
         test_machine.require_tool("apt-get")
-        assert os.geteuid() == 0, "apt lifecycle tests require root on Linux"
 
         primary = test_machine.pick_missing_apt_package()
         extra = "jq" if primary != "jq" else "tree"

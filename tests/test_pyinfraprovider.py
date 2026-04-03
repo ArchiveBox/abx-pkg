@@ -1,4 +1,3 @@
-import os
 import shutil
 import subprocess
 import logging
@@ -12,7 +11,7 @@ from abx_pkg.exceptions import BinaryLoadOrInstallError
 
 def _pyinfra_provider_for_host(test_machine):
     test_machine.require_tool("pyinfra")
-    if shutil.which("apt-get") and os.geteuid() == 0:
+    if shutil.which("apt-get"):
         provider = PyinfraProvider(
             pyinfra_installer_module="operations.apt.packages",
             postinstall_scripts=True,

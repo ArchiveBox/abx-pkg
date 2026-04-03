@@ -1,4 +1,3 @@
-import os
 import shutil
 import subprocess
 import logging
@@ -12,7 +11,7 @@ from abx_pkg.exceptions import BinaryLoadOrInstallError
 
 def _ansible_provider_for_host(test_machine):
     test_machine.require_tool("ansible")
-    if shutil.which("apt-get") and os.geteuid() == 0:
+    if shutil.which("apt-get"):
         provider = AnsibleProvider(
             ansible_installer_module="ansible.builtin.apt",
             postinstall_scripts=True,

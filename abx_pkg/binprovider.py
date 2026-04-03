@@ -974,6 +974,7 @@ class BinProvider(BaseModel):
         env["HOME"] = pw_record.pw_dir
         env["LOGNAME"] = pw_record.pw_name
         env["USER"] = pw_record.pw_name
+        current_euid = os.geteuid()
 
         def drop_privileges():
             try:
@@ -984,6 +985,33 @@ class BinProvider(BaseModel):
 
         if self.dry_run:
             return subprocess.CompletedProcess(cmd, 0, "", "skipped (dry run)")
+
+        if current_euid != 0 and run_as_uid != current_euid:
+            sudo_abspath = shutil.which("sudo", path=env["PATH"]) or shutil.which(
+                "sudo",
+            )
+            if sudo_abspath:
+                sudo_cmd = [sudo_abspath, "-n"]
+                if run_as_uid != 0:
+                    sudo_cmd.extend(["-u", pw_record.pw_name])
+                sudo_cmd.extend(["--", *cmd])
+                sudo_proc = subprocess.run(
+                    sudo_cmd,
+                    capture_output=True,
+                    text=True,
+                    cwd=str(cwd_path),
+                    env=env,
+                    **kwargs,
+                )
+                if sudo_proc.returncode == 0:
+                    return sudo_proc
+                log_subprocess_output(
+                    logger,
+                    f"{self.__class__.__name__} sudo exec",
+                    sudo_proc.stdout,
+                    sudo_proc.stderr,
+                    level=py_logging.DEBUG,
+                )
 
         return subprocess.run(
             cmd,

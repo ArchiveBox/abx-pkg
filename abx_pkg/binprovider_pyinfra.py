@@ -6,6 +6,7 @@ import sys
 import shutil
 import importlib
 import inspect
+import logging as py_logging
 import subprocess
 import tempfile
 from pathlib import Path
@@ -15,6 +16,9 @@ from typing import Any
 from .base_types import BinProviderName, PATHStr, BinName, InstallArgs
 from .semver import SemVer
 from .binprovider import BinProvider, OPERATING_SYSTEM, DEFAULT_PATH, remap_kwargs
+from .logging import get_logger, log_subprocess_output
+
+logger = get_logger(__name__)
 
 PYINFRA_INSTALLED = shutil.which("pyinfra") is not None
 
@@ -105,13 +109,39 @@ def pyinfra_package_install(
             shutil.which("pyinfra", path=os.environ.get("PATH", DEFAULT_PATH))
             or "pyinfra"
         )
-        proc = subprocess.run(
-            [pyinfra_bin, "--yes", "@local", str(deploy_path)],
-            capture_output=True,
-            text=True,
-            cwd=temp_dir,
-            timeout=timeout,
-        )
+        cmd = [pyinfra_bin, "--yes", "@local", str(deploy_path)]
+        proc = None
+        if (
+            OPERATING_SYSTEM != "darwin"
+            and installer_module != "operations.brew.packages"
+        ):
+            sudo_bin = shutil.which("sudo", path=os.environ.get("PATH", DEFAULT_PATH))
+            if os.geteuid() != 0 and sudo_bin:
+                sudo_proc = subprocess.run(
+                    [sudo_bin, "-n", "--", *cmd],
+                    capture_output=True,
+                    text=True,
+                    cwd=temp_dir,
+                    timeout=timeout,
+                )
+                if sudo_proc.returncode == 0:
+                    proc = sudo_proc
+                else:
+                    log_subprocess_output(
+                        logger,
+                        "pyinfra sudo exec",
+                        sudo_proc.stdout,
+                        sudo_proc.stderr,
+                        level=py_logging.DEBUG,
+                    )
+        if proc is None:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                cwd=temp_dir,
+                timeout=timeout,
+            )
 
     succeeded = proc.returncode == 0
     result_text = f"Installing {pkg_names} on {OPERATING_SYSTEM} using Pyinfra {installer_module} {['failed', 'succeeded'][succeeded]}\n{proc.stdout}\n{proc.stderr}".strip()
