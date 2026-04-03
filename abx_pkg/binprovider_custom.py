@@ -81,7 +81,7 @@ class CustomProvider(EnvProvider):
         return self
 
     def supports_postinstall_disable(self, action) -> bool:
-        return True
+        return False
 
     def setup(
         self,
