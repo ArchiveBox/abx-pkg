@@ -25,6 +25,7 @@ logger = get_logger(__name__)
 DEFAULT_CHROMEWEBSTORE_ROOT = Path(
     os.environ.get("ABX_PKG_CHROMEWEBSTORE_ROOT", "~/.cache/abx-pkg/chromewebstore"),
 ).expanduser()
+CHROME_UTILS_PATH = Path(__file__).with_name("js") / "chrome" / "chrome_utils.js"
 
 
 class ChromeWebstoreProvider(BinProvider):
@@ -42,8 +43,6 @@ class ChromeWebstoreProvider(BinProvider):
 
     extensions_root: Path | None = None
     extensions_dir: Path | None = None
-    chrome_utils_path: Path | None = None
-
     overrides: BinProviderOverrides = {
         "*": {
             "abspath": "self.chromewebstore_abspath_handler",
@@ -72,18 +71,7 @@ class ChromeWebstoreProvider(BinProvider):
     @computed_field
     @property
     def is_valid(self) -> bool:
-        return bool(self.INSTALLER_BIN_ABSPATH and self.resolved_chrome_utils_path)
-
-    @computed_field
-    @property
-    def resolved_chrome_utils_path(self) -> Path | None:
-        if self.chrome_utils_path and self.chrome_utils_path.exists():
-            return self.chrome_utils_path
-        env_path = os.environ.get("CHROME_UTILS_PATH", "").strip()
-        if not env_path:
-            return None
-        path = Path(env_path).expanduser()
-        return path if path.exists() else None
+        return bool(self.INSTALLER_BIN_ABSPATH and CHROME_UTILS_PATH.exists())
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
@@ -193,12 +181,6 @@ class ChromeWebstoreProvider(BinProvider):
         if self.dry_run:
             return f"DRY_RUN would install Chrome Web Store extension {bin_name}"
 
-        chrome_utils_path = self.resolved_chrome_utils_path
-        if not chrome_utils_path:
-            raise FileNotFoundError(
-                "ChromeWebstoreProvider requires chrome_utils_path or CHROME_UTILS_PATH",
-            )
-
         webstore_id = str(install_args[0] if install_args else bin_name)
         extension_name = self._extension_name(bin_name, install_args)
         installer_bin = self._require_installer_bin()
@@ -206,7 +188,7 @@ class ChromeWebstoreProvider(BinProvider):
         proc = self.exec(
             bin_name=installer_bin,
             cmd=[
-                str(chrome_utils_path),
+                str(CHROME_UTILS_PATH),
                 "installExtensionWithCache",
                 webstore_id,
                 extension_name,

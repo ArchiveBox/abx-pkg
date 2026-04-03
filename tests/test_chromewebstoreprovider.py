@@ -5,11 +5,10 @@ from pathlib import Path
 from abx_pkg import Binary, ChromeWebstoreProvider
 
 
-CHROME_UTILS_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "abx-plugins"
-    / "abx_plugins"
-    / "plugins"
+PACKAGED_CHROME_UTILS_PATH = (
+    Path(__file__).resolve().parent.parent
+    / "abx_pkg"
+    / "js"
     / "chrome"
     / "chrome_utils.js"
 )
@@ -37,14 +36,13 @@ class TestChromeWebstoreProvider:
         test_machine,
     ):
         test_machine.require_tool("node")
-        assert CHROME_UTILS_PATH.exists(), CHROME_UTILS_PATH
+        assert PACKAGED_CHROME_UTILS_PATH.exists(), PACKAGED_CHROME_UTILS_PATH
 
         with tempfile.TemporaryDirectory() as temp_dir:
             install_root = Path(temp_dir) / "chromewebstore-root"
             provider = ChromeWebstoreProvider.model_validate(
                 {
                     "install_root": install_root,
-                    "chrome_utils_path": CHROME_UTILS_PATH,
                     "postinstall_scripts": True,
                     "min_release_age": 0,
                 },
@@ -70,7 +68,7 @@ class TestChromeWebstoreProvider:
         test_machine,
     ):
         test_machine.require_tool("node")
-        assert CHROME_UTILS_PATH.exists(), CHROME_UTILS_PATH
+        assert PACKAGED_CHROME_UTILS_PATH.exists(), PACKAGED_CHROME_UTILS_PATH
 
         with tempfile.TemporaryDirectory() as temp_dir:
             install_root = Path(temp_dir) / "chromewebstore-root"
@@ -79,7 +77,6 @@ class TestChromeWebstoreProvider:
                 {
                     "install_root": install_root,
                     "bin_dir": bin_dir,
-                    "chrome_utils_path": CHROME_UTILS_PATH,
                     "postinstall_scripts": True,
                     "min_release_age": 0,
                 },
@@ -102,13 +99,12 @@ class TestChromeWebstoreProvider:
 
     def test_provider_direct_methods_exercise_real_lifecycle(self, test_machine):
         test_machine.require_tool("node")
-        assert CHROME_UTILS_PATH.exists(), CHROME_UTILS_PATH
+        assert PACKAGED_CHROME_UTILS_PATH.exists(), PACKAGED_CHROME_UTILS_PATH
 
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = ChromeWebstoreProvider(
                 extensions_root=Path(temp_dir) / "chromewebstore-root",
                 extensions_dir=Path(temp_dir) / "chromewebstore-root/extensions",
-                chrome_utils_path=CHROME_UTILS_PATH,
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -143,7 +139,7 @@ class TestChromeWebstoreProvider:
 
     def test_binary_direct_methods_exercise_real_lifecycle(self, test_machine):
         test_machine.require_tool("node")
-        assert CHROME_UTILS_PATH.exists(), CHROME_UTILS_PATH
+        assert PACKAGED_CHROME_UTILS_PATH.exists(), PACKAGED_CHROME_UTILS_PATH
 
         with tempfile.TemporaryDirectory() as temp_dir:
             binary = Binary(
@@ -153,7 +149,6 @@ class TestChromeWebstoreProvider:
                         extensions_root=Path(temp_dir) / "chromewebstore-root",
                         extensions_dir=Path(temp_dir)
                         / "chromewebstore-root/extensions",
-                        chrome_utils_path=CHROME_UTILS_PATH,
                         postinstall_scripts=True,
                         min_release_age=0,
                     ),
