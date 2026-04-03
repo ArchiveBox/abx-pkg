@@ -916,6 +916,7 @@ class BinProvider(BaseModel):
             f"{self.__class__.__name__} {action}",
             proc.stdout,
             proc.stderr,
+            level=py_logging.ERROR,
         )
         exc_cls = {
             "install": BinProviderInstallError,
