@@ -17,11 +17,13 @@ from abx_pkg.exceptions import BinaryInstallError, BinaryLoadError
 
 class TestSecurityControls:
     def test_env_defaults_only_apply_to_supported_providers(self, monkeypatch):
-        monkeypatch.setenv("ABX_PKG_MIN_RELEASE_AGE", "7")
+        monkeypatch.setenv("ABX_PKG_MIN_RELEASE_AGE", "13")
         monkeypatch.setenv("ABX_PKG_POSTINSTALL_SCRIPTS", "true")
 
-        assert PipProvider().min_release_age == 7
+        assert PipProvider().min_release_age == 13
         assert PipProvider().postinstall_scripts is True
+        assert NpmProvider().min_release_age == 13
+        assert NpmProvider().postinstall_scripts is True
         assert EnvProvider().min_release_age is None
         assert EnvProvider().postinstall_scripts is None
         assert CustomProvider().min_release_age is None
