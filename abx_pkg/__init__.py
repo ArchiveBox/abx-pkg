@@ -61,7 +61,7 @@ from .binprovider_ansible import AnsibleProvider
 from .binprovider_pyinfra import PyinfraProvider
 from .binprovider_chromewebstore import ChromeWebstoreProvider
 from .binprovider_puppeteer import PuppeteerProvider
-from .binprovider_custom import CustomProvider
+from .binprovider_bash import BashProvider
 
 ALL_PROVIDERS = [
     EnvProvider,
@@ -78,7 +78,7 @@ ALL_PROVIDERS = [
     PyinfraProvider,
     ChromeWebstoreProvider,
     PuppeteerProvider,
-    CustomProvider,
+    BashProvider,
 ]
 
 
@@ -171,7 +171,7 @@ __all__ = [
     "PyinfraProvider",
     "ChromeWebstoreProvider",
     "PuppeteerProvider",
-    "CustomProvider",
+    "BashProvider",
     # Note: provider singleton names (apt, pip, brew, etc.) are intentionally
     # excluded from __all__ so that `from abx_pkg import *` does not eagerly
     # instantiate every provider. Use explicit imports instead:

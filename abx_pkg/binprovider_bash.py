@@ -19,27 +19,27 @@ from .binprovider import (
 from .logging import format_subprocess_output
 
 
-DEFAULT_CUSTOM_ROOT = Path(
-    os.environ.get("ABX_PKG_CUSTOM_ROOT", "~/.cache/abx-pkg/custom"),
+DEFAULT_BASH_ROOT = Path(
+    os.environ.get("ABX_PKG_BASH_ROOT", "~/.cache/abx-pkg/bash"),
 ).expanduser()
 
 
-class CustomProvider(EnvProvider):
-    name: BinProviderName = "custom"
+class BashProvider(EnvProvider):
+    name: BinProviderName = "bash"
     INSTALLER_BIN: BinName = "sh"
-    INSTALL_ROOT_FIELD: ClassVar[str | None] = "custom_root"
-    BIN_DIR_FIELD: ClassVar[str | None] = "custom_bin_dir"
+    INSTALL_ROOT_FIELD: ClassVar[str | None] = "bash_root"
+    BIN_DIR_FIELD: ClassVar[str | None] = "bash_bin_dir"
 
     PATH: PATHStr = ""
     postinstall_scripts: bool | None = Field(default=None, repr=False)
     min_release_age: float | None = Field(default=None, repr=False)
 
-    custom_root: Path | None = None
-    custom_bin_dir: Path | None = None
+    bash_root: Path | None = None
+    bash_bin_dir: Path | None = None
 
     overrides: BinProviderOverrides = {
         "*": {
-            "version": "self.custom_version_handler",
+            "version": "self.bash_version_handler",
             "abspath": "self.default_abspath_handler",
             "install_args": "self.default_install_args_handler",
             "install": "self.default_install_handler",
@@ -51,16 +51,16 @@ class CustomProvider(EnvProvider):
     @computed_field
     @property
     def install_root(self) -> Path:
-        if self.custom_root:
-            return self.custom_root
-        if self.custom_bin_dir:
-            return self.custom_bin_dir.parent
-        return DEFAULT_CUSTOM_ROOT
+        if self.bash_root:
+            return self.bash_root
+        if self.bash_bin_dir:
+            return self.bash_bin_dir.parent
+        return DEFAULT_BASH_ROOT
 
     @computed_field
     @property
     def bin_dir(self) -> Path:
-        return self.custom_bin_dir or (self.install_root / "bin")
+        return self.bash_bin_dir or (self.install_root / "bin")
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
@@ -72,7 +72,7 @@ class CustomProvider(EnvProvider):
         return self
 
     @model_validator(mode="after")
-    def load_PATH_from_custom_bin_dir(self) -> Self:
+    def load_PATH_from_bash_bin_dir(self) -> Self:
         self.PATH = self._merge_PATH(self.bin_dir, PATH=self.PATH, prepend=True)
         return self
 
@@ -135,16 +135,16 @@ class CustomProvider(EnvProvider):
                 return getattr(self, f"default_{handler_type}_handler")
         return super()._get_handler_for_action(bin_name, handler_type)
 
-    def _custom_env(self) -> dict[str, str]:
+    def _bash_env(self) -> dict[str, str]:
         return {
             **os.environ,
             "INSTALL_ROOT": str(self.install_root),
             "BIN_DIR": str(self.bin_dir),
-            "CUSTOM_INSTALL_ROOT": str(self.install_root),
-            "CUSTOM_BIN_DIR": str(self.bin_dir),
+            "BASH_INSTALL_ROOT": str(self.install_root),
+            "BASH_BIN_DIR": str(self.bin_dir),
         }
 
-    def custom_version_handler(
+    def bash_version_handler(
         self,
         bin_name: str,
         abspath: str | Path | None = None,
@@ -182,7 +182,7 @@ class CustomProvider(EnvProvider):
         command = self._get_shell_command(str(bin_name), "install")
         if not command:
             raise ValueError(
-                "CustomProvider requires a literal overrides.install shell command",
+                "BashProvider requires a literal overrides.install shell command",
             )
 
         proc = self.exec(
@@ -190,7 +190,7 @@ class CustomProvider(EnvProvider):
             cmd=["-c", command],
             cwd=self.install_root,
             timeout=timeout if timeout is not None else self.install_timeout,
-            env=self._custom_env(),
+            env=self._bash_env(),
         )
         if proc.returncode != 0:
             self._raise_proc_error("install", bin_name, proc)
@@ -213,7 +213,7 @@ class CustomProvider(EnvProvider):
         )
         if not command:
             raise ValueError(
-                "CustomProvider requires a literal overrides.install or overrides.update shell command",
+                "BashProvider requires a literal overrides.install or overrides.update shell command",
             )
 
         proc = self.exec(
@@ -221,7 +221,7 @@ class CustomProvider(EnvProvider):
             cmd=["-c", command],
             cwd=self.install_root,
             timeout=timeout if timeout is not None else self.install_timeout,
-            env=self._custom_env(),
+            env=self._bash_env(),
         )
         if proc.returncode != 0:
             self._raise_proc_error("update", bin_name, proc)
@@ -242,7 +242,7 @@ class CustomProvider(EnvProvider):
                 cmd=["-c", command],
                 cwd=self.install_root,
                 timeout=timeout if timeout is not None else self.install_timeout,
-                env=self._custom_env(),
+                env=self._bash_env(),
             )
             if proc.returncode != 0:
                 self._raise_proc_error("uninstall", bin_name, proc)

@@ -1,16 +1,16 @@
 import tempfile
 from pathlib import Path
 
-from abx_pkg import Binary, CustomProvider
+from abx_pkg import BashProvider, Binary
 
 
-CUSTOM_ZX_INSTALL = (
+BASH_ZX_INSTALL = (
     'npm install --quiet --prefix "$INSTALL_ROOT/npm" zx '
-    '&& ln -sf "$INSTALL_ROOT/npm/node_modules/.bin/zx" "$BIN_DIR/custom-zx"'
+    '&& ln -sf "$INSTALL_ROOT/npm/node_modules/.bin/zx" "$BIN_DIR/bash-zx"'
 )
 
 
-class TestCustomProvider:
+class TestBashProvider:
     def test_install_root_alias_without_explicit_bin_dir_uses_root_bin(
         self,
         test_machine,
@@ -18,18 +18,18 @@ class TestCustomProvider:
         test_machine.require_tool("npm")
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            install_root = Path(temp_dir) / "custom-root"
-            provider = CustomProvider.model_validate(
+            install_root = Path(temp_dir) / "bash-root"
+            provider = BashProvider.model_validate(
                 {
                     "install_root": install_root,
                     "postinstall_scripts": True,
                     "min_release_age": 0,
                 },
             ).get_provider_with_overrides(
-                overrides={"custom-zx": {"install": CUSTOM_ZX_INSTALL}},
+                overrides={"bash-zx": {"install": BASH_ZX_INSTALL}},
             )
 
-            installed = provider.install("custom-zx")
+            installed = provider.install("bash-zx")
 
             test_machine.assert_shallow_binary_loaded(installed)
             assert installed is not None
@@ -45,9 +45,9 @@ class TestCustomProvider:
         test_machine.require_tool("npm")
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            install_root = Path(temp_dir) / "custom-root"
-            bin_dir = Path(temp_dir) / "custom-bin"
-            provider = CustomProvider.model_validate(
+            install_root = Path(temp_dir) / "bash-root"
+            bin_dir = Path(temp_dir) / "bash-bin"
+            provider = BashProvider.model_validate(
                 {
                     "install_root": install_root,
                     "bin_dir": bin_dir,
@@ -55,10 +55,10 @@ class TestCustomProvider:
                     "min_release_age": 0,
                 },
             ).get_provider_with_overrides(
-                overrides={"custom-zx": {"install": CUSTOM_ZX_INSTALL}},
+                overrides={"bash-zx": {"install": BASH_ZX_INSTALL}},
             )
 
-            installed = provider.install("custom-zx")
+            installed = provider.install("bash-zx")
 
             test_machine.assert_shallow_binary_loaded(installed)
             assert installed is not None
@@ -67,7 +67,7 @@ class TestCustomProvider:
             assert installed.loaded_abspath is not None
             assert installed.loaded_abspath.parent == provider.bin_dir
 
-    def test_explicit_custom_bin_dir_takes_precedence_over_existing_PATH_entries(
+    def test_explicit_bash_bin_dir_takes_precedence_over_existing_PATH_entries(
         self,
         test_machine,
     ):
@@ -75,32 +75,32 @@ class TestCustomProvider:
 
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_dir_path = Path(temp_dir)
-            ambient_provider = CustomProvider(
-                custom_root=temp_dir_path / "ambient-root",
-                custom_bin_dir=temp_dir_path / "ambient-root/bin",
+            ambient_provider = BashProvider(
+                bash_root=temp_dir_path / "ambient-root",
+                bash_bin_dir=temp_dir_path / "ambient-root/bin",
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
-                overrides={"custom-zx": {"install": CUSTOM_ZX_INSTALL}},
+                overrides={"bash-zx": {"install": BASH_ZX_INSTALL}},
             )
-            ambient_installed = ambient_provider.install("custom-zx")
+            ambient_installed = ambient_provider.install("bash-zx")
             assert ambient_installed is not None
 
-            provider = CustomProvider(
+            provider = BashProvider(
                 PATH=str(ambient_provider.bin_dir),
-                custom_root=temp_dir_path / "custom-root",
-                custom_bin_dir=temp_dir_path / "custom-bin",
+                bash_root=temp_dir_path / "bash-root",
+                bash_bin_dir=temp_dir_path / "bash-bin",
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
-                overrides={"custom-zx": {"install": CUSTOM_ZX_INSTALL}},
+                overrides={"bash-zx": {"install": BASH_ZX_INSTALL}},
             )
 
-            installed = provider.install("custom-zx")
+            installed = provider.install("bash-zx")
 
             test_machine.assert_shallow_binary_loaded(installed)
             assert installed is not None
-            assert provider.bin_dir == temp_dir_path / "custom-bin"
+            assert provider.bin_dir == temp_dir_path / "bash-bin"
             assert installed.loaded_abspath is not None
             assert installed.loaded_abspath.parent == provider.bin_dir
             assert ambient_installed.loaded_abspath is not None
@@ -110,32 +110,32 @@ class TestCustomProvider:
         test_machine.require_tool("npm")
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            provider = CustomProvider(
-                custom_root=Path(temp_dir) / "custom-root",
-                custom_bin_dir=Path(temp_dir) / "custom-root/bin",
+            provider = BashProvider(
+                bash_root=Path(temp_dir) / "bash-root",
+                bash_bin_dir=Path(temp_dir) / "bash-root/bin",
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
-                overrides={"custom-zx": {"install": CUSTOM_ZX_INSTALL}},
+                overrides={"bash-zx": {"install": BASH_ZX_INSTALL}},
             )
 
-            test_machine.exercise_provider_lifecycle(provider, bin_name="custom-zx")
+            test_machine.exercise_provider_lifecycle(provider, bin_name="bash-zx")
 
     def test_binary_direct_methods_exercise_real_lifecycle(self, test_machine):
         test_machine.require_tool("npm")
 
         with tempfile.TemporaryDirectory() as temp_dir:
             binary = Binary(
-                name="custom-zx",
+                name="bash-zx",
                 binproviders=[
-                    CustomProvider(
-                        custom_root=Path(temp_dir) / "custom-root",
-                        custom_bin_dir=Path(temp_dir) / "custom-root/bin",
+                    BashProvider(
+                        bash_root=Path(temp_dir) / "bash-root",
+                        bash_bin_dir=Path(temp_dir) / "bash-root/bin",
                         postinstall_scripts=True,
                         min_release_age=0,
                     ),
                 ],
-                overrides={"custom": {"install": CUSTOM_ZX_INSTALL}},
+                overrides={"bash": {"install": BASH_ZX_INSTALL}},
                 postinstall_scripts=True,
                 min_release_age=0,
             )

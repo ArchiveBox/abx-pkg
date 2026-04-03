@@ -6,7 +6,7 @@ import pytest
 
 from abx_pkg import (
     Binary,
-    CustomProvider,
+    BashProvider,
     EnvProvider,
     NpmProvider,
     PipProvider,
@@ -26,8 +26,8 @@ class TestSecurityControls:
         assert NpmProvider().postinstall_scripts is True
         assert EnvProvider().min_release_age is None
         assert EnvProvider().postinstall_scripts is None
-        assert CustomProvider().min_release_age is None
-        assert CustomProvider().postinstall_scripts is None
+        assert BashProvider().min_release_age is None
+        assert BashProvider().postinstall_scripts is None
 
     def test_env_provider_defaults_do_not_fail_closed(self, test_machine):
         installed = EnvProvider().install("python")

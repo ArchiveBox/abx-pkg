@@ -1,4 +1,4 @@
-<h1><a href="https://github.com/ArchiveBox/abx-pkg"><code>abx-pkg</code></a> &nbsp; &nbsp; &nbsp; &nbsp; 📦  <small><code>apt</code>&nbsp; <code>brew</code>&nbsp; <code>pip</code>&nbsp; <code>npm</code>&nbsp; <code>cargo</code>&nbsp; <code>gem</code>&nbsp; <code>goget</code>&nbsp; <code>nix</code>&nbsp; <code>docker</code>&nbsp; <code>custom</code>&nbsp; <code>chromewebstore</code>&nbsp; <code>puppeteer</code></small><br/><sub>Simple Python interfaces for package managers + installed binaries.</sub></h1>
+<h1><a href="https://github.com/ArchiveBox/abx-pkg"><code>abx-pkg</code></a> &nbsp; &nbsp; &nbsp; &nbsp; 📦  <small><code>apt</code>&nbsp; <code>brew</code>&nbsp; <code>pip</code>&nbsp; <code>npm</code>&nbsp; <code>cargo</code>&nbsp; <code>gem</code>&nbsp; <code>goget</code>&nbsp; <code>nix</code>&nbsp; <code>docker</code>&nbsp; <code>bash</code>&nbsp; <code>chromewebstore</code>&nbsp; <code>puppeteer</code></small><br/><sub>Simple Python interfaces for package managers + installed binaries.</sub></h1>
 <br/>
 
 [![PyPI][pypi-badge]][pypi]
@@ -111,7 +111,7 @@ curl.exec(cmd=['--version'])                                        # curl 8.4.0
 - `nix` (Linux/macOS)
 - `docker` (Linux/macOS, using local wrapper scripts that run `docker run`)
 - `env` (looks for existing version of binary in user's `$PATH` at runtime)
-- `custom` (Linux/macOS, runs explicit shell-command overrides in a managed install root)
+- `bash` (Linux/macOS, runs explicit shell-command overrides in a managed install root)
 - `chromewebstore` (Linux/macOS, downloads and unpacks Chrome Web Store extensions)
 - `puppeteer` (Linux/macOS, installs browser artifacts via `@puppeteer/browsers`)
 - `pyinfra` (Linux/macOS, delegates to host package managers through `pyinfra`)
@@ -170,7 +170,7 @@ Use `min_version=None` to explicitly disable version floor checks.
 
 ### [`BinProvider`](https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/binprovider.py#:~:text=class%20BinProvider)
 
-**Built-in implementations:** `EnvProvider`, `AptProvider`, `BrewProvider`, `PipProvider`, `NpmProvider`, `CargoProvider`, `GemProvider`, `GoGetProvider`, `NixProvider`, `DockerProvider`, `PyinfraProvider`, `AnsibleProvider`, `CustomProvider`, `ChromeWebstoreProvider`, `PuppeteerProvider`
+**Built-in implementations:** `EnvProvider`, `AptProvider`, `BrewProvider`, `PipProvider`, `NpmProvider`, `CargoProvider`, `GemProvider`, `GoGetProvider`, `NixProvider`, `DockerProvider`, `PyinfraProvider`, `AnsibleProvider`, `BashProvider`, `ChromeWebstoreProvider`, `PuppeteerProvider`
 
 This type represents a provider of binaries, e.g. a package manager like `apt` / `pip` / `npm`, or `env` (which only resolves binaries already present in `$PATH`).
 
@@ -320,23 +320,23 @@ npm_install_args = ["--force", "--no-audit", "--no-fund", "--loglevel=error"]
 - Overrides: `install_args` is passed as npm package specs; unpinned specs get rewritten to `pkg@>=<min_version>` when `min_version` is supplied.
 - Notes: `ABX_PKG_POSTINSTALL_SCRIPTS` and `ABX_PKG_MIN_RELEASE_AGE` apply here by default. Direct npm mode uses `--ignore-scripts` and `--min-release-age=<days>` when the host npm supports it. pnpm mode writes `pnpm-workspace.yaml` with `minimumReleaseAge`; that is how release-age enforcement is configured there. Explicit conflicting flags already present in `install_args` win over the derived defaults.
 
-#### 🧪 [`CustomProvider`](./abx_pkg/binprovider_custom.py) (`custom`)
+#### 🧪 [`BashProvider`](./abx_pkg/binprovider_bash.py) (`bash`)
 
-Source: [`abx_pkg/binprovider_custom.py`](./abx_pkg/binprovider_custom.py) • Tests: [`tests/test_customprovider.py`](./tests/test_customprovider.py)
+Source: [`abx_pkg/binprovider_bash.py`](./abx_pkg/binprovider_bash.py) • Tests: [`tests/test_bashprovider.py`](./tests/test_bashprovider.py)
 
 ```python
 INSTALLER_BIN = "sh"
 PATH = ""
-custom_root = $ABX_PKG_CUSTOM_ROOT or ~/.cache/abx-pkg/custom
-custom_bin_dir = <custom_root>/bin
+bash_root = $ABX_PKG_BASH_ROOT or ~/.cache/abx-pkg/bash
+bash_bin_dir = <bash_root>/bin
 ```
 
-- Install root: set `custom_root` / `install_root` for the managed state dir, and `custom_bin_dir` / `bin_dir` for the executable output dir.
+- Install root: set `bash_root` / `install_root` for the managed state dir, and `bash_bin_dir` / `bin_dir` for the executable output dir.
 - Auto-switching: none.
 - `dry_run`: shared behavior.
 - Security: `min_release_age` and `postinstall_scripts=False` are unsupported and are ignored with a warning if explicitly requested.
 - Overrides: this provider is driven by literal per-binary shell overrides for `install`, `update`, and `uninstall`.
-- Notes: the provider exports `INSTALL_ROOT`, `BIN_DIR`, `CUSTOM_INSTALL_ROOT`, and `CUSTOM_BIN_DIR` into the shell environment for those commands.
+- Notes: the provider exports `INSTALL_ROOT`, `BIN_DIR`, `BASH_INSTALL_ROOT`, and `BASH_BIN_DIR` into the shell environment for those commands.
 
 #### 🦀 [`CargoProvider`](./abx_pkg/binprovider_cargo.py) (`cargo`)
 
