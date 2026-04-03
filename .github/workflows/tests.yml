@@ -84,8 +84,6 @@ jobs:
         - os: ubuntu-latest
           python_version: '3.11'
         - os: ubuntu-latest
-          python_version: '3.12'
-        - os: ubuntu-latest
           python_version: '3.14'
         - os: macOS-latest
           python_version: '3.13'
