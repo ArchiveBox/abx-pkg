@@ -165,6 +165,7 @@ class TestNpmProvider:
     def test_provider_defaults_and_binary_overrides_enforce_min_release_age(
         self,
         test_machine,
+        caplog,
     ):
         with tempfile.TemporaryDirectory() as tmpdir:
             strict_provider = NpmProvider(
@@ -172,9 +173,18 @@ class TestNpmProvider:
                 postinstall_scripts=True,
                 min_release_age=36500,
             )
-            with pytest.raises(Exception):
-                strict_provider.install("zx")
-            test_machine.assert_provider_missing(strict_provider, "zx")
+            if strict_provider.supports_min_release_age("install"):
+                with pytest.raises(Exception):
+                    strict_provider.install("zx")
+                test_machine.assert_provider_missing(strict_provider, "zx")
+            else:
+                direct_default = strict_provider.install("zx")
+                test_machine.assert_shallow_binary_loaded(direct_default)
+                assert (
+                    "ignoring unsupported min_release_age=36500.0 for provider npm"
+                    in caplog.text
+                )
+                assert strict_provider.uninstall("zx")
 
             direct_override = strict_provider.install("zx", min_release_age=0)
             test_machine.assert_shallow_binary_loaded(direct_override)
