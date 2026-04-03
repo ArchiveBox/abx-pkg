@@ -11,6 +11,7 @@ import hashlib
 import platform
 import subprocess
 import functools
+import tempfile
 from types import SimpleNamespace
 
 from typing import (
@@ -438,7 +439,7 @@ class BinProvider(BaseModel):
             return SimpleNamespace(
                 pw_uid=uid,
                 pw_gid=os.getegid(),
-                pw_dir=os.environ.get("HOME", "/tmp"),
+                pw_dir=os.environ.get("HOME", tempfile.gettempdir()),
                 pw_name=os.environ.get("USER") or os.environ.get("LOGNAME") or str(uid),
             )
 

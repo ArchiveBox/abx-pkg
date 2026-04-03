@@ -20,6 +20,7 @@ logger = get_logger(__name__)
 
 
 ANSIBLE_INSTALLED = shutil.which("ansible-playbook") is not None
+SYSTEM_TEMP_DIR = tempfile.gettempdir()
 
 
 ANSIBLE_INSTALL_PLAYBOOK_TEMPLATE = """
@@ -111,7 +112,7 @@ def ansible_package_install(
         )
 
     # create a temporary directory using the context manager
-    with tempfile.TemporaryDirectory(dir="/tmp") as temp_dir:
+    with tempfile.TemporaryDirectory(dir=SYSTEM_TEMP_DIR) as temp_dir:
         ansible_home = Path(temp_dir) / "tmp"
         ansible_home.mkdir(exist_ok=True)
 
@@ -123,7 +124,7 @@ def ansible_package_install(
         env["ANSIBLE_LOCALHOST_WARNING"] = "False"
         env["ANSIBLE_HOME"] = str(ansible_home)
         env["ANSIBLE_PYTHON_INTERPRETER"] = sys.executable
-        env["TMPDIR"] = "/tmp"
+        env["TMPDIR"] = SYSTEM_TEMP_DIR
         env["PATH"] = ":".join(
             [str(Path(sys.executable).parent), env.get("PATH", "")],
         ).strip(":")

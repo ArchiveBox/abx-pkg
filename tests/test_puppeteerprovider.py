@@ -5,6 +5,7 @@ from abx_pkg import Binary, PuppeteerProvider
 
 
 PUPPETEER_CHROMEDRIVER_ARGS = ["chromedriver@stable"]
+TEMP_ROOT = Path(tempfile.gettempdir()) / "puppeteer"
 
 
 class TestPuppeteerProvider:
@@ -12,43 +13,42 @@ class TestPuppeteerProvider:
         class StubPuppeteerProvider(PuppeteerProvider):
             def _list_installed_browsers(self) -> list[tuple[str, str, Path]]:
                 return [
-                    ("chrome", "9.0", Path("/tmp/puppeteer/cache/chrome/9.0/chrome")),
+                    ("chrome", "9.0", TEMP_ROOT / "cache/chrome/9.0/chrome"),
                     (
                         "chrome",
                         "100.0",
-                        Path("/tmp/puppeteer/cache/chrome/100.0/chrome"),
+                        TEMP_ROOT / "cache/chrome/100.0/chrome",
                     ),
                     (
                         "chromedriver",
                         "124.0.6367.207",
-                        Path(
-                            "/tmp/puppeteer/cache/chromedriver/124.0.6367.207/chromedriver",
-                        ),
+                        TEMP_ROOT / "cache/chromedriver/124.0.6367.207/chromedriver",
                     ),
                 ]
 
         provider = StubPuppeteerProvider(
-            puppeteer_root=Path("/tmp/puppeteer-root"),
-            browser_bin_dir=Path("/tmp/puppeteer-root/bin"),
+            puppeteer_root=TEMP_ROOT.parent / "puppeteer-root",
+            browser_bin_dir=TEMP_ROOT.parent / "puppeteer-root/bin",
             postinstall_scripts=True,
             min_release_age=0,
         )
 
         installed_output = "\n".join(
             (
-                "chrome@9.0 /tmp/puppeteer/cache/chrome/9.0/chrome",
-                "chrome@100.0 /tmp/puppeteer/cache/chrome/100.0/chrome",
-                "chromedriver@124.0.6367.207 /tmp/puppeteer/cache/chromedriver/124.0.6367.207/chromedriver",
+                f"chrome@9.0 {TEMP_ROOT / 'cache/chrome/9.0/chrome'}",
+                f"chrome@100.0 {TEMP_ROOT / 'cache/chrome/100.0/chrome'}",
+                f"chromedriver@124.0.6367.207 {TEMP_ROOT / 'cache/chromedriver/124.0.6367.207/chromedriver'}",
             ),
         )
-        assert provider._parse_installed_browser_path(
-            installed_output,
-            "chrome",
-        ) == Path(
-            "/tmp/puppeteer/cache/chrome/100.0/chrome",
+        assert (
+            provider._parse_installed_browser_path(
+                installed_output,
+                "chrome",
+            )
+            == TEMP_ROOT / "cache/chrome/100.0/chrome"
         )
-        assert provider._resolve_installed_browser_path("chrome") == Path(
-            "/tmp/puppeteer/cache/chrome/100.0/chrome",
+        assert provider._resolve_installed_browser_path("chrome") == (
+            TEMP_ROOT / "cache/chrome/100.0/chrome"
         )
 
     def test_install_root_alias_without_explicit_bin_dir_uses_root_bin(

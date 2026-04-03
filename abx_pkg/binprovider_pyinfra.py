@@ -21,6 +21,7 @@ from .logging import get_logger, log_subprocess_output
 logger = get_logger(__name__)
 
 PYINFRA_INSTALLED = shutil.which("pyinfra") is not None
+SYSTEM_TEMP_DIR = tempfile.gettempdir()
 
 
 def pyinfra_package_install(
@@ -86,7 +87,7 @@ def pyinfra_package_install(
         },
     }
 
-    with tempfile.TemporaryDirectory(dir="/tmp") as temp_dir:
+    with tempfile.TemporaryDirectory(dir=SYSTEM_TEMP_DIR) as temp_dir:
         deploy_path = Path(temp_dir) / "deploy.py"
         deploy_path.write_text(
             "\n".join(
@@ -111,7 +112,7 @@ def pyinfra_package_install(
         )
         cmd = [pyinfra_bin, "--yes", "@local", str(deploy_path)]
         env = os.environ.copy()
-        env["TMPDIR"] = "/tmp"
+        env["TMPDIR"] = SYSTEM_TEMP_DIR
         proc = None
         if (
             OPERATING_SYSTEM != "darwin"
