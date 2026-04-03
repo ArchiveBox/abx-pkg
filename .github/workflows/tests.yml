@@ -131,7 +131,14 @@ jobs:
       run: |
         export PNPM_HOME="${RUNNER_TEMP}/pnpm"
         export PATH="$PNPM_HOME:$PATH"
+        set +e
         uv run pytest -m "not root_required and not docker_required" "${{ matrix.test.path }}"
+        status=$?
+        set -e
+        if [ "$status" -eq 0 ] || [ "$status" -eq 5 ]; then
+          exit 0
+        fi
+        exit "$status"
 
   discover-live-tests:
     needs: precheck
@@ -146,7 +153,8 @@ jobs:
       id: set-matrix
       run: |
         cat >> "$GITHUB_OUTPUT" <<'EOF'
-        live-tests=[
+        live-tests<<JSON
+        [
           {"name":"pipprovider-linux","path":"tests/test_pipprovider.py","os":"ubuntu-latest","root_required":false,"needs_docker":false},
           {"name":"npmprovider-linux","path":"tests/test_npmprovider.py","os":"ubuntu-latest","root_required":false,"needs_docker":false},
           {"name":"cargoprovider-linux","path":"tests/test_cargoprovider.py","os":"ubuntu-latest","root_required":false,"needs_docker":false},
@@ -165,6 +173,7 @@ jobs:
           {"name":"pyinfraprovider-linux-root","path":"tests/test_pyinfraprovider.py","os":"ubuntu-latest","root_required":true,"needs_docker":false},
           {"name":"ansibleprovider-linux-root","path":"tests/test_ansibleprovider.py","os":"ubuntu-latest","root_required":true,"needs_docker":false}
         ]
+        JSON
         EOF
 
   live-integration:
