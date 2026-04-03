@@ -353,7 +353,7 @@ class TestMachine:
 
     def pick_missing_apt_package(self) -> str:
         provider = AptProvider(min_release_age=0)
-        for package in ("hello", "tree", "rename", "jq", "cowsay"):
+        for package in ("tree", "rename", "jq", "tmux", "screen"):
             if _apt_package_is_installed(package):
                 continue
             if provider.load(package, quiet=True, nocache=True) is not None:
