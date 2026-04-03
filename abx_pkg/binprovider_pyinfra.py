@@ -86,7 +86,7 @@ def pyinfra_package_install(
         },
     }
 
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with tempfile.TemporaryDirectory(dir="/tmp") as temp_dir:
         deploy_path = Path(temp_dir) / "deploy.py"
         deploy_path.write_text(
             "\n".join(
@@ -110,6 +110,8 @@ def pyinfra_package_install(
             or "pyinfra"
         )
         cmd = [pyinfra_bin, "--yes", "@local", str(deploy_path)]
+        env = os.environ.copy()
+        env["TMPDIR"] = "/tmp"
         proc = None
         if (
             OPERATING_SYSTEM != "darwin"
@@ -122,6 +124,7 @@ def pyinfra_package_install(
                     capture_output=True,
                     text=True,
                     cwd=temp_dir,
+                    env=env,
                     timeout=timeout,
                 )
                 if sudo_proc.returncode == 0:
@@ -140,6 +143,7 @@ def pyinfra_package_install(
                 capture_output=True,
                 text=True,
                 cwd=temp_dir,
+                env=env,
                 timeout=timeout,
             )
 

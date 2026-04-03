@@ -111,7 +111,7 @@ def ansible_package_install(
         )
 
     # create a temporary directory using the context manager
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with tempfile.TemporaryDirectory(dir="/tmp") as temp_dir:
         ansible_home = Path(temp_dir) / "tmp"
         ansible_home.mkdir(exist_ok=True)
 
@@ -123,6 +123,7 @@ def ansible_package_install(
         env["ANSIBLE_LOCALHOST_WARNING"] = "False"
         env["ANSIBLE_HOME"] = str(ansible_home)
         env["ANSIBLE_PYTHON_INTERPRETER"] = sys.executable
+        env["TMPDIR"] = "/tmp"
         env["PATH"] = ":".join(
             [str(Path(sys.executable).parent), env.get("PATH", "")],
         ).strip(":")
@@ -148,7 +149,7 @@ def ansible_package_install(
                     [
                         sudo_bin,
                         "-n",
-                        "--preserve-env=PATH,HOME,LOGNAME,USER,ANSIBLE_INVENTORY_UNPARSED_WARNING,ANSIBLE_LOCALHOST_WARNING,ANSIBLE_HOME,ANSIBLE_PYTHON_INTERPRETER",
+                        "--preserve-env=PATH,HOME,LOGNAME,USER,TMPDIR,ANSIBLE_INVENTORY_UNPARSED_WARNING,ANSIBLE_LOCALHOST_WARNING,ANSIBLE_HOME,ANSIBLE_PYTHON_INTERPRETER",
                         "--",
                         *cmd,
                     ],
