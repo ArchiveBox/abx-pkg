@@ -33,7 +33,7 @@ DEFAULT_PUPPETEER_ROOT = Path(
 
 class PuppeteerProvider(BinProvider):
     name: BinProviderName = "puppeteer"
-    INSTALLER_BIN: BinName = "browsers"
+    INSTALLER_BIN: BinName = "puppeteer-browsers"
     INSTALL_ROOT_FIELD: ClassVar[str | None] = "puppeteer_root"
     BIN_DIR_FIELD: ClassVar[str | None] = "browser_bin_dir"
 
@@ -118,7 +118,7 @@ class PuppeteerProvider(BinProvider):
             min_release_age=min_release_age,
         )
         return Binary(
-            name="browsers",
+            name="puppeteer-browsers",
             binproviders=[cli_provider],
             overrides={"npm": {"install_args": ["@puppeteer/browsers"]}},
             postinstall_scripts=postinstall_scripts,

@@ -1,4 +1,4 @@
-<h1><a href="https://github.com/ArchiveBox/abx-pkg"><code>abx-pkg</code></a> &nbsp; &nbsp; &nbsp; &nbsp; 📦  <small><code>apt</code>&nbsp; <code>brew</code>&nbsp; <code>pip</code>&nbsp; <code>npm</code>&nbsp; <code>cargo</code>&nbsp; <code>gem</code>&nbsp; <code>goget</code>&nbsp; <code>nix</code>&nbsp; <code>docker</code> &nbsp;₊₊₊</small><br/><sub>Simple Python interfaces for package managers + installed binaries.</sub></h1>
+<h1><a href="https://github.com/ArchiveBox/abx-pkg"><code>abx-pkg</code></a> &nbsp; &nbsp; &nbsp; &nbsp; 📦  <small><code>apt</code>&nbsp; <code>brew</code>&nbsp; <code>pip</code>&nbsp; <code>npm</code>&nbsp; <code>cargo</code>&nbsp; <code>gem</code>&nbsp; <code>goget</code>&nbsp; <code>nix</code>&nbsp; <code>docker</code>&nbsp; <code>custom</code>&nbsp; <code>chromewebstore</code>&nbsp; <code>puppeteer</code></small><br/><sub>Simple Python interfaces for package managers + installed binaries.</sub></h1>
 <br/>
 
 [![PyPI][pypi-badge]][pypi]
@@ -97,9 +97,9 @@ print(curl.abspath, curl.version, curl.binprovider, curl.is_valid)  # Path(...) 
 curl.exec(cmd=['--version'])                                        # curl 8.4.0 (x86_64-apple-darwin23.0) libcurl/8.4.0 ...
 ```
 
-### Supported Package Managers
+### Supported Providers
 
-**So far it supports `installing`/`finding installed`/`updating`/`removing` packages on `Linux`/`macOS` with:**
+**So far it supports `installing`/`finding installed`/`updating`/`removing` packages or binaries on `Linux`/`macOS` with:**
 
 - `apt` (Ubuntu/Debian/etc.)
 - `brew` (macOS/Linux)
@@ -111,6 +111,11 @@ curl.exec(cmd=['--version'])                                        # curl 8.4.0
 - `nix` (Linux/macOS)
 - `docker` (Linux/macOS, using local wrapper scripts that run `docker run`)
 - `env` (looks for existing version of binary in user's `$PATH` at runtime)
+- `custom` (Linux/macOS, runs explicit shell-command overrides in a managed install root)
+- `chromewebstore` (Linux/macOS, downloads and unpacks Chrome Web Store extensions)
+- `puppeteer` (Linux/macOS, installs browser artifacts via `@puppeteer/browsers`)
+- `pyinfra` (Linux/macOS, delegates to host package managers through `pyinfra`)
+- `ansible` (Linux/macOS, delegates to host package managers through `ansible-runner`)
 
 *Planned:* `apk`, `pkg`, and additional future provider backends.
 
@@ -165,7 +170,7 @@ Use `min_version=None` to explicitly disable version floor checks.
 
 ### [`BinProvider`](https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/binprovider.py#:~:text=class%20BinProvider)
 
-**Built-in implementations:** `EnvProvider`, `AptProvider`, `BrewProvider`, `PipProvider`, `NpmProvider`, `CargoProvider`, `GemProvider`, `GoGetProvider`, `NixProvider`, `DockerProvider`, `PyinfraProvider`, `AnsibleProvider`
+**Built-in implementations:** `EnvProvider`, `AptProvider`, `BrewProvider`, `PipProvider`, `NpmProvider`, `CargoProvider`, `GemProvider`, `GoGetProvider`, `NixProvider`, `DockerProvider`, `PyinfraProvider`, `AnsibleProvider`, `CustomProvider`, `ChromeWebstoreProvider`, `PuppeteerProvider`
 
 This type represents a provider of binaries, e.g. a package manager like `apt` / `pip` / `npm`, or `env` (which only resolves binaries already present in `$PATH`).
 
@@ -182,17 +187,19 @@ Shared base defaults come from [`abx_pkg/binprovider.py`](./abx_pkg/binprovider.
 ```python
 INSTALLER_BIN = "env"
 PATH = str(Path(sys.executable).parent)
-postinstall_scripts = False          # or ABX_PKG_POSTINSTALL_SCRIPTS=1
-min_release_age = 7.0                # or ABX_PKG_MIN_RELEASE_AGE=<days>
+postinstall_scripts = None           # some providers override this with ABX_PKG_POSTINSTALL_SCRIPTS
+min_release_age = None               # some providers override this with ABX_PKG_MIN_RELEASE_AGE
 install_timeout = 120                # or ABX_PKG_INSTALL_TIMEOUT=120
 version_timeout = 10                 # or ABX_PKG_VERSION_TIMEOUT=10
-DRY_RUN = False                      # or ABX_PKG_DRY_RUN=1 / DRY_RUN=1
+dry_run = False                      # or ABX_PKG_DRY_RUN=1 / DRY_RUN=1
 ```
 
-- `DRY_RUN`: use `provider.get_provider_with_overrides(dry_run=True)`, `ABX_PKG_DRY_RUN=1`, or `DRY_RUN=1`. If both env vars are set, `ABX_PKG_DRY_RUN` wins. Provider subprocesses are logged and skipped, `install()` / `update()` return a placeholder loaded binary, and `uninstall()` returns `True` without mutating the host.
+- `dry_run`: use `provider.get_provider_with_overrides(dry_run=True)`, pass `dry_run=True` directly to `install()` / `update()` / `uninstall()` / `load_or_install()`, or set `ABX_PKG_DRY_RUN=1` / `DRY_RUN=1`. If both env vars are set, `ABX_PKG_DRY_RUN` wins. Provider subprocesses are logged and skipped, `install()` / `update()` return a placeholder loaded binary, and `uninstall()` returns `True` without mutating the host.
 - `install_timeout`: shared provider-level timeout used by `install()`, `update()`, and `uninstall()` handler execution paths. Can also be set with `ABX_PKG_INSTALL_TIMEOUT`.
 - `version_timeout`: shared provider-level timeout used by version / metadata probes such as `--version`, `npm show`, `npm list`, `pip show`, `go version -m`, and brew lookups. Can also be set with `ABX_PKG_VERSION_TIMEOUT`.
-- Security controls fail closed: if `min_release_age > 0` or `postinstall_scripts=False` is requested on a provider that does not support that control for that action, `install()` / `update()` raises instead of silently ignoring it.
+- `postinstall_scripts` and `min_release_age` are standard provider/binary/action kwargs, but only supporting providers hydrate default values from `ABX_PKG_POSTINSTALL_SCRIPTS` and `ABX_PKG_MIN_RELEASE_AGE`.
+- Providers that do not support one of those controls leave the provider default as `None`. If you pass an explicit unsupported value during `install()` / `update()`, it is logged as a warning and ignored.
+- Precedence is: explicit action args > `Binary(...)` defaults > provider defaults.
 
 Supported override keys are the same everywhere:
 
@@ -236,7 +243,7 @@ PATH = DEFAULT_ENV_PATH              # current PATH + current Python bin dir
 
 - Install root: none. `env` is read-only and only searches existing binaries on `$PATH`.
 - Auto-switching: none.
-- Security: accepts `min_release_age` / `postinstall_scripts`, but they are effectively irrelevant because install / update are no-ops.
+- Security: `min_release_age` and `postinstall_scripts` are unsupported here and are ignored with a warning if explicitly passed to `install()` / `update()`.
 - Overrides: `abspath` / `version` are the useful ones here. `python` has a built-in override to the current `sys.executable` and interpreter version.
 - Notes: `install()` / `update()` return explanatory no-op messages, and `uninstall()` returns `False`.
 
@@ -252,10 +259,10 @@ euid = 0                             # always runs as root
 
 - Install root: **no hermetic prefix support**. Installs into the host package database.
 - Auto-switching: tries `PyinfraProvider` first, then `AnsibleProvider`, then falls back to direct `apt-get`.
-- `DRY_RUN`: shared behavior.
-- Security: **no `min_release_age` enforcement** and **no postinstall-script disabling**.
+- `dry_run`: shared behavior.
+- Security: `min_release_age` and `postinstall_scripts=False` are unsupported and are ignored with a warning if explicitly requested.
 - Overrides: in the direct shell fallback, `install_args` becomes `apt-get install -y -qq --no-install-recommends ...`; `update()` uses `apt-get install --only-upgrade ...`.
-- Notes: direct mode runs `apt-get update -qq` at most once per day and requires root on Linux.
+- Notes: direct mode runs `apt-get update -qq` at most once per day and requests privilege escalation when needed.
 
 #### 🍺 [`BrewProvider`](./abx_pkg/binprovider_brew.py) (`brew`)
 
@@ -269,10 +276,10 @@ brew_prefix = guessed host prefix    # /opt/homebrew, /usr/local, or linuxbrew
 
 - Install root: `brew_prefix` is for discovery only. `install_root=...` aliases to `brew_prefix`. **This provider does not create an isolated custom Homebrew prefix.**
 - Auto-switching: if `postinstall_scripts=True`, it prefers `PyinfraProvider` and then `AnsibleProvider`; otherwise it falls back to direct `brew`.
-- `DRY_RUN`: shared behavior.
-- Security: **`min_release_age` is unsupported**. `postinstall_scripts=False` is supported for direct brew via `--skip-post-install`.
+- `dry_run`: shared behavior.
+- Security: `min_release_age` is unsupported and is ignored with a warning if explicitly requested. `postinstall_scripts=False` is supported for direct `brew` installs via `--skip-post-install`, and `ABX_PKG_POSTINSTALL_SCRIPTS` hydrates the provider default here.
 - Overrides: in the direct shell fallback, `install_args` maps to formula / cask args passed to `brew install`, `brew upgrade`, and `brew uninstall`.
-- Notes: direct mode runs `brew update` at most once per day. The test suite verifies that unsupported `min_release_age` fails closed.
+- Notes: direct mode runs `brew update` at most once per day. Explicit `--skip-post-install` args in `install_args` win over derived defaults.
 
 #### 🐍 [`PipProvider`](./abx_pkg/binprovider_pip.py) (`pip`)
 
@@ -282,17 +289,17 @@ Source: [`abx_pkg/binprovider_pip.py`](./abx_pkg/binprovider_pip.py) • Tests: 
 INSTALLER_BIN = "pip"
 PATH = ""                            # auto-built from global/user Python bin dirs
 pip_venv = None                      # set this for hermetic installs
-cache_dir = user_cache_path("pip", "abx-pkg") or /tmp/pip-cache
+cache_dir = user_cache_path("pip", "abx-pkg") or <system temp>/pip-cache
 pip_install_args = ["--no-input", "--disable-pip-version-check", "--quiet"]
 pip_bootstrap_packages = ["pip", "setuptools", "uv"]
 ```
 
 - Install root: `pip_venv=None` uses the system/user Python environment. Set `pip_venv=Path(...)` or `install_root=Path(...)` for a hermetic venv rooted at `<pip_venv>/bin`, and that venv bin dir becomes the provider's active executable search path.
 - Auto-switching: the provider executable is still `pip`, but install / update / show / uninstall calls use `uv pip ...` when `uv` is available and `PIP_BINARY` is not forcing a specific pip path.
-- `DRY_RUN`: shared behavior.
-- Security: supports both `min_release_age` and `postinstall_scripts=False`.
+- `dry_run`: shared behavior.
+- Security: supports both `min_release_age` and `postinstall_scripts=False`, and hydrates their provider defaults from `ABX_PKG_MIN_RELEASE_AGE` and `ABX_PKG_POSTINSTALL_SCRIPTS`.
 - Overrides: `install_args` is passed as pip requirement specs; unpinned specs get a `>=min_version` floor when `min_version` is supplied.
-- Notes: `postinstall_scripts=False` uses `uv pip --no-build` or plain `pip --only-binary :all:`. `min_release_age` is enforced with `uv --exclude-newer=<cutoff>` or plain `pip --uploaded-prior-to=<cutoff>` when the host pip is new enough. Explicit conflicting flags already present in `install_args` win over the derived defaults.
+- Notes: `ABX_PKG_POSTINSTALL_SCRIPTS` and `ABX_PKG_MIN_RELEASE_AGE` apply here by default. `postinstall_scripts=False` uses `uv pip --no-build` or plain `pip --only-binary :all:`. `min_release_age` is enforced with `uv --exclude-newer=<cutoff>` or plain `pip --uploaded-prior-to=<cutoff>` when the host pip is new enough. Explicit conflicting flags already present in `install_args` win over the derived defaults.
 
 #### 📦 [`NpmProvider`](./abx_pkg/binprovider_npm.py) (`npm`)
 
@@ -302,16 +309,34 @@ Source: [`abx_pkg/binprovider_npm.py`](./abx_pkg/binprovider_npm.py) • Tests: 
 INSTALLER_BIN = "npm"
 PATH = ""                            # auto-built from npm/pnpm local + global bin dirs
 npm_prefix = None                    # None = global install, Path(...) = hermetic-ish prefix
-cache_dir = user_cache_path("npm", "abx-pkg") or /tmp/npm-cache
+cache_dir = user_cache_path("npm", "abx-pkg") or <system temp>/npm-cache
 npm_install_args = ["--force", "--no-audit", "--no-fund", "--loglevel=error"]
 ```
 
 - Install root: `npm_prefix=None` installs globally. Set `npm_prefix=Path(...)` or `install_root=Path(...)` to install under `<prefix>/node_modules/.bin`; that prefix bin dir becomes the provider's active executable search path.
 - Auto-switching: prefers a real `npm` binary, falls back to `pnpm` if `npm` is unavailable, and honors `NPM_BINARY=/abs/path/to/npm-or-pnpm`.
-- `DRY_RUN`: shared behavior.
-- Security: supports both `min_release_age` and `postinstall_scripts=False`.
+- `dry_run`: shared behavior.
+- Security: supports both `min_release_age` and `postinstall_scripts=False`, and hydrates their provider defaults from `ABX_PKG_MIN_RELEASE_AGE` and `ABX_PKG_POSTINSTALL_SCRIPTS`.
 - Overrides: `install_args` is passed as npm package specs; unpinned specs get rewritten to `pkg@>=<min_version>` when `min_version` is supplied.
-- Notes: direct npm mode uses `--ignore-scripts` and `--min-release-age=<days>`. pnpm mode writes `pnpm-workspace.yaml` with `minimumReleaseAge`; that is how release-age enforcement is configured there. Explicit conflicting flags already present in `install_args` win over the derived defaults.
+- Notes: `ABX_PKG_POSTINSTALL_SCRIPTS` and `ABX_PKG_MIN_RELEASE_AGE` apply here by default. Direct npm mode uses `--ignore-scripts` and `--min-release-age=<days>` when the host npm supports it. pnpm mode writes `pnpm-workspace.yaml` with `minimumReleaseAge`; that is how release-age enforcement is configured there. Explicit conflicting flags already present in `install_args` win over the derived defaults.
+
+#### 🧪 [`CustomProvider`](./abx_pkg/binprovider_custom.py) (`custom`)
+
+Source: [`abx_pkg/binprovider_custom.py`](./abx_pkg/binprovider_custom.py) • Tests: [`tests/test_customprovider.py`](./tests/test_customprovider.py)
+
+```python
+INSTALLER_BIN = "sh"
+PATH = ""
+custom_root = $ABX_PKG_CUSTOM_ROOT or ~/.cache/abx-pkg/custom
+custom_bin_dir = <custom_root>/bin
+```
+
+- Install root: set `custom_root` / `install_root` for the managed state dir, and `custom_bin_dir` / `bin_dir` for the executable output dir.
+- Auto-switching: none.
+- `dry_run`: shared behavior.
+- Security: `min_release_age` and `postinstall_scripts=False` are unsupported and are ignored with a warning if explicitly requested.
+- Overrides: this provider is driven by literal per-binary shell overrides for `install`, `update`, and `uninstall`.
+- Notes: the provider exports `INSTALL_ROOT`, `BIN_DIR`, `CUSTOM_INSTALL_ROOT`, and `CUSTOM_BIN_DIR` into the shell environment for those commands.
 
 #### 🦀 [`CargoProvider`](./abx_pkg/binprovider_cargo.py) (`cargo`)
 
@@ -327,8 +352,8 @@ cargo_install_args = ["--locked"]
 
 - Install root: set `cargo_root=Path(...)` or `install_root=Path(...)` for isolated installs under `<cargo_root>/bin`; otherwise installs go through `cargo_home`.
 - Auto-switching: none.
-- `DRY_RUN`: shared behavior.
-- Security: **no `min_release_age` enforcement** and **no postinstall-script disabling**.
+- `dry_run`: shared behavior.
+- Security: `min_release_age` and `postinstall_scripts=False` are unsupported and are ignored with a warning if explicitly requested.
 - Overrides: `install_args` is passed to `cargo install`; `min_version` becomes `cargo install --version >=...`.
 - Notes: the provider also sets `CARGO_HOME`, `CARGO_TARGET_DIR`, and `CARGO_INSTALL_ROOT` when applicable.
 
@@ -346,8 +371,8 @@ gem_install_args = ["--no-document"]
 
 - Install root: set `gem_home` or `install_root`, and optionally `gem_bindir` or `bin_dir`, for hermetic installs; otherwise it uses `$GEM_HOME` or `~/.local/share/gem`.
 - Auto-switching: none.
-- `DRY_RUN`: shared behavior.
-- Security: **no `min_release_age` enforcement** and **no postinstall-script disabling**.
+- `dry_run`: shared behavior.
+- Security: `min_release_age` and `postinstall_scripts=False` are unsupported and are ignored with a warning if explicitly requested.
 - Overrides: `install_args` maps to `gem install ...`, `gem update ...`, and `gem uninstall ...`; `min_version` becomes `--version >=...`.
 - Notes: generated wrapper scripts are patched so they activate the configured `GEM_HOME` instead of the host default.
 
@@ -365,8 +390,8 @@ go_install_args = []
 
 - Install root: set `gopath` or `install_root` for the Go workspace, and `gobin` or `bin_dir` for the executable dir; otherwise installs land in `<gopath>/bin`.
 - Auto-switching: none.
-- `DRY_RUN`: shared behavior.
-- Security: **no `min_release_age` enforcement** and **no postinstall-script disabling**.
+- `dry_run`: shared behavior.
+- Security: `min_release_age` and `postinstall_scripts=False` are unsupported and are ignored with a warning if explicitly requested.
 - Overrides: `install_args` is passed to `go install ...`; the default is `["<bin_name>@latest"]`.
 - Notes: `update()` is just `install()` again. Version detection prefers `go version -m <binary>` and falls back to the generic version probe. The provider name is `goget`, not `go_get`.
 
@@ -387,8 +412,8 @@ nix_install_args = [
 
 - Install root: set `nix_profile=Path(...)` or `install_root=Path(...)` for a custom profile; add `nix_state_dir=Path(...)` to isolate state/cache paths too.
 - Auto-switching: none.
-- `DRY_RUN`: shared behavior.
-- Security: **no `min_release_age` enforcement** and **no postinstall-script disabling**.
+- `dry_run`: shared behavior.
+- Security: `min_release_age` and `postinstall_scripts=False` are unsupported and are ignored with a warning if explicitly requested.
 - Overrides: `install_args` is passed to `nix profile install ...`; default is `["nixpkgs#<bin_name>"]`.
 - Notes: update/uninstall operate on the resolved profile element name rather than reusing the full flake ref.
 
@@ -405,10 +430,47 @@ docker_run_args = ["--rm", "-i"]
 
 - Install root: **partial only**. Images are pulled into Docker's host-managed image store; the provider only controls the local shim dir and metadata dir. Use `install_root=Path(...)` for the shim/metadata root or `bin_dir=Path(...)` for the shim dir directly.
 - Auto-switching: none.
-- `DRY_RUN`: shared behavior.
-- Security: **no `min_release_age` enforcement** and **no postinstall-script disabling**.
+- `dry_run`: shared behavior.
+- Security: `min_release_age` and `postinstall_scripts=False` are unsupported and are ignored with a warning if explicitly requested.
 - Overrides: `install_args` is a list of Docker image refs. The first item is treated as the main image and becomes the generated shim target.
 - Notes: default install args are `["<bin_name>:latest"]`. `install()` / `update()` run `docker pull`, write metadata JSON, and create an executable wrapper that runs `docker run ...`.
+
+#### 🧩 [`ChromeWebstoreProvider`](./abx_pkg/binprovider_chromewebstore.py) (`chromewebstore`)
+
+Source: [`abx_pkg/binprovider_chromewebstore.py`](./abx_pkg/binprovider_chromewebstore.py) • Tests: [`tests/test_chromewebstoreprovider.py`](./tests/test_chromewebstoreprovider.py)
+
+```python
+INSTALLER_BIN = "node"
+PATH = ""
+extensions_root = $ABX_PKG_CHROMEWEBSTORE_ROOT or ~/.cache/abx-pkg/chromewebstore
+extensions_dir = <extensions_root>/extensions
+```
+
+- Install root: set `extensions_root` / `install_root` for the managed extension cache root, and `extensions_dir` / `bin_dir` for the unpacked extension output dir.
+- Auto-switching: none.
+- `dry_run`: shared behavior.
+- Security: `min_release_age` is unsupported and is ignored with a warning if explicitly requested. `postinstall_scripts=False` is supported as a standard kwarg and `ABX_PKG_POSTINSTALL_SCRIPTS` hydrates the provider default here, but there is no extra install-time toggle beyond the packaged JS runtime path this provider already uses.
+- Overrides: `install_args` are `[webstore_id, "--name=<extension_name>"]`.
+- Notes: the packaged JS runtime under `abx_pkg/js/chrome/` is used to download, unpack, and cache the extension, and the resolved binary path is the unpacked `manifest.json`.
+
+#### 🎭 [`PuppeteerProvider`](./abx_pkg/binprovider_puppeteer.py) (`puppeteer`)
+
+Source: [`abx_pkg/binprovider_puppeteer.py`](./abx_pkg/binprovider_puppeteer.py) • Tests: [`tests/test_puppeteerprovider.py`](./tests/test_puppeteerprovider.py)
+
+```python
+INSTALLER_BIN = "puppeteer-browsers"
+PATH = ""
+puppeteer_root = $ABX_PKG_PUPPETEER_ROOT or ~/.cache/abx-pkg/puppeteer
+browser_bin_dir = <puppeteer_root>/bin
+browser_cache_dir = <puppeteer_root>/cache
+```
+
+- Install root: set `puppeteer_root` / `install_root` for the managed root, `browser_bin_dir` / `bin_dir` for symlinked executables, and `browser_cache_dir` for downloaded browser artifacts.
+- Auto-switching: bootstraps `@puppeteer/browsers` through `NpmProvider` and then uses that CLI for browser installs.
+- `dry_run`: shared behavior.
+- Security: `min_release_age` is unsupported for browser installs and is ignored with a warning if explicitly requested. `postinstall_scripts=False` is supported for the underlying npm bootstrap path, and `ABX_PKG_POSTINSTALL_SCRIPTS` hydrates the provider default here.
+- Overrides: `install_args` are passed through to `@puppeteer/browsers install ...`, with the provider appending its managed `--path=<cache_dir>`.
+- Notes: installed-browser resolution uses semantic version ordering, not lexicographic string sorting.
 
 #### 🛠️ [`PyinfraProvider`](./abx_pkg/binprovider_pyinfra.py) (`pyinfra`)
 
@@ -423,10 +485,10 @@ pyinfra_installer_kwargs = {}
 
 - Install root: **no hermetic prefix support**. It delegates to host package managers through pyinfra operations.
 - Auto-switching: `installer_module="auto"` resolves to `operations.brew.packages` on macOS and `operations.server.packages` on Linux.
-- `DRY_RUN`: shared behavior.
-- Security: **no `min_release_age` enforcement** and **no postinstall-script disabling**.
+- `dry_run`: shared behavior.
+- Security: `min_release_age` and `postinstall_scripts=False` are unsupported and are ignored with a warning if explicitly requested.
 - Overrides: `install_args` is the package list passed to the selected pyinfra operation.
-- Notes: privilege requirements depend on the underlying package manager and selected module.
+- Notes: privilege requirements depend on the underlying package manager and selected module. When pyinfra tries a privileged sudo path and then falls back, both error outputs are preserved if the final attempt also fails.
 
 #### 📘 [`AnsibleProvider`](./abx_pkg/binprovider_ansible.py) (`ansible`)
 
@@ -441,10 +503,10 @@ ansible_playbook_template = ANSIBLE_INSTALL_PLAYBOOK_TEMPLATE
 
 - Install root: **no hermetic prefix support**. It delegates to the host via `ansible-runner`.
 - Auto-switching: `installer_module="auto"` resolves to `community.general.homebrew` on macOS and `ansible.builtin.package` on Linux.
-- `DRY_RUN`: shared behavior.
-- Security: **no `min_release_age` enforcement** and **no postinstall-script disabling**.
+- `dry_run`: shared behavior.
+- Security: `min_release_age` and `postinstall_scripts=False` are unsupported and are ignored with a warning if explicitly requested.
 - Overrides: `install_args` becomes the playbook loop input for the chosen Ansible module.
-- Notes: when using the Homebrew module, the provider auto-injects the detected brew search path into module kwargs. Privilege requirements still come from the underlying package manager.
+- Notes: when using the Homebrew module, the provider auto-injects the detected brew search path into module kwargs. Privilege requirements still come from the underlying package manager, and failed sudo attempts are included in the final error if the fallback attempt also fails.
 
 ### [`Binary`](https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/binary.py#:~:text=class%20Binary)
 
