@@ -8,6 +8,49 @@ PUPPETEER_CHROMEDRIVER_ARGS = ["chromedriver@stable"]
 
 
 class TestPuppeteerProvider:
+    def test_version_resolution_uses_semver_ordering(self):
+        class StubPuppeteerProvider(PuppeteerProvider):
+            def _list_installed_browsers(self) -> list[tuple[str, str, Path]]:
+                return [
+                    ("chrome", "9.0", Path("/tmp/puppeteer/cache/chrome/9.0/chrome")),
+                    (
+                        "chrome",
+                        "100.0",
+                        Path("/tmp/puppeteer/cache/chrome/100.0/chrome"),
+                    ),
+                    (
+                        "chromedriver",
+                        "124.0.6367.207",
+                        Path(
+                            "/tmp/puppeteer/cache/chromedriver/124.0.6367.207/chromedriver",
+                        ),
+                    ),
+                ]
+
+        provider = StubPuppeteerProvider(
+            puppeteer_root=Path("/tmp/puppeteer-root"),
+            browser_bin_dir=Path("/tmp/puppeteer-root/bin"),
+            postinstall_scripts=True,
+            min_release_age=0,
+        )
+
+        installed_output = "\n".join(
+            (
+                "chrome@9.0 /tmp/puppeteer/cache/chrome/9.0/chrome",
+                "chrome@100.0 /tmp/puppeteer/cache/chrome/100.0/chrome",
+                "chromedriver@124.0.6367.207 /tmp/puppeteer/cache/chromedriver/124.0.6367.207/chromedriver",
+            ),
+        )
+        assert provider._parse_installed_browser_path(
+            installed_output,
+            "chrome",
+        ) == Path(
+            "/tmp/puppeteer/cache/chrome/100.0/chrome",
+        )
+        assert provider._resolve_installed_browser_path("chrome") == Path(
+            "/tmp/puppeteer/cache/chrome/100.0/chrome",
+        )
+
     def test_install_root_alias_without_explicit_bin_dir_uses_root_bin(
         self,
         test_machine,

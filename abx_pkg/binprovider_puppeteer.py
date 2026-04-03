@@ -17,6 +17,7 @@ from .binary import Binary
 from .binprovider import BinProvider, EnvProvider, env_flag_is_true, remap_kwargs
 from .binprovider_npm import NpmProvider
 from .logging import format_subprocess_output, get_logger, log_subprocess_output
+from .semver import SemVer
 
 logger = get_logger(__name__)
 
@@ -239,9 +240,13 @@ class PuppeteerProvider(BinProvider):
             for match in pattern.finditer(output or "")
             if match.group("browser") == browser_name
         ]
-        if matches:
-            matches.sort(key=lambda item: item[0])
-            return matches[-1][1]
+        parsed_matches = [
+            (parsed_version, path)
+            for version, path in matches
+            if (parsed_version := SemVer.parse(version)) is not None
+        ]
+        if parsed_matches:
+            return max(parsed_matches, key=lambda item: item[0])[1]
         return None
 
     def _resolve_installed_browser_path(
@@ -255,10 +260,14 @@ class PuppeteerProvider(BinProvider):
             for candidate_browser, version, path in self._list_installed_browsers()
             if candidate_browser == browser_name
         ]
-        if not candidates:
-            return None
-        candidates.sort(key=lambda item: item[0])
-        return candidates[-1][1]
+        parsed_candidates = [
+            (parsed_version, path)
+            for version, path in candidates
+            if (parsed_version := SemVer.parse(version)) is not None
+        ]
+        if parsed_candidates:
+            return max(parsed_candidates, key=lambda item: item[0])[1]
+        return None
 
     def _symlink_path(self, bin_name: str) -> Path:
         return self.bin_dir / bin_name
