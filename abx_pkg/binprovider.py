@@ -64,6 +64,7 @@ from .logging import (
     format_loaded_binary,
     format_subprocess_output,
     get_logger,
+    log_subprocess_output,
     log_method_call,
 )
 from .exceptions import (
@@ -176,10 +177,7 @@ class ShallowBinary(BaseModel):
     name: BinName = ""
     description: str = ""
 
-    binproviders_supported: list[InstanceOf["BinProvider"]] = Field(
-        default_factory=list,
-        alias="binproviders",
-    )
+    binproviders: list[InstanceOf["BinProvider"]] = Field(default_factory=list)
     overrides: "BinaryOverrides" = Field(default_factory=dict)
 
     loaded_binprovider: InstanceOf["BinProvider"] | None = Field(
@@ -328,7 +326,7 @@ class BinProvider(BaseModel):
         repr=False,
     )
 
-    overrides: "BinProviderOverrides" = Field(
+    overrides: "BinProviderOverrides" = Field(  # ty: ignore[invalid-assignment] https://github.com/astral-sh/ty/issues/2403
         default_factory=lambda: {
             "*": {
                 "version": "self.default_version_handler",
@@ -766,7 +764,7 @@ class BinProvider(BaseModel):
             min_version=min_version,
         )
         install_args = install_args or self.get_install_args(bin_name)
-        self._require_installer_bin("install")
+        self._require_installer_bin()
 
         # print(f'[*] {self.__class__.__name__}: Installing {bin_name}: {self.INSTALLER_BIN_ABSPATH} {install_args}')
 
@@ -791,7 +789,7 @@ class BinProvider(BaseModel):
         min_version: SemVer | None = None,
         timeout: int | None = None,
     ) -> "ActionFuncReturnValue":
-        self._require_installer_bin("update")
+        self._require_installer_bin()
         return f"{self.name} BinProvider does not implement any update method"
 
     # @validate_call
@@ -805,7 +803,7 @@ class BinProvider(BaseModel):
         min_version: SemVer | None = None,
         timeout: int | None = None,
     ) -> "ActionFuncReturnValue":
-        self._require_installer_bin("uninstall")
+        self._require_installer_bin()
         return False
 
     @log_method_call()
@@ -824,13 +822,12 @@ class BinProvider(BaseModel):
                     path,
                 )  # e.g. /opt/archivebox/bin:/bin:/usr/local/bin:...
 
-    def _require_installer_bin(self, action: str) -> HostBinPath:
+    def _require_installer_bin(self) -> HostBinPath:
         installer_bin = self.INSTALLER_BIN_ABSPATH
         if installer_bin:
             return installer_bin
         raise BinProviderUnavailableError(
             self.__class__.__name__,
-            action,
             self.INSTALLER_BIN,
         )
 
@@ -850,27 +847,6 @@ class BinProvider(BaseModel):
         return TypeAdapter(PATHStr).validate_python(
             ":".join(dict.fromkeys(merged_entries)),
         )
-
-    @staticmethod
-    def _args_have_option(args: Iterable[object], *options: str) -> bool:
-        normalized_args = [str(arg) for arg in args]
-        return any(
-            arg == option or arg.startswith(f"{option}=")
-            for arg in normalized_args
-            for option in options
-        )
-
-    @staticmethod
-    def _get_option_value(args: Iterable[object], *options: str) -> str | None:
-        normalized_args = [str(arg) for arg in args]
-        value: str | None = None
-        for idx, arg in enumerate(normalized_args):
-            for option in options:
-                if arg == option and idx + 1 < len(normalized_args):
-                    value = normalized_args[idx + 1]
-                elif arg.startswith(f"{option}="):
-                    value = arg.split("=", 1)[1]
-        return value
 
     def _version_from_exec(
         self,
@@ -935,6 +911,12 @@ class BinProvider(BaseModel):
         target: object,
         proc: subprocess.CompletedProcess,
     ) -> None:
+        log_subprocess_output(
+            logger,
+            f"{self.__class__.__name__} {action}",
+            proc.stdout,
+            proc.stderr,
+        )
         exc_cls = {
             "install": BinProviderInstallError,
             "update": BinProviderUpdateError,
@@ -1217,15 +1199,6 @@ class BinProvider(BaseModel):
                 f"{self.__class__.__name__}.{action} cannot disable postinstall_scripts for provider {self.name}",
             )
 
-    def _coerce_security_constraints_from_install_args(
-        self,
-        *,
-        install_args: InstallArgs,
-        postinstall_scripts: bool,
-        min_release_age: float,
-    ) -> tuple[bool, float]:
-        return postinstall_scripts, min_release_age
-
     def _assert_min_version_satisfied(
         self,
         *,
@@ -1260,13 +1233,6 @@ class BinProvider(BaseModel):
             self.min_release_age if min_release_age is None else min_release_age
         )
         install_args = self.get_install_args(bin_name, quiet=quiet, nocache=nocache)
-        postinstall_scripts, min_release_age = (
-            self._coerce_security_constraints_from_install_args(
-                install_args=install_args,
-                postinstall_scripts=postinstall_scripts,
-                min_release_age=min_release_age,
-            )
-        )
         self._assert_security_constraints_supported(
             "install",
             postinstall_scripts=postinstall_scripts,
@@ -1394,13 +1360,6 @@ class BinProvider(BaseModel):
             self.min_release_age if min_release_age is None else min_release_age
         )
         install_args = self.get_install_args(bin_name, quiet=quiet, nocache=nocache)
-        postinstall_scripts, min_release_age = (
-            self._coerce_security_constraints_from_install_args(
-                install_args=install_args,
-                postinstall_scripts=postinstall_scripts,
-                min_release_age=min_release_age,
-            )
-        )
         self._assert_security_constraints_supported(
             "update",
             postinstall_scripts=postinstall_scripts,

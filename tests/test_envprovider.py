@@ -52,7 +52,9 @@ class TestEnvProvider:
     def test_binary_direct_methods_use_env_provider(self, test_machine):
         binary = Binary(
             name="python",
-            binproviders=[EnvProvider(postinstall_scripts=True, min_release_age=0)],
+            binproviders=[
+                EnvProvider(postinstall_scripts=True, min_release_age=0),
+            ],
             min_version=SemVer("3.0.0"),
             postinstall_scripts=True,
             min_release_age=0,

@@ -53,7 +53,9 @@ class TestAptProvider:
 
         binary = Binary(
             name=test_machine.pick_missing_apt_package(),
-            binproviders=[AptProvider(postinstall_scripts=True, min_release_age=0)],
+            binproviders=[
+                AptProvider(postinstall_scripts=True, min_release_age=0),
+            ],
             postinstall_scripts=True,
             min_release_age=0,
         )

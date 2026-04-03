@@ -20,9 +20,7 @@ from .base_types import (
 )
 from .semver import SemVer
 from .binprovider import BinProvider, remap_kwargs
-from .logging import format_subprocess_output, get_logger, log_subprocess_error
-
-logger = get_logger(__name__)
+from .logging import format_subprocess_output
 
 OS = platform.system().lower()
 
@@ -170,10 +168,7 @@ class BrewProvider(BinProvider):
 
         install_args = install_args or self.get_install_args(bin_name)
 
-        if not self.INSTALLER_BIN_ABSPATH:
-            raise Exception(
-                f"{self.__class__.__name__}.INSTALLER_BIN is not available on this host: {self.INSTALLER_BIN}",
-            )
+        installer_bin = self._require_installer_bin()
 
         # print(f'[*] {self.__class__.__name__}: Installing {bin_name}: {self.INSTALLER_BIN_ABSPATH} install {install_args}')
 
@@ -183,6 +178,8 @@ class BrewProvider(BinProvider):
         postinstall_scripts = (
             False if postinstall_scripts is None else postinstall_scripts
         )
+        if any(arg.startswith("--skip-post-install") for arg in install_args):
+            postinstall_scripts = False
 
         if PYINFRA_INSTALLED and postinstall_scripts:
             return pyinfra_package_install(
@@ -207,23 +204,23 @@ class BrewProvider(BinProvider):
         ):
             # only update if we haven't checked in the last day
             self.exec(
-                bin_name=self.INSTALLER_BIN_ABSPATH,
+                bin_name=installer_bin,
                 cmd=["update"],
                 timeout=timeout,
             )
             _LAST_UPDATE_CHECK = time.time()
 
         proc = self.exec(
-            bin_name=self.INSTALLER_BIN_ABSPATH,
+            bin_name=installer_bin,
             cmd=[
                 "install",
                 *(
                     ["--skip-post-install"]
                     if (
                         not postinstall_scripts
-                        and not self._args_have_option(
-                            install_args,
-                            "--skip-post-install",
+                        and not any(
+                            arg.startswith("--skip-post-install")
+                            for arg in install_args
                         )
                     )
                     else []
@@ -233,17 +230,8 @@ class BrewProvider(BinProvider):
             timeout=timeout,
         )
         if proc.returncode != 0:
-            log_subprocess_error(
-                logger,
-                f"{self.__class__.__name__} install",
-                proc.stdout,
-                proc.stderr,
-            )
-            raise Exception(
-                f"{self.__class__.__name__} install got returncode {proc.returncode} while installing {install_args}: {install_args}\n{format_subprocess_output(proc.stdout, proc.stderr)}".strip(),
-            )
-
-        return proc.stderr.strip() + "\n" + proc.stdout.strip()
+            self._raise_proc_error("install", install_args, proc)
+        return format_subprocess_output(proc.stdout, proc.stderr)
 
     @remap_kwargs({"packages": "install_args"})
     def default_update_handler(
@@ -259,16 +247,15 @@ class BrewProvider(BinProvider):
 
         install_args = install_args or self.get_install_args(bin_name)
 
-        if not self.INSTALLER_BIN_ABSPATH:
-            raise Exception(
-                f"{self.__class__.__name__}.INSTALLER_BIN is not available on this host: {self.INSTALLER_BIN}",
-            )
+        installer_bin = self._require_installer_bin()
 
         from .binprovider_pyinfra import PYINFRA_INSTALLED, pyinfra_package_install
 
         postinstall_scripts = (
             False if postinstall_scripts is None else postinstall_scripts
         )
+        if any(arg.startswith("--skip-post-install") for arg in install_args):
+            postinstall_scripts = False
 
         if PYINFRA_INSTALLED and postinstall_scripts:
             return pyinfra_package_install(
@@ -291,23 +278,23 @@ class BrewProvider(BinProvider):
             or (time.time() - _LAST_UPDATE_CHECK) > UPDATE_CHECK_INTERVAL
         ):
             self.exec(
-                bin_name=self.INSTALLER_BIN_ABSPATH,
+                bin_name=installer_bin,
                 cmd=["update"],
                 timeout=timeout,
             )
             _LAST_UPDATE_CHECK = time.time()
 
         proc = self.exec(
-            bin_name=self.INSTALLER_BIN_ABSPATH,
+            bin_name=installer_bin,
             cmd=[
                 "upgrade",
                 *(
                     ["--skip-post-install"]
                     if (
                         not postinstall_scripts
-                        and not self._args_have_option(
-                            install_args,
-                            "--skip-post-install",
+                        and not any(
+                            arg.startswith("--skip-post-install")
+                            for arg in install_args
                         )
                     )
                     else []
@@ -317,17 +304,8 @@ class BrewProvider(BinProvider):
             timeout=timeout,
         )
         if proc.returncode != 0:
-            log_subprocess_error(
-                logger,
-                f"{self.__class__.__name__} update",
-                proc.stdout,
-                proc.stderr,
-            )
-            raise Exception(
-                f"{self.__class__.__name__} update got returncode {proc.returncode} while updating {install_args}: {install_args}\n{format_subprocess_output(proc.stdout, proc.stderr)}".strip(),
-            )
-
-        return proc.stderr.strip() + "\n" + proc.stdout.strip()
+            self._raise_proc_error("update", install_args, proc)
+        return format_subprocess_output(proc.stdout, proc.stderr)
 
     @remap_kwargs({"packages": "install_args"})
     def default_uninstall_handler(
@@ -341,10 +319,7 @@ class BrewProvider(BinProvider):
     ) -> bool:
         install_args = install_args or self.get_install_args(bin_name)
 
-        if not self.INSTALLER_BIN_ABSPATH:
-            raise Exception(
-                f"{self.__class__.__name__}.INSTALLER_BIN is not available on this host: {self.INSTALLER_BIN}",
-            )
+        installer_bin = self._require_installer_bin()
 
         from .binprovider_pyinfra import PYINFRA_INSTALLED, pyinfra_package_install
 
@@ -367,20 +342,12 @@ class BrewProvider(BinProvider):
             return True
 
         proc = self.exec(
-            bin_name=self.INSTALLER_BIN_ABSPATH,
+            bin_name=installer_bin,
             cmd=["uninstall", *install_args],
             timeout=timeout,
         )
         if proc.returncode != 0:
-            log_subprocess_error(
-                logger,
-                f"{self.__class__.__name__} uninstall",
-                proc.stdout,
-                proc.stderr,
-            )
-            raise Exception(
-                f"{self.__class__.__name__} uninstall got returncode {proc.returncode} while uninstalling {install_args}: {install_args}\n{format_subprocess_output(proc.stdout, proc.stderr)}".strip(),
-            )
+            self._raise_proc_error("uninstall", install_args, proc)
 
         return True
 

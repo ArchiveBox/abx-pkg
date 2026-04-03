@@ -13,9 +13,7 @@ from typing import Self
 from .base_types import BinProviderName, PATHStr, BinName, InstallArgs, HostBinPath
 from .semver import SemVer
 from .binprovider import BinProvider, remap_kwargs
-from .logging import get_logger, log_subprocess_error
-
-logger = get_logger(__name__)
+from .logging import format_subprocess_output
 
 
 DEFAULT_DOCKER_ROOT = Path(
@@ -167,29 +165,18 @@ class DockerProvider(BinProvider):
         )
 
         install_args = install_args or self.get_install_args(bin_name)
-        if not self.INSTALLER_BIN_ABSPATH:
-            raise Exception(
-                f"{self.__class__.__name__} install method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
-            )
+        installer_bin = self._require_installer_bin()
 
         logs: list[str] = []
         for image_ref in install_args:
             proc = self.exec(
-                bin_name=self.INSTALLER_BIN_ABSPATH,
+                bin_name=installer_bin,
                 cmd=["pull", image_ref],
                 timeout=timeout,
             )
             if proc.returncode != 0:
-                log_subprocess_error(
-                    logger,
-                    f"{self.__class__.__name__} install",
-                    proc.stdout,
-                    proc.stderr,
-                )
-                raise Exception(
-                    f"{self.__class__.__name__}: install got returncode {proc.returncode} while pulling {image_ref}",
-                )
-            logs.append((proc.stderr.strip() + "\n" + proc.stdout.strip()).strip())
+                self._raise_proc_error("install", image_ref, proc)
+            logs.append(format_subprocess_output(proc.stdout, proc.stderr))
 
         main_image = self._main_image_ref(bin_name, install_args)
         self._write_metadata(bin_name, main_image)
@@ -227,10 +214,7 @@ class DockerProvider(BinProvider):
         timeout: int | None = None,
     ) -> bool:
         install_args = install_args or self.get_install_args(bin_name)
-        if not self.INSTALLER_BIN_ABSPATH:
-            raise Exception(
-                f"{self.__class__.__name__} uninstall method is not available on this host ({self.INSTALLER_BIN} not found in $PATH)",
-            )
+        installer_bin = self._require_installer_bin()
 
         wrapper_path = self.bin_dir / bin_name
         wrapper_path.unlink(missing_ok=True)
@@ -239,21 +223,13 @@ class DockerProvider(BinProvider):
         main_image = self._main_image_ref(bin_name, install_args)
         for image_ref in install_args:
             proc = self.exec(
-                bin_name=self.INSTALLER_BIN_ABSPATH,
+                bin_name=installer_bin,
                 cmd=["image", "rm", "--force", image_ref],
                 quiet=True,
                 timeout=timeout,
             )
             if proc.returncode != 0 and image_ref == main_image:
-                log_subprocess_error(
-                    logger,
-                    f"{self.__class__.__name__} uninstall",
-                    proc.stdout,
-                    proc.stderr,
-                )
-                raise Exception(
-                    f"{self.__class__.__name__}: uninstall got returncode {proc.returncode} while removing {image_ref}",
-                )
+                self._raise_proc_error("uninstall", image_ref, proc)
 
         return True
 

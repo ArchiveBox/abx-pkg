@@ -11,7 +11,9 @@ class TestSecurityControls:
     def test_binary_load_enforces_final_min_version(self):
         binary = Binary(
             name="python",
-            binproviders=[EnvProvider(postinstall_scripts=True, min_release_age=0)],
+            binproviders=[
+                EnvProvider(postinstall_scripts=True, min_release_age=0),
+            ],
             min_version=SemVer("999.0.0"),
             postinstall_scripts=True,
             min_release_age=0,

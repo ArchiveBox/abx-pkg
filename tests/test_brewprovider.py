@@ -97,7 +97,9 @@ class TestBrewProvider:
 
         too_new = Binary(
             name=formula,
-            binproviders=[BrewProvider(postinstall_scripts=True, min_release_age=0)],
+            binproviders=[
+                BrewProvider(postinstall_scripts=True, min_release_age=0),
+            ],
             postinstall_scripts=True,
             min_release_age=0,
             min_version=SemVer("999.0.0"),
@@ -133,7 +135,9 @@ class TestBrewProvider:
         formula = _pick_formula_for_live_cycle()
         binary = Binary(
             name=formula,
-            binproviders=[BrewProvider(postinstall_scripts=True, min_release_age=0)],
+            binproviders=[
+                BrewProvider(postinstall_scripts=True, min_release_age=0),
+            ],
             postinstall_scripts=True,
             min_release_age=0,
         )

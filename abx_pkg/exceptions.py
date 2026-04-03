@@ -46,12 +46,11 @@ class BinProviderUninstallError(BinProviderOperationError):
 
 
 class BinProviderUnavailableError(BinProviderError):
-    def __init__(self, provider_name: str, action: str, installer_bin: str):
+    def __init__(self, provider_name: str, installer_bin: str):
         self.provider_name = provider_name
-        self.action = action
         self.installer_bin = installer_bin
         super().__init__(
-            f"{self.provider_name} cannot {self.action} because {self.installer_bin} is not available on this host",
+            f"{self.provider_name} is disabled because {self.installer_bin} is not available on this host",
         )
 
 

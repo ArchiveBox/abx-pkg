@@ -243,18 +243,19 @@ def log_method_call(
     return decorator
 
 
-def log_subprocess_error(
+def log_subprocess_output(
     command_logger: py_logging.Logger,
     action: str,
     stdout: str | None,
     stderr: str | None,
+    level: int = py_logging.DEBUG,
 ) -> None:
     trimmed_stdout = (stdout or "").strip()
     trimmed_stderr = (stderr or "").strip()
     if trimmed_stdout:
-        command_logger.error("%s stdout: %s", action, trimmed_stdout)
+        command_logger.log(level, "%s stdout: %s", action, trimmed_stdout)
     if trimmed_stderr:
-        command_logger.error("%s stderr: %s", action, trimmed_stderr)
+        command_logger.log(level, "%s stderr: %s", action, trimmed_stderr)
 
 
 def format_subprocess_output(stdout: str | None, stderr: str | None) -> str:

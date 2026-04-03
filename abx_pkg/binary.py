@@ -58,9 +58,8 @@ class Binary(ShallowBinary):
     name: BinName = ""
     description: str = ""
 
-    binproviders_supported: list[InstanceOf[BinProvider]] = Field(
+    binproviders: list[InstanceOf[BinProvider]] = Field(  # ty: ignore[invalid-assignment] https://github.com/astral-sh/ty/issues/2403
         default_factory=lambda: [DEFAULT_PROVIDER],
-        alias="binproviders",
     )
     overrides: BinaryOverrides = Field(default_factory=dict)
 
@@ -92,12 +91,10 @@ class Binary(ShallowBinary):
         # assert self.name, 'Binary.name must not be empty'
         # self.description = self.description or self.name
 
-        assert self.binproviders_supported, (
-            f"No providers were given for package {self.name}"
-        )
+        assert self.binproviders, f"No providers were given for package {self.name}"
 
         # pull in any overrides from the binproviders
-        for binprovider in self.binproviders_supported:
+        for binprovider in self.binproviders:
             overrides_for_bin = binprovider.overrides.get(self.name, {})
             if overrides_for_bin:
                 self.overrides[binprovider.name] = {
@@ -108,7 +105,7 @@ class Binary(ShallowBinary):
         explicit_fields = self.model_fields_set
         if "postinstall_scripts" not in explicit_fields:
             provider_values = [
-                provider.postinstall_scripts for provider in self.binproviders_supported
+                provider.postinstall_scripts for provider in self.binproviders
             ]
             if provider_values and all(
                 value == provider_values[0] for value in provider_values
@@ -116,7 +113,7 @@ class Binary(ShallowBinary):
                 self.postinstall_scripts = provider_values[0]
         if "min_release_age" not in explicit_fields:
             provider_values = [
-                provider.min_release_age for provider in self.binproviders_supported
+                provider.min_release_age for provider in self.binproviders
             ]
             if provider_values and all(
                 value == provider_values[0] for value in provider_values
@@ -164,7 +161,7 @@ class Binary(ShallowBinary):
             if self.loaded_binprovider
             else {}
         )
-        for binprovider in self.binproviders_supported:
+        for binprovider in self.binproviders:
             if not binprovider.PATH:
                 # print('skipping provider', binprovider.name, binprovider.PATH)
                 continue
@@ -213,7 +210,7 @@ class Binary(ShallowBinary):
         binprovider_name: BinProviderName,
         **extra_overrides,
     ) -> InstanceOf[BinProvider]:
-        for binprovider in self.binproviders_supported:
+        for binprovider in self.binproviders:
             if binprovider.name == binprovider_name:
                 overrides_for_binprovider = {
                     self.name: self.overrides.get(binprovider_name, {}),
@@ -290,7 +287,7 @@ class Binary(ShallowBinary):
         logger.info("Installing %s binary", self.name)
         inner_exc: Exception | None = None
         errors = {}
-        for binprovider in self.binproviders_supported:
+        for binprovider in self.binproviders:
             if binproviders and (binprovider.name not in binproviders):
                 continue
 
@@ -320,7 +317,7 @@ class Binary(ShallowBinary):
                 self._debug_provider_failure("install", provider, err)
 
         provider_names = ", ".join(
-            binproviders or [p.name for p in self.binproviders_supported],
+            binproviders or [p.name for p in self.binproviders],
         )
         raise BinaryInstallError(self.name, provider_names, errors) from inner_exc
 
@@ -350,7 +347,7 @@ class Binary(ShallowBinary):
         logger.info("Loading %s binary", self.name)
         inner_exc: Exception | None = None
         errors = {}
-        for binprovider in self.binproviders_supported:
+        for binprovider in self.binproviders:
             if binproviders and binprovider.name not in binproviders:
                 continue
 
@@ -377,7 +374,7 @@ class Binary(ShallowBinary):
                 self._debug_provider_failure("load", provider, err)
 
         provider_names = ", ".join(
-            binproviders or [p.name for p in self.binproviders_supported],
+            binproviders or [p.name for p in self.binproviders],
         )
         raise BinaryLoadError(self.name, provider_names, errors) from inner_exc
 
@@ -408,7 +405,7 @@ class Binary(ShallowBinary):
         logger.info("Loading or installing %s binary", self.name)
         inner_exc: Exception | None = None
         errors = {}
-        for binprovider in self.binproviders_supported:
+        for binprovider in self.binproviders:
             if binproviders and binprovider.name not in binproviders:
                 continue
 
@@ -442,7 +439,7 @@ class Binary(ShallowBinary):
                 continue
 
         provider_names = ", ".join(
-            binproviders or [p.name for p in self.binproviders_supported],
+            binproviders or [p.name for p in self.binproviders],
         )
         raise BinaryLoadOrInstallError(self.name, provider_names, errors) from inner_exc
 
@@ -465,7 +462,7 @@ class Binary(ShallowBinary):
         logger.info("Updating %s binary", self.name)
         inner_exc: Exception | None = None
         errors = {}
-        for binprovider in self.binproviders_supported:
+        for binprovider in self.binproviders:
             if binproviders and binprovider.name not in binproviders:
                 continue
 
@@ -494,7 +491,7 @@ class Binary(ShallowBinary):
                 self._debug_provider_failure("update", provider, err)
 
         provider_names = ", ".join(
-            binproviders or [p.name for p in self.binproviders_supported],
+            binproviders or [p.name for p in self.binproviders],
         )
         raise BinaryUpdateError(self.name, provider_names, errors) from inner_exc
 
@@ -517,7 +514,7 @@ class Binary(ShallowBinary):
         logger.info("Uninstalling %s binary", self.name)
         inner_exc: Exception | None = None
         errors = {}
-        for binprovider in self.binproviders_supported:
+        for binprovider in self.binproviders:
             if binproviders and binprovider.name not in binproviders:
                 continue
 
@@ -549,6 +546,6 @@ class Binary(ShallowBinary):
                 self._debug_provider_failure("uninstall", provider, err)
 
         provider_names = ", ".join(
-            binproviders or [p.name for p in self.binproviders_supported],
+            binproviders or [p.name for p in self.binproviders],
         )
         raise BinaryUninstallError(self.name, provider_names, errors) from inner_exc
