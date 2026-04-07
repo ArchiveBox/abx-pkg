@@ -57,6 +57,10 @@ from .binprovider_nix import NixProvider
 from .binprovider_docker import DockerProvider
 from .binprovider_pip import PipProvider
 from .binprovider_npm import NpmProvider
+from .binprovider_pnpm import PnpmProvider
+from .binprovider_yarn import YarnProvider
+from .binprovider_bun import BunProvider
+from .binprovider_deno import DenoProvider
 from .binprovider_ansible import AnsibleProvider
 from .binprovider_pyinfra import PyinfraProvider
 from .binprovider_chromewebstore import ChromeWebstoreProvider
@@ -74,6 +78,10 @@ ALL_PROVIDERS = [
     DockerProvider,
     PipProvider,
     NpmProvider,
+    PnpmProvider,
+    YarnProvider,
+    BunProvider,
+    DenoProvider,
     AnsibleProvider,
     PyinfraProvider,
     ChromeWebstoreProvider,
@@ -167,6 +175,10 @@ __all__ = [
     "DockerProvider",
     "PipProvider",
     "NpmProvider",
+    "PnpmProvider",
+    "YarnProvider",
+    "BunProvider",
+    "DenoProvider",
     "AnsibleProvider",
     "PyinfraProvider",
     "ChromeWebstoreProvider",
@@ -175,5 +187,5 @@ __all__ = [
     # Note: provider singleton names (apt, pip, brew, etc.) are intentionally
     # excluded from __all__ so that `from abx_pkg import *` does not eagerly
     # instantiate every provider. Use explicit imports instead:
-    #   from abx_pkg import apt, pip, brew
+    #   from abx_pkg import apt, pip, brew, npm, pnpm, yarn, bun, deno
 ]
