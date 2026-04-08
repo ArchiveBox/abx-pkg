@@ -56,6 +56,7 @@ from .binprovider_goget import GoGetProvider
 from .binprovider_nix import NixProvider
 from .binprovider_docker import DockerProvider
 from .binprovider_pip import PipProvider
+from .binprovider_uv import UvProvider
 from .binprovider_npm import NpmProvider
 from .binprovider_pnpm import PnpmProvider
 from .binprovider_yarn import YarnProvider
@@ -77,6 +78,7 @@ ALL_PROVIDERS = [
     NixProvider,
     DockerProvider,
     PipProvider,
+    UvProvider,
     NpmProvider,
     PnpmProvider,
     YarnProvider,
@@ -174,6 +176,7 @@ __all__ = [
     "NixProvider",
     "DockerProvider",
     "PipProvider",
+    "UvProvider",
     "NpmProvider",
     "PnpmProvider",
     "YarnProvider",

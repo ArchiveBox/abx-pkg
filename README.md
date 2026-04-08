@@ -1,4 +1,4 @@
-<h1><a href="https://github.com/ArchiveBox/abx-pkg"><code>abx-pkg</code></a> &nbsp; &nbsp; &nbsp; &nbsp; 📦  <small><code>apt</code>&nbsp; <code>brew</code>&nbsp; <code>pip</code>&nbsp; <code>npm</code>&nbsp; <code>pnpm</code>&nbsp; <code>yarn</code>&nbsp; <code>bun</code>&nbsp; <code>deno</code>&nbsp; <code>cargo</code>&nbsp; <code>gem</code>&nbsp; <code>goget</code>&nbsp; <code>nix</code>&nbsp; <code>docker</code>&nbsp; <code>bash</code>&nbsp; <code>chromewebstore</code>&nbsp; <code>puppeteer</code></small><br/><sub>Simple Python interfaces for package managers + installed binaries.</sub></h1>
+<h1><a href="https://github.com/ArchiveBox/abx-pkg"><code>abx-pkg</code></a> &nbsp; &nbsp; &nbsp; &nbsp; 📦  <small><code>apt</code>&nbsp; <code>brew</code>&nbsp; <code>pip</code>&nbsp; <code>uv</code>&nbsp; <code>npm</code>&nbsp; <code>pnpm</code>&nbsp; <code>yarn</code>&nbsp; <code>bun</code>&nbsp; <code>deno</code>&nbsp; <code>cargo</code>&nbsp; <code>gem</code>&nbsp; <code>goget</code>&nbsp; <code>nix</code>&nbsp; <code>docker</code>&nbsp; <code>bash</code>&nbsp; <code>chromewebstore</code>&nbsp; <code>puppeteer</code></small><br/><sub>Simple Python interfaces for package managers + installed binaries.</sub></h1>
 <br/>
 
 [![PyPI][pypi-badge]][pypi]
@@ -104,6 +104,7 @@ curl.exec(cmd=['--version'])                                        # curl 8.4.0
 - `apt` (Ubuntu/Debian/etc.)
 - `brew` (macOS/Linux)
 - `pip` (Linux/macOS)
+- `uv` (Linux/macOS)
 - `npm` (Linux/macOS)
 - `pnpm` (Linux/macOS)
 - `yarn` (Linux/macOS, Yarn 4+ / Berry recommended)
@@ -176,7 +177,7 @@ Use `min_version=None` to explicitly disable version floor checks.
 
 ### [`BinProvider`](https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/binprovider.py#:~:text=class%20BinProvider)
 
-**Built-in implementations:** `EnvProvider`, `AptProvider`, `BrewProvider`, `PipProvider`, `NpmProvider`, `PnpmProvider`, `YarnProvider`, `BunProvider`, `DenoProvider`, `CargoProvider`, `GemProvider`, `GoGetProvider`, `NixProvider`, `DockerProvider`, `PyinfraProvider`, `AnsibleProvider`, `BashProvider`, `ChromeWebstoreProvider`, `PuppeteerProvider`
+**Built-in implementations:** `EnvProvider`, `AptProvider`, `BrewProvider`, `PipProvider`, `UvProvider`, `NpmProvider`, `PnpmProvider`, `YarnProvider`, `BunProvider`, `DenoProvider`, `CargoProvider`, `GemProvider`, `GoGetProvider`, `NixProvider`, `DockerProvider`, `PyinfraProvider`, `AnsibleProvider`, `BashProvider`, `ChromeWebstoreProvider`, `PuppeteerProvider`
 
 This type represents a provider of binaries, e.g. a package manager like `apt` / `pip` / `npm`, or `env` (which only resolves binaries already present in `$PATH`).
 
@@ -306,6 +307,29 @@ pip_bootstrap_packages = ["pip", "setuptools", "uv"]
 - Security: supports both `min_release_age` and `postinstall_scripts=False`, and hydrates their provider defaults from `ABX_PKG_MIN_RELEASE_AGE` and `ABX_PKG_POSTINSTALL_SCRIPTS`.
 - Overrides: `install_args` is passed as pip requirement specs; unpinned specs get a `>=min_version` floor when `min_version` is supplied.
 - Notes: `ABX_PKG_POSTINSTALL_SCRIPTS` and `ABX_PKG_MIN_RELEASE_AGE` apply here by default. `postinstall_scripts=False` uses `uv pip --no-build` or plain `pip --only-binary :all:`. `min_release_age` is enforced with `uv --exclude-newer=<cutoff>` or plain `pip --uploaded-prior-to=<cutoff>` when the host pip is new enough. Explicit conflicting flags already present in `install_args` win over the derived defaults.
+
+#### 🚀 [`UvProvider`](./abx_pkg/binprovider_uv.py) (`uv`)
+
+Source: [`abx_pkg/binprovider_uv.py`](./abx_pkg/binprovider_uv.py) • Tests: [`tests/test_uvprovider.py`](./tests/test_uvprovider.py)
+
+```python
+INSTALLER_BIN = "uv"
+PATH = ""                            # prepends <uv_venv>/bin or uv_tool_bin_dir
+uv_venv = None                       # None = global uv tool mode, Path(...) = hermetic venv
+uv_tool_dir = None                   # mirrors $UV_TOOL_DIR (global mode only)
+uv_tool_bin_dir = None               # mirrors $UV_TOOL_BIN_DIR (global mode only)
+cache_dir = user_cache_path("uv", "abx-pkg") or <system temp>/uv-cache
+uv_install_args = []
+```
+
+- Install root: **two modes, picked by whether `uv_venv` is set.**
+  - *Hermetic venv mode (`uv_venv=Path(...)` or `install_root=Path(...)`)*: creates a real venv at the requested path via `uv venv` and installs packages into it with `uv pip install --python <venv>/bin/python ...`. Binaries land in `<uv_venv>/bin/<name>`. This is the idiomatic "install a Python library + its CLI entrypoints into an isolated environment" path and matches `PipProvider`'s `pip_venv` semantics.
+  - *Global tool mode (`uv_venv=None`)*: delegates to `uv tool install` which creates a fresh venv per tool under `UV_TOOL_DIR` (default `~/.local/share/uv/tools`) and writes shims into `UV_TOOL_BIN_DIR` (default `~/.local/bin`). Pass `uv_tool_dir=Path(...)` / `uv_tool_bin_dir=Path(...)` to override those dirs hermetically. This is the idiomatic "install a CLI tool globally" path.
+- Auto-switching: none. Honors `UV_BINARY=/abs/path/to/uv`. Unlike `PipProvider`, `UvProvider` never falls back to plain `pip` — if `uv` isn't on the host, the provider is unavailable.
+- `dry_run`: shared behavior.
+- Security: supports both `min_release_age` and `postinstall_scripts=False`, and hydrates their provider defaults from `ABX_PKG_MIN_RELEASE_AGE` and `ABX_PKG_POSTINSTALL_SCRIPTS`. In both modes, `postinstall_scripts=False` becomes `--no-build` (wheels-only, no arbitrary sdist build scripts) and `min_release_age` becomes `--exclude-newer=<ISO8601>` (uv 0.4+). Explicit conflicting flags already present in `install_args` win over the derived defaults.
+- Overrides: `install_args` is passed as requirement specs; unpinned specs get a `>=min_version` floor when `min_version` is supplied.
+- Notes: update in venv mode is `uv pip install --upgrade`; update in global mode is `uv tool install --force` (re-installs the tool's venv). Uninstall in venv mode uses `uv pip uninstall --python <venv>/bin/python`; in global mode it uses `uv tool uninstall <name>`.
 
 #### 📦 [`NpmProvider`](./abx_pkg/binprovider_npm.py) (`npm`)
 
