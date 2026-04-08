@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -58,19 +57,19 @@ def _docker_daemon_is_available() -> bool:
 
 
 def _ensure_test_machine_dependencies() -> None:
-    repo_root = Path(__file__).resolve().parent.parent
+    # Fail loudly if the test env is missing pyinfra / ansible_runner
+    # rather than silently ``pip install``ing them at test-collection
+    # time, which would hide a broken CI ``uv sync --all-extras``.
     missing: list[str] = []
     for module_name in ("ansible_runner", "pyinfra"):
         try:
             __import__(module_name)
         except ModuleNotFoundError:
             missing.append(module_name)
-
     if missing:
-        subprocess.run(
-            [sys.executable, "-m", "pip", "install", "-q", "-e", ".[ansible,pyinfra]"],
-            check=True,
-            cwd=repo_root,
+        raise RuntimeError(
+            f"test-machine dependencies are missing from the active venv: {missing}. "
+            f"Install them via `uv sync --all-extras` (or `pip install -e '.[ansible,pyinfra]'`).",
         )
 
 
