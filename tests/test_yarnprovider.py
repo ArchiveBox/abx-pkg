@@ -17,11 +17,15 @@ def _yarn_supports_age_gate() -> bool:
             [yarn, "--version"],
             capture_output=True,
             text=True,
+            timeout=10,
         )
-        version = SemVer.parse((proc.stdout or proc.stderr).strip())
-        return bool(version and version >= SemVer((4, 10, 0)))
-    except Exception:
+    except (subprocess.TimeoutExpired, OSError):
         return False
+    version = SemVer.parse((proc.stdout or proc.stderr).strip())
+    threshold = SemVer.parse("4.10.0")
+    if version is None or threshold is None:
+        return False
+    return version >= threshold
 
 
 requires_yarn = pytest.mark.skipif(
@@ -185,7 +189,9 @@ class TestYarnProvider:
             assert installed is not None
             assert installed.loaded_version is not None
             # zx 8.8.5 was released too recently to satisfy 365d
-            assert installed.loaded_version < SemVer("8.8.0")
+            ceiling = SemVer.parse("8.8.0")
+            assert ceiling is not None
+            assert installed.loaded_version < ceiling
 
     def test_provider_defaults_and_binary_overrides_enforce_postinstall_scripts(
         self,

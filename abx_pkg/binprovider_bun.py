@@ -4,15 +4,13 @@ __package__ = "abx_pkg"
 
 import json
 import os
-import subprocess
 import sys
 import tempfile
-
 from pathlib import Path
 from typing import ClassVar, Self
 
-from pydantic import Field, TypeAdapter, computed_field, model_validator
 from platformdirs import user_cache_path
+from pydantic import Field, TypeAdapter, computed_field, model_validator
 
 from .base_types import (
     BinName,
@@ -85,30 +83,24 @@ class BunProvider(BinProvider):
     def supports_min_release_age(self, action) -> bool:
         if action not in ("install", "update"):
             return False
-        version = self._bun_version()
         # bun 1.3+ ships --minimum-release-age
-        return bool(version and version >= SemVer((1, 3, 0)))
+        threshold = SemVer.parse("1.3.0")
+        version = self._bun_version()
+        if version is None or threshold is None:
+            return False
+        return version >= threshold
 
     def supports_postinstall_disable(self, action) -> bool:
         return action in ("install", "update")
 
-    @staticmethod
-    def _install_args_have_option(args: InstallArgs, *options: str) -> bool:
-        return any(
-            arg == option or arg.startswith(f"{option}=")
-            for arg in args
-            for option in options
-        )
-
     def _bun_version(self) -> SemVer | None:
         if self._CACHED_BUN_VERSION is not None:
             return self._CACHED_BUN_VERSION
-        bun_abspath = self.INSTALLER_BIN_ABSPATH
-        if not bun_abspath:
+        if not self.INSTALLER_BIN_ABSPATH:
             return None
         try:
             proc = self.exec(
-                bin_name=bun_abspath,
+                bin_name=self.INSTALLER_BIN_ABSPATH,
                 cmd=["--version"],
                 quiet=True,
                 timeout=self.version_timeout,
@@ -190,39 +182,31 @@ class BunProvider(BinProvider):
             self.PATH = self._merge_PATH(default_bun, PATH=self.PATH)
         return self
 
-    @staticmethod
-    def _min_release_age_seconds(min_release_age: float | None) -> int | None:
-        if min_release_age is None or min_release_age <= 0:
-            return None
-        return max(int(float(min_release_age) * 24 * 60 * 60), 1)
-
-    def _bun(
+    def exec(
         self,
-        bun_cmd: list[str],
-        quiet: bool = False,
-        timeout: int | None = None,
-        cwd: Path | None = None,
-    ) -> subprocess.CompletedProcess:
-        env = os.environ.copy()
-        bun_abspath = self._require_installer_bin()
-
+        bin_name,
+        cmd=(),
+        cwd: Path | str = ".",
+        quiet=False,
+        **kwargs,
+    ):
+        """Inject ``BUN_INSTALL`` so global installs land in ``bun_prefix``."""
+        env = (kwargs.pop("env", None) or os.environ.copy()).copy()
         if self.bun_prefix:
-            bun_install = self.bun_prefix
-            bun_install.mkdir(parents=True, exist_ok=True)
-            (bun_install / "bin").mkdir(parents=True, exist_ok=True)
-            env["BUN_INSTALL"] = str(bun_install)
+            self.bun_prefix.mkdir(parents=True, exist_ok=True)
+            (self.bun_prefix / "bin").mkdir(parents=True, exist_ok=True)
+            env["BUN_INSTALL"] = str(self.bun_prefix)
             path_entries = [entry for entry in env.get("PATH", "").split(":") if entry]
-            bin_str = str(bun_install / "bin")
+            bin_str = str(self.bun_prefix / "bin")
             if bin_str not in path_entries:
                 env["PATH"] = ":".join([bin_str, *path_entries])
-
-        return self.exec(
-            bin_name=bun_abspath,
-            cmd=bun_cmd,
+        return super().exec(
+            bin_name=bin_name,
+            cmd=cmd,
+            cwd=cwd,
             quiet=quiet,
-            timeout=timeout,
             env=env,
-            cwd=cwd or ".",
+            **kwargs,
         )
 
     def setup(
@@ -240,25 +224,24 @@ class BunProvider(BinProvider):
             (self.bun_prefix / "bin").mkdir(parents=True, exist_ok=True)
             (self.bun_prefix / "install").mkdir(parents=True, exist_ok=True)
 
-    def _build_install_args(
+    def _common_cli_args(
         self,
-        *,
         install_args: InstallArgs,
+        *,
         postinstall_scripts: bool,
         min_release_age: float | None,
     ) -> list[str]:
         explicit = [*self.bun_install_args, self.cache_arg, *install_args]
         cmd_args: list[str] = [*self.bun_install_args, self.cache_arg, "-g"]
-        if not postinstall_scripts and not self._install_args_have_option(
-            explicit,
-            "--ignore-scripts",
-        ):
+        has_ignore_scripts = any(arg == "--ignore-scripts" for arg in explicit)
+        if not postinstall_scripts and not has_ignore_scripts:
             cmd_args.append("--ignore-scripts")
-        seconds = self._min_release_age_seconds(min_release_age)
-        if seconds is not None and not self._install_args_have_option(
-            explicit,
-            "--minimum-release-age",
-        ):
+        has_release_age = any(
+            arg == "--minimum-release-age" or arg.startswith("--minimum-release-age=")
+            for arg in explicit
+        )
+        if min_release_age is not None and min_release_age > 0 and not has_release_age:
+            seconds = max(int(float(min_release_age) * 24 * 60 * 60), 1)
             cmd_args.append(f"--minimum-release-age={seconds}")
         return cmd_args
 
@@ -291,19 +274,19 @@ class BunProvider(BinProvider):
                 else arg
                 for arg in install_args
             ]
-        effective_release_age = (
-            7.0 if min_release_age is None else float(min_release_age)
-        )
-        if self._install_args_have_option(install_args, "--ignore-scripts"):
+        if any(arg == "--ignore-scripts" for arg in install_args):
             postinstall_scripts = False
 
-        self._require_installer_bin()
-        cmd_args = self._build_install_args(
-            install_args=install_args,
+        cli_args = self._common_cli_args(
+            install_args,
             postinstall_scripts=postinstall_scripts,
-            min_release_age=effective_release_age,
+            min_release_age=min_release_age,
         )
-        proc = self._bun(["add", *cmd_args, *install_args], timeout=timeout)
+        proc = self.exec(
+            bin_name=self._require_installer_bin(),
+            cmd=["add", *cli_args, *install_args],
+            timeout=timeout,
+        )
         if proc.returncode != 0:
             self._raise_proc_error("install", install_args, proc)
         return format_subprocess_output(proc.stdout, proc.stderr)
@@ -337,29 +320,26 @@ class BunProvider(BinProvider):
                 else arg
                 for arg in install_args
             ]
-        effective_release_age = (
-            7.0 if min_release_age is None else float(min_release_age)
-        )
-        if self._install_args_have_option(install_args, "--ignore-scripts"):
+        if any(arg == "--ignore-scripts" for arg in install_args):
             postinstall_scripts = False
 
-        self._require_installer_bin()
-        cmd_args = self._build_install_args(
-            install_args=install_args,
+        cli_args = self._common_cli_args(
+            install_args,
             postinstall_scripts=postinstall_scripts,
-            min_release_age=effective_release_age,
+            min_release_age=min_release_age,
         )
-        # `bun update -g` requires the package list; fall back to forcing
-        # a fresh install with `bun add -g --force` to refresh dependencies
-        # in the global store.
-        proc = self._bun(
-            ["update", *cmd_args, *install_args],
+        installer = self._require_installer_bin()
+        # `bun update -g <pkg>` is rejected by some bun versions, so we
+        # fall back to `bun add -g --force <pkg>` to refresh the global store.
+        proc = self.exec(
+            bin_name=installer,
+            cmd=["update", *cli_args, *install_args],
             timeout=timeout,
         )
         if proc.returncode != 0:
-            # Some bun versions reject `update -g <pkg>` -- retry as add --force
-            proc = self._bun(
-                ["add", *cmd_args, "--force", *install_args],
+            proc = self.exec(
+                bin_name=installer,
+                cmd=["add", *cli_args, "--force", *install_args],
                 timeout=timeout,
             )
         if proc.returncode != 0:
@@ -377,10 +357,10 @@ class BunProvider(BinProvider):
         timeout: int | None = None,
     ) -> bool:
         install_args = install_args or self.get_install_args(bin_name)
-        self._require_installer_bin()
 
-        proc = self._bun(
-            ["remove", *self.bun_install_args, "-g", *install_args],
+        proc = self.exec(
+            bin_name=self._require_installer_bin(),
+            cmd=["remove", *self.bun_install_args, "-g", *install_args],
             timeout=timeout,
         )
         if proc.returncode != 0:

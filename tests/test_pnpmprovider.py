@@ -221,13 +221,29 @@ class TestPnpmProvider:
             strict_proc = strict_installed.exec(cmd=("--version",), quiet=True)
             assert strict_proc.returncode != 0
 
-            direct_override = strict_provider.install(
+            # Use a fresh prefix for the override case so pnpm actually re-runs
+            # the postinstall hook (pnpm caches packages globally and skips
+            # reruns inside the same prefix even after a remove).
+            permissive_provider = PnpmProvider(
+                pnpm_prefix=Path(tmpdir) / "permissive-pnpm",
+                postinstall_scripts=False,
+                min_release_age=0,
+            ).get_provider_with_overrides(
+                overrides={"optipng": {"install_args": ["optipng-bin"]}},
+            )
+            direct_override = permissive_provider.install(
                 "optipng",
                 postinstall_scripts=True,
             )
             assert direct_override is not None
             assert direct_override.loaded_abspath is not None
-            assert strict_provider.uninstall("optipng", postinstall_scripts=True)
+            override_proc = direct_override.exec(cmd=("--version",), quiet=True)
+            assert override_proc.returncode == 0, (
+                "postinstall_scripts=True override should produce a working binary, "
+                f"but exec returned {override_proc.returncode}: "
+                f"stdout={override_proc.stdout!r} stderr={override_proc.stderr!r}"
+            )
+            assert permissive_provider.uninstall("optipng", postinstall_scripts=True)
 
             binary = Binary(
                 name="optipng",

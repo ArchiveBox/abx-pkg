@@ -3,15 +3,13 @@
 __package__ = "abx_pkg"
 
 import os
-import subprocess
 import sys
 import tempfile
-
 from pathlib import Path
 from typing import ClassVar, Self
 
-from pydantic import Field, TypeAdapter, computed_field, model_validator
 from platformdirs import user_cache_path
+from pydantic import Field, TypeAdapter, computed_field, model_validator
 
 from .base_types import (
     BinName,
@@ -88,30 +86,24 @@ class DenoProvider(BinProvider):
     def supports_min_release_age(self, action) -> bool:
         if action not in ("install", "update"):
             return False
-        version = self._deno_version()
         # --minimum-dependency-age landed in Deno 2.5
-        return bool(version and version >= SemVer((2, 5, 0)))
+        threshold = SemVer.parse("2.5.0")
+        version = self._deno_version()
+        if version is None or threshold is None:
+            return False
+        return version >= threshold
 
     def supports_postinstall_disable(self, action) -> bool:
         return action in ("install", "update")
 
-    @staticmethod
-    def _install_args_have_option(args: InstallArgs, *options: str) -> bool:
-        return any(
-            arg == option or arg.startswith(f"{option}=")
-            for arg in args
-            for option in options
-        )
-
     def _deno_version(self) -> SemVer | None:
         if self._CACHED_DENO_VERSION is not None:
             return self._CACHED_DENO_VERSION
-        deno_abspath = self.INSTALLER_BIN_ABSPATH
-        if not deno_abspath:
+        if not self.INSTALLER_BIN_ABSPATH:
             return None
         try:
             proc = self.exec(
-                bin_name=deno_abspath,
+                bin_name=self.INSTALLER_BIN_ABSPATH,
                 cmd=["--version"],
                 quiet=True,
                 timeout=self.version_timeout,
@@ -198,54 +190,33 @@ class DenoProvider(BinProvider):
             self.PATH = self._merge_PATH(default_root, PATH=self.PATH)
         return self
 
-    @staticmethod
-    def _min_release_age_minutes(min_release_age: float | None) -> int | None:
-        if min_release_age is None or min_release_age <= 0:
-            return None
-        return max(int(float(min_release_age) * 24 * 60), 1)
-
-    def _qualify_package(self, package: str) -> str:
-        """Add an ``npm:`` / ``jsr:`` scheme prefix if the package isn't already qualified."""
-        if package.startswith(("-", ".", "/")):
-            return package
-        if ":" in package.split("/")[0]:
-            return package
-        return f"{self.deno_default_scheme}:{package}"
-
-    def _strip_scheme(self, package: str) -> str:
-        for scheme in ("npm:", "jsr:", "node:", "https://", "http://"):
-            if package.startswith(scheme):
-                return package[len(scheme) :]
-        return package
-
-    def _deno(
+    def exec(
         self,
-        deno_cmd: list[str],
-        quiet: bool = False,
-        timeout: int | None = None,
-    ) -> subprocess.CompletedProcess:
-        env = os.environ.copy()
-        deno_abspath = self._require_installer_bin()
-
+        bin_name,
+        cmd=(),
+        cwd: Path | str = ".",
+        quiet=False,
+        **kwargs,
+    ):
+        """Inject DENO_INSTALL_ROOT / DENO_DIR / DENO_TLS_CA_STORE."""
+        env = (kwargs.pop("env", None) or os.environ.copy()).copy()
         # Use the system trust store so jsr/npm registry TLS works on
         # hosts that ship corporate / sandboxed CA bundles.
         env.setdefault("DENO_TLS_CA_STORE", "system")
-
         if self.deno_root:
             self.deno_root.mkdir(parents=True, exist_ok=True)
             (self.deno_root / "bin").mkdir(parents=True, exist_ok=True)
             env["DENO_INSTALL_ROOT"] = str(self.deno_root)
-
         if self.deno_dir:
             self.deno_dir.mkdir(parents=True, exist_ok=True)
             env["DENO_DIR"] = str(self.deno_dir)
-
-        return self.exec(
-            bin_name=deno_abspath,
-            cmd=deno_cmd,
+        return super().exec(
+            bin_name=bin_name,
+            cmd=cmd,
+            cwd=cwd,
             quiet=quiet,
-            timeout=timeout,
             env=env,
+            **kwargs,
         )
 
     def setup(
@@ -259,40 +230,6 @@ class DenoProvider(BinProvider):
         self._ensure_writable_cache_dir(self.cache_dir)
         if self.deno_root:
             (self.deno_root / "bin").mkdir(parents=True, exist_ok=True)
-
-    def _build_install_command(
-        self,
-        *,
-        bin_name: str,
-        install_args: InstallArgs,
-        postinstall_scripts: bool,
-        min_release_age: float | None,
-        force: bool = False,
-    ) -> list[str]:
-        explicit = list(install_args)
-        cmd: list[str] = ["install", *self.deno_install_args, "-g"]
-
-        if force and not self._install_args_have_option(explicit, "-f", "--force"):
-            cmd.append("--force")
-
-        if not self._install_args_have_option(explicit, "-n", "--name"):
-            cmd.extend(["-n", bin_name])
-
-        if postinstall_scripts and not self._install_args_have_option(
-            explicit,
-            "--allow-scripts",
-        ):
-            cmd.append("--allow-scripts")
-
-        minutes = self._min_release_age_minutes(min_release_age)
-        if minutes is not None and not self._install_args_have_option(
-            explicit, "--minimum-dependency-age"
-        ):
-            cmd.append(f"--minimum-dependency-age={minutes}")
-
-        for arg in install_args:
-            cmd.append(self._qualify_package(arg) if arg else arg)
-        return cmd
 
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(
@@ -323,19 +260,45 @@ class DenoProvider(BinProvider):
                 else arg
                 for arg in install_args
             ]
-        effective_release_age = (
-            7.0 if min_release_age is None else float(min_release_age)
-        )
 
-        self._require_installer_bin()
-        cmd = self._build_install_command(
-            bin_name=bin_name,
-            install_args=install_args,
-            postinstall_scripts=postinstall_scripts,
-            min_release_age=effective_release_age,
-            force=True,
+        cmd: list[str] = ["install", *self.deno_install_args, "-g"]
+        if not any(arg in ("-f", "--force") for arg in install_args):
+            cmd.append("--force")
+        if not any(arg in ("-n", "--name") for arg in install_args):
+            cmd.extend(["-n", bin_name])
+        if postinstall_scripts and not any(
+            arg == "--allow-scripts" or arg.startswith("--allow-scripts=")
+            for arg in install_args
+        ):
+            cmd.append("--allow-scripts")
+        if (
+            min_release_age is not None
+            and min_release_age > 0
+            and not any(
+                arg == "--minimum-dependency-age"
+                or arg.startswith("--minimum-dependency-age=")
+                for arg in install_args
+            )
+        ):
+            minutes = max(int(float(min_release_age) * 24 * 60), 1)
+            cmd.append(f"--minimum-dependency-age={minutes}")
+
+        # Auto-prefix bare names with the default scheme (npm: or jsr:)
+        for arg in install_args:
+            if (
+                arg
+                and not arg.startswith(("-", ".", "/"))
+                and ":" not in arg.split("/")[0]
+            ):
+                cmd.append(f"{self.deno_default_scheme}:{arg}")
+            else:
+                cmd.append(arg)
+
+        proc = self.exec(
+            bin_name=self._require_installer_bin(),
+            cmd=cmd,
+            timeout=timeout,
         )
-        proc = self._deno(cmd, timeout=timeout)
         if proc.returncode != 0:
             self._raise_proc_error("install", install_args, proc)
         return format_subprocess_output(proc.stdout, proc.stderr)
@@ -371,9 +334,11 @@ class DenoProvider(BinProvider):
         min_version: SemVer | None = None,
         timeout: int | None = None,
     ) -> bool:
-        self._require_installer_bin()
-
-        proc = self._deno(["uninstall", "-g", bin_name], timeout=timeout)
+        proc = self.exec(
+            bin_name=self._require_installer_bin(),
+            cmd=["uninstall", "-g", bin_name],
+            timeout=timeout,
+        )
         if proc.returncode != 0:
             self._raise_proc_error("uninstall", [bin_name], proc)
         return True

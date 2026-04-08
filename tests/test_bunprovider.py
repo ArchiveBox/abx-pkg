@@ -214,12 +214,20 @@ class TestBunProvider:
             strict_proc = strict_installed.exec(cmd=("--version",), quiet=True)
             assert strict_proc.returncode != 0
 
+            assert strict_provider.uninstall("optipng")
+
             direct_override = strict_provider.install(
                 "optipng",
                 postinstall_scripts=True,
             )
             assert direct_override is not None
             assert direct_override.loaded_abspath is not None
+            override_proc = direct_override.exec(cmd=("--version",), quiet=True)
+            assert override_proc.returncode == 0, (
+                "postinstall_scripts=True override should produce a working binary, "
+                f"but exec returned {override_proc.returncode}: "
+                f"stdout={override_proc.stdout!r} stderr={override_proc.stderr!r}"
+            )
 
     def test_binary_direct_methods_exercise_real_lifecycle(self, test_machine):
         with tempfile.TemporaryDirectory() as temp_dir:

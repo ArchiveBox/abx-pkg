@@ -17,13 +17,17 @@ def _deno_supports_age_gate() -> bool:
             [deno, "--version"],
             capture_output=True,
             text=True,
+            timeout=10,
         )
-        for token in (proc.stdout or proc.stderr).split():
-            version = SemVer.parse(token)
-            if version:
-                return version >= SemVer((2, 5, 0))
-    except Exception:
+    except (subprocess.TimeoutExpired, OSError):
         return False
+    threshold = SemVer.parse("2.5.0")
+    if threshold is None:
+        return False
+    for token in (proc.stdout or proc.stderr).split():
+        version = SemVer.parse(token)
+        if version is not None:
+            return version >= threshold
     return False
 
 

@@ -5,15 +5,13 @@ __package__ = "abx_pkg"
 import json
 import os
 import re
-import subprocess
 import sys
 import tempfile
-
 from pathlib import Path
 from typing import ClassVar, Self
 
-from pydantic import Field, TypeAdapter, computed_field, model_validator
 from platformdirs import user_cache_path
+from pydantic import Field, TypeAdapter, computed_field, model_validator
 
 from .base_types import (
     BinName,
@@ -52,14 +50,6 @@ _DEFAULT_YARN_ROOT = (
     .expanduser()
     .absolute()
 )
-
-
-def _format_days_for_yarn(days: float) -> str:
-    """Yarn 4 npmMinimalAgeGate accepts duration strings like ``"7d"``."""
-    if days >= 1 and float(days).is_integer():
-        return f"{int(days)}d"
-    minutes = max(int(days * 24 * 60), 1)
-    return f"{minutes}m"
 
 
 class YarnProvider(BinProvider):
@@ -102,31 +92,22 @@ class YarnProvider(BinProvider):
     def supports_min_release_age(self, action) -> bool:
         if action not in ("install", "update"):
             return False
-        version = self._yarn_version()
-        if not version:
-            return False
         # npmMinimalAgeGate landed in Yarn 4.10
-        return version >= SemVer((4, 10, 0))
+        threshold = SemVer.parse("4.10.0")
+        version = self._yarn_version()
+        if version is None or threshold is None:
+            return False
+        return version >= threshold
 
     def supports_postinstall_disable(self, action) -> bool:
         if action not in ("install", "update"):
             return False
-        version = self._yarn_version()
         # Yarn 2+ supports the enableScripts setting and --mode skip-build
-        return bool(version and version >= SemVer((2, 0, 0)))
-
-    @staticmethod
-    def _install_args_have_option(args: InstallArgs, *options: str) -> bool:
-        return any(
-            arg == option or arg.startswith(f"{option}=")
-            for arg in args
-            for option in options
-        )
-
-    def _resolved_prefix(self) -> Path:
-        if self.yarn_prefix:
-            return self.yarn_prefix
-        return _DEFAULT_YARN_ROOT
+        threshold = SemVer.parse("2.0.0")
+        version = self._yarn_version()
+        if version is None or threshold is None:
+            return False
+        return version >= threshold
 
     @computed_field
     @property
@@ -188,7 +169,7 @@ class YarnProvider(BinProvider):
 
     @model_validator(mode="after")
     def load_PATH_from_yarn_prefix(self) -> Self:
-        prefix = self._resolved_prefix()
+        prefix = self.yarn_prefix or _DEFAULT_YARN_ROOT
         bin_dir = prefix / "node_modules" / ".bin"
         self.PATH = self._merge_PATH(bin_dir)
         return self
@@ -196,12 +177,11 @@ class YarnProvider(BinProvider):
     def _yarn_version(self) -> SemVer | None:
         if self._CACHED_YARN_VERSION is not None:
             return self._CACHED_YARN_VERSION
-        yarn_abspath = self.INSTALLER_BIN_ABSPATH
-        if not yarn_abspath:
+        if not self.INSTALLER_BIN_ABSPATH:
             return None
         try:
             proc = self.exec(
-                bin_name=yarn_abspath,
+                bin_name=self.INSTALLER_BIN_ABSPATH,
                 cmd=["--version"],
                 quiet=True,
                 timeout=self.version_timeout,
@@ -216,7 +196,7 @@ class YarnProvider(BinProvider):
         return self._CACHED_YARN_VERSION
 
     def _ensure_workspace_initialized(self) -> Path:
-        prefix = self._resolved_prefix()
+        prefix = self.yarn_prefix or _DEFAULT_YARN_ROOT
         prefix.mkdir(parents=True, exist_ok=True)
         package_json = prefix / "package.json"
         if not package_json.exists():
@@ -234,9 +214,12 @@ class YarnProvider(BinProvider):
             )
 
         version = self._yarn_version()
-        is_berry = bool(version and version >= SemVer((2, 0, 0)))
-
-        if is_berry:
+        berry_threshold = SemVer.parse("2.0.0")
+        if (
+            version is not None
+            and berry_threshold is not None
+            and version >= berry_threshold
+        ):
             yarnrc = prefix / ".yarnrc.yml"
             if not yarnrc.exists():
                 yarnrc.write_text("nodeLinker: node-modules\n")
@@ -251,11 +234,12 @@ class YarnProvider(BinProvider):
     def _write_yarnrc_security(
         self,
         *,
-        min_release_age: float,
+        min_release_age: float | None,
         postinstall_scripts: bool,
     ) -> None:
         version = self._yarn_version()
-        if not (version and version >= SemVer((2, 0, 0))):
+        berry_threshold = SemVer.parse("2.0.0")
+        if version is None or berry_threshold is None or version < berry_threshold:
             return  # yarn classic uses .yarnrc, not .yarnrc.yml — skip
 
         prefix = self._ensure_workspace_initialized()
@@ -265,53 +249,58 @@ class YarnProvider(BinProvider):
         except FileNotFoundError:
             existing = ""
 
-        lines = existing.splitlines()
-        kept_lines: list[str] = []
-        for line in lines:
-            stripped = line.strip()
-            if stripped.startswith("npmMinimalAgeGate:"):
-                continue
-            if stripped.startswith("enableScripts:"):
-                continue
-            kept_lines.append(line)
+        kept_lines: list[str] = [
+            line
+            for line in existing.splitlines()
+            if not line.strip().startswith(("npmMinimalAgeGate:", "enableScripts:"))
+        ]
 
-        if min_release_age and min_release_age > 0 and version >= SemVer((4, 10, 0)):
-            kept_lines.append(
-                f"npmMinimalAgeGate: {_format_days_for_yarn(min_release_age)}",
-            )
+        age_gate_threshold = SemVer.parse("4.10.0")
+        if (
+            min_release_age is not None
+            and min_release_age > 0
+            and age_gate_threshold is not None
+            and version >= age_gate_threshold
+        ):
+            # Yarn 4 npmMinimalAgeGate accepts duration strings like "7d".
+            if min_release_age >= 1 and float(min_release_age).is_integer():
+                duration = f"{int(min_release_age)}d"
+            else:
+                duration = f"{max(int(min_release_age * 24 * 60), 1)}m"
+            kept_lines.append(f"npmMinimalAgeGate: {duration}")
         if postinstall_scripts is False:
             kept_lines.append("enableScripts: false")
 
-        new_content = "\n".join(line for line in kept_lines if line is not None)
+        new_content = "\n".join(kept_lines)
         if new_content and not new_content.endswith("\n"):
             new_content += "\n"
         yarnrc.write_text(new_content)
 
-    def _yarn(
+    def exec(
         self,
-        yarn_cmd: list[str],
-        quiet: bool = False,
-        timeout: int | None = None,
-        cwd: Path | None = None,
-    ) -> subprocess.CompletedProcess:
-        env = os.environ.copy()
-        yarn_abspath = self._require_installer_bin()
-
+        bin_name,
+        cmd=(),
+        cwd: Path | str = ".",
+        quiet=False,
+        **kwargs,
+    ):
+        """Inject yarn workspace env vars and default cwd to the workspace dir."""
+        env = (kwargs.pop("env", None) or os.environ.copy()).copy()
         env.setdefault("YARN_ENABLE_TELEMETRY", "0")
         env.setdefault("YARN_ENABLE_GLOBAL_CACHE", "1")
         env.setdefault("YARN_GLOBAL_FOLDER", str(self.cache_dir))
         env.setdefault("YARN_CACHE_FOLDER", str(self.cache_dir / "v6"))
-
-        prefix = cwd or self._resolved_prefix()
-        prefix.mkdir(parents=True, exist_ok=True)
-
-        return self.exec(
-            bin_name=yarn_abspath,
-            cmd=yarn_cmd,
+        if cwd == ".":
+            workspace = self.yarn_prefix or _DEFAULT_YARN_ROOT
+            workspace.mkdir(parents=True, exist_ok=True)
+            cwd = workspace
+        return super().exec(
+            bin_name=bin_name,
+            cmd=cmd,
+            cwd=cwd,
             quiet=quiet,
-            timeout=timeout,
             env=env,
-            cwd=prefix,
+            **kwargs,
         )
 
     def setup(
@@ -354,23 +343,29 @@ class YarnProvider(BinProvider):
                 else arg
                 for arg in install_args
             ]
-        effective_release_age = (
-            7.0 if min_release_age is None else float(min_release_age)
-        )
-
-        self._require_installer_bin()
+        # Preserve ``None`` so the base class's "unsupported on this host"
+        # fallback is honored end-to-end (no npmMinimalAgeGate on older Yarn).
         self._write_yarnrc_security(
-            min_release_age=effective_release_age,
+            min_release_age=min_release_age,
             postinstall_scripts=postinstall_scripts,
         )
 
         version = self._yarn_version()
+        berry_threshold = SemVer.parse("2.0.0")
         cli_args: list[str] = list(self.yarn_install_args)
-        if version and version >= SemVer((2, 0, 0)):
-            if not postinstall_scripts:
-                cli_args.extend(["--mode", "skip-build"])
+        if (
+            version is not None
+            and berry_threshold is not None
+            and version >= berry_threshold
+            and not postinstall_scripts
+        ):
+            cli_args.extend(["--mode", "skip-build"])
 
-        proc = self._yarn(["add", *cli_args, *install_args], timeout=timeout)
+        proc = self.exec(
+            bin_name=self._require_installer_bin(),
+            cmd=["add", *cli_args, *install_args],
+            timeout=timeout,
+        )
         if proc.returncode != 0:
             self._raise_proc_error("install", install_args, proc)
         return format_subprocess_output(proc.stdout, proc.stderr)
@@ -404,25 +399,33 @@ class YarnProvider(BinProvider):
                 else arg
                 for arg in install_args
             ]
-        effective_release_age = (
-            7.0 if min_release_age is None else float(min_release_age)
-        )
-
-        self._require_installer_bin()
+        # Preserve ``None`` so the base class's "unsupported on this host"
+        # fallback is honored end-to-end (no npmMinimalAgeGate on older Yarn).
         self._write_yarnrc_security(
-            min_release_age=effective_release_age,
+            min_release_age=min_release_age,
             postinstall_scripts=postinstall_scripts,
         )
 
+        installer = self._require_installer_bin()
         version = self._yarn_version()
-        if version and version >= SemVer((2, 0, 0)):
+        berry_threshold = SemVer.parse("2.0.0")
+        if (
+            version is not None
+            and berry_threshold is not None
+            and version >= berry_threshold
+        ):
             cli_args: list[str] = list(self.yarn_install_args)
             if not postinstall_scripts:
                 cli_args.extend(["--mode", "skip-build"])
-            proc = self._yarn(["up", *cli_args, *install_args], timeout=timeout)
+            proc = self.exec(
+                bin_name=installer,
+                cmd=["up", *cli_args, *install_args],
+                timeout=timeout,
+            )
         else:
-            proc = self._yarn(
-                ["upgrade", *self.yarn_install_args, *install_args],
+            proc = self.exec(
+                bin_name=installer,
+                cmd=["upgrade", *self.yarn_install_args, *install_args],
                 timeout=timeout,
             )
         if proc.returncode != 0:
@@ -440,10 +443,10 @@ class YarnProvider(BinProvider):
         timeout: int | None = None,
     ) -> bool:
         install_args = install_args or self.get_install_args(bin_name)
-        self._require_installer_bin()
 
-        proc = self._yarn(
-            ["remove", *self.yarn_install_args, *install_args],
+        proc = self.exec(
+            bin_name=self._require_installer_bin(),
+            cmd=["remove", *self.yarn_install_args, *install_args],
             timeout=timeout,
         )
         if proc.returncode != 0:
@@ -465,9 +468,8 @@ class YarnProvider(BinProvider):
         if not self.INSTALLER_BIN_ABSPATH:
             return None
 
-        prefix = self._resolved_prefix()
-        bin_dir = prefix / "node_modules" / ".bin"
-        candidate = bin_dir / str(bin_name)
+        prefix = self.yarn_prefix or _DEFAULT_YARN_ROOT
+        candidate = prefix / "node_modules" / ".bin" / str(bin_name)
         if candidate.exists():
             return TypeAdapter(HostBinPath).validate_python(candidate)
         return None
@@ -493,7 +495,7 @@ class YarnProvider(BinProvider):
         if not self.INSTALLER_BIN_ABSPATH:
             return None
 
-        prefix = self._resolved_prefix()
+        prefix = self.yarn_prefix or _DEFAULT_YARN_ROOT
         try:
             install_args = self.get_install_args(str(bin_name), **context) or [
                 str(bin_name),
