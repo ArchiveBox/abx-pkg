@@ -67,8 +67,9 @@ class PnpmProvider(BinProvider):
     def detect_cache_arg(self) -> Self:
         # Re-derive cache_arg from the instance's cache_dir so that passing
         # ``cache_dir=Path(...)`` at construction time actually takes effect
-        # (instead of silently inheriting the module-level default).
-        if not self.cache_arg or "--store-dir=" in self.cache_arg:
+        # (instead of silently inheriting the module-level default). An
+        # explicit ``cache_arg=...`` override is respected verbatim.
+        if not self.cache_arg:
             self.cache_arg = f"--store-dir={self.cache_dir}"
         return self
 
