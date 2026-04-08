@@ -9,36 +9,19 @@ from pathlib import Path
 from typing import ClassVar, Self
 
 from platformdirs import user_cache_path
-from pydantic import Field, TypeAdapter, computed_field, model_validator
+from pydantic import Field, computed_field, model_validator
 
-from .base_types import (
-    BinName,
-    BinProviderName,
-    HostBinPath,
-    InstallArgs,
-    PATHStr,
-    bin_abspath,
-)
-from .binprovider import (
-    BinProvider,
-    env_flag_is_true,
-    remap_kwargs,
-)
-from .logging import format_subprocess_output, get_logger
+from .base_types import BinName, BinProviderName, InstallArgs, PATHStr
+from .binprovider import BinProvider, env_flag_is_true, remap_kwargs
+from .logging import format_subprocess_output
 from .semver import SemVer
-
-logger = get_logger(__name__)
 
 
 USER_CACHE_PATH = Path(tempfile.gettempdir()) / "deno-cache"
 try:
-    deno_user_cache_path = user_cache_path(
-        appname="deno",
-        appauthor="abx-pkg",
-        ensure_exists=True,
-    )
-    if os.access(deno_user_cache_path, os.W_OK):
-        USER_CACHE_PATH = deno_user_cache_path
+    _user_cache = user_cache_path("deno", "abx-pkg", ensure_exists=True)
+    if os.access(_user_cache, os.W_OK):
+        USER_CACHE_PATH = _user_cache
 except Exception:
     pass
 
@@ -46,10 +29,9 @@ except Exception:
 class DenoProvider(BinProvider):
     """Deno runtime + package manager provider.
 
-    Deno installs both jsr and npm packages.  ``deno_root`` mirrors
-    ``DENO_INSTALL_ROOT``: when set, ``deno install -g`` lays out
-    binaries under ``<deno_root>/bin``.  ``deno_dir`` mirrors ``DENO_DIR``
-    for cache isolation.
+    ``deno_root`` mirrors ``DENO_INSTALL_ROOT``: when set, ``deno install -g``
+    lays out binaries under ``<deno_root>/bin``. ``deno_dir`` mirrors
+    ``DENO_DIR`` for cache isolation.
 
     Security:
     - npm lifecycle scripts are *opt-in* in Deno (the opposite of npm).
@@ -81,50 +63,23 @@ class DenoProvider(BinProvider):
 
     deno_default_scheme: str = "npm"  # 'npm' or 'jsr'
 
-    _CACHED_DENO_VERSION: SemVer | None = None
-
     def supports_min_release_age(self, action) -> bool:
         if action not in ("install", "update"):
             return False
-        # --minimum-dependency-age landed in Deno 2.5
         threshold = SemVer.parse("2.5.0")
-        version = self._deno_version()
-        if version is None or threshold is None:
-            return False
-        return version >= threshold
+        installer = self.INSTALLER_BINARY
+        version = installer.loaded_version if installer else None
+        return bool(version and threshold and version >= threshold)
 
     def supports_postinstall_disable(self, action) -> bool:
         return action in ("install", "update")
-
-    def _deno_version(self) -> SemVer | None:
-        if self._CACHED_DENO_VERSION is not None:
-            return self._CACHED_DENO_VERSION
-        if not self.INSTALLER_BIN_ABSPATH:
-            return None
-        try:
-            proc = self.exec(
-                bin_name=self.INSTALLER_BIN_ABSPATH,
-                cmd=["--version"],
-                quiet=True,
-                timeout=self.version_timeout,
-            )
-            output = (proc.stdout or proc.stderr).strip()
-            # `deno 2.7.11 (stable, ...)`
-            for token in output.split():
-                version = SemVer.parse(token)
-                if version:
-                    self._CACHED_DENO_VERSION = version
-                    return version
-        except Exception:
-            return None
-        return None
 
     @computed_field
     @property
     def is_valid(self) -> bool:
         if self.deno_root:
-            deno_bin_dir = self.deno_root / "bin"
-            if not (os.path.isdir(deno_bin_dir) and os.access(deno_bin_dir, os.R_OK)):
+            bin_dir = self.deno_root / "bin"
+            if not (bin_dir.is_dir() and os.access(bin_dir, os.R_OK)):
                 return False
         return bool(self.INSTALLER_BIN_ABSPATH)
 
@@ -136,35 +91,7 @@ class DenoProvider(BinProvider):
     @computed_field
     @property
     def bin_dir(self) -> Path | None:
-        return self.install_root / "bin" if self.install_root else None
-
-    @computed_field
-    @property
-    def INSTALLER_BIN_ABSPATH(self) -> HostBinPath | None:
-        """Resolve the deno executable, honoring ``DENO_BINARY`` for explicit overrides."""
-        if self._INSTALLER_BIN_ABSPATH:
-            return self._INSTALLER_BIN_ABSPATH
-
-        manual_binary = os.environ.get("DENO_BINARY")
-        if manual_binary and os.path.isabs(manual_binary):
-            try:
-                valid_abspath = TypeAdapter(HostBinPath).validate_python(
-                    Path(manual_binary).resolve(),
-                )
-                self._INSTALLER_BIN_ABSPATH = valid_abspath
-                return valid_abspath
-            except Exception:
-                return None
-
-        abspath = bin_abspath(self.INSTALLER_BIN, PATH=self.PATH) or bin_abspath(
-            self.INSTALLER_BIN,
-        )
-        if not abspath:
-            return None
-        valid_abspath = TypeAdapter(HostBinPath).validate_python(abspath)
-        if valid_abspath:
-            self._INSTALLER_BIN_ABSPATH = valid_abspath
-        return valid_abspath
+        return self.deno_root / "bin" if self.deno_root else None
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
@@ -190,18 +117,11 @@ class DenoProvider(BinProvider):
             self.PATH = self._merge_PATH(default_root, PATH=self.PATH)
         return self
 
-    def exec(
-        self,
-        bin_name,
-        cmd=(),
-        cwd: Path | str = ".",
-        quiet=False,
-        **kwargs,
-    ):
-        """Inject DENO_INSTALL_ROOT / DENO_DIR / DENO_TLS_CA_STORE."""
+    def exec(self, bin_name, cmd=(), cwd: Path | str = ".", quiet=False, **kwargs):
+        # Inject DENO_INSTALL_ROOT / DENO_DIR / DENO_TLS_CA_STORE.
         env = (kwargs.pop("env", None) or os.environ.copy()).copy()
-        # Use the system trust store so jsr/npm registry TLS works on
-        # hosts that ship corporate / sandboxed CA bundles.
+        # Use the system trust store so jsr/npm registry TLS works on hosts
+        # that ship corporate / sandboxed CA bundles.
         env.setdefault("DENO_TLS_CA_STORE", "system")
         if self.deno_root:
             self.deno_root.mkdir(parents=True, exist_ok=True)
@@ -226,7 +146,6 @@ class DenoProvider(BinProvider):
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
     ) -> None:
-        """Create deno_root bin dir if needed."""
         self._ensure_writable_cache_dir(self.cache_dir)
         if self.deno_root:
             (self.deno_root / "bin").mkdir(parents=True, exist_ok=True)
@@ -241,14 +160,9 @@ class DenoProvider(BinProvider):
         min_version: SemVer | None = None,
         timeout: int | None = None,
     ) -> str:
-        self.setup(
-            postinstall_scripts=postinstall_scripts,
-            min_release_age=min_release_age,
-            min_version=min_version,
-        )
-        postinstall_scripts = (
-            False if postinstall_scripts is None else postinstall_scripts
-        )
+        self.setup()
+        installer_bin = self._require_installer_bin()
+        postinstall_scripts = bool(postinstall_scripts)
         install_args = install_args or self.get_install_args(bin_name)
         if min_version:
             install_args = [
@@ -280,10 +194,10 @@ class DenoProvider(BinProvider):
                 for arg in install_args
             )
         ):
-            minutes = max(int(float(min_release_age) * 24 * 60), 1)
-            cmd.append(f"--minimum-dependency-age={minutes}")
-
-        # Auto-prefix bare names with the default scheme (npm: or jsr:)
+            cmd.append(
+                f"--minimum-dependency-age={max(int(min_release_age * 24 * 60), 1)}",
+            )
+        # Auto-prefix bare names with the default scheme (npm: or jsr:).
         for arg in install_args:
             if (
                 arg
@@ -294,11 +208,7 @@ class DenoProvider(BinProvider):
             else:
                 cmd.append(arg)
 
-        proc = self.exec(
-            bin_name=self._require_installer_bin(),
-            cmd=cmd,
-            timeout=timeout,
-        )
+        proc = self.exec(bin_name=installer_bin, cmd=cmd, timeout=timeout)
         if proc.returncode != 0:
             self._raise_proc_error("install", install_args, proc)
         return format_subprocess_output(proc.stdout, proc.stderr)
@@ -343,60 +253,15 @@ class DenoProvider(BinProvider):
             self._raise_proc_error("uninstall", [bin_name], proc)
         return True
 
-    def default_abspath_handler(
-        self,
-        bin_name: BinName | HostBinPath,
-        **context,
-    ) -> HostBinPath | None:
-        try:
-            abspath = super().default_abspath_handler(bin_name, **context)
-            if abspath:
-                return TypeAdapter(HostBinPath).validate_python(abspath)
-        except Exception:
-            pass
-
-        if not self.INSTALLER_BIN_ABSPATH:
-            return None
-
-        if self.deno_root:
-            candidate = self.deno_root / "bin" / str(bin_name)
-            if candidate.exists():
-                return TypeAdapter(HostBinPath).validate_python(candidate)
-        return None
-
-    def default_version_handler(
-        self,
-        bin_name: BinName,
-        abspath: HostBinPath | None = None,
-        timeout: int | None = None,
-        **context,
-    ) -> SemVer | None:
-        try:
-            version = self._version_from_exec(
-                bin_name,
-                abspath=abspath,
-                timeout=timeout,
-            )
-            if version:
-                return version
-        except ValueError:
-            pass
-        return None
-
 
 if __name__ == "__main__":
     # Usage:
     # ./binprovider_deno.py load cowsay
     # ./binprovider_deno.py install cowsay
-    # ./binprovider_deno.py get_version cowsay
-    # ./binprovider_deno.py get_abspath cowsay
     result = deno = DenoProvider()
     func = None
-
     if len(sys.argv) > 1:
         result = func = getattr(deno, sys.argv[1])
-
     if len(sys.argv) > 2 and callable(func):
         result = func(sys.argv[2])
-
     print(result)

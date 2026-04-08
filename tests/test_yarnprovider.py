@@ -1,40 +1,13 @@
-import shutil
-import subprocess
+import logging
 import tempfile
 from pathlib import Path
 
 import pytest
 
 from abx_pkg import Binary, SemVer, YarnProvider
+from abx_pkg.exceptions import BinaryInstallError, BinProviderInstallError
 
 
-def _yarn_supports_age_gate() -> bool:
-    yarn = shutil.which("yarn")
-    if not yarn:
-        return False
-    try:
-        proc = subprocess.run(
-            [yarn, "--version"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-    except (subprocess.TimeoutExpired, OSError):
-        return False
-    version = SemVer.parse((proc.stdout or proc.stderr).strip())
-    threshold = SemVer.parse("4.10.0")
-    if version is None or threshold is None:
-        return False
-    return version >= threshold
-
-
-requires_yarn = pytest.mark.skipif(
-    shutil.which("yarn") is None,
-    reason="yarn is not installed on this host",
-)
-
-
-@requires_yarn
 class TestYarnProvider:
     def test_install_root_alias_installs_into_the_requested_prefix(self, test_machine):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -55,6 +28,15 @@ class TestYarnProvider:
             assert provider.install_root == install_root
             assert provider.bin_dir == install_root / "node_modules" / ".bin"
             assert installed.loaded_abspath.parent == provider.bin_dir
+            # The auto-initialized workspace must exist on disk.
+            assert (install_root / "package.json").exists()
+            assert (install_root / "node_modules" / "zx" / "package.json").exists()
+            # The corepack-trap field must NOT be written, otherwise Yarn 1
+            # would refuse to run on the same workspace.
+            import json as _json
+
+            pkg = _json.loads((install_root / "package.json").read_text())
+            assert "packageManager" not in pkg
 
     def test_explicit_prefix_bin_dir_takes_precedence_over_existing_PATH_entries(
         self,
@@ -74,6 +56,8 @@ class TestYarnProvider:
                 min_version=SemVer("1.0.0"),
             )
             assert ambient_installed is not None
+            assert ambient_installed.loaded_abspath is not None
+            assert ambient_installed.loaded_abspath.parent == ambient_provider.bin_dir
 
             install_root = temp_dir_path / "yarn-root"
             provider = YarnProvider(
@@ -91,6 +75,7 @@ class TestYarnProvider:
             assert provider.install_root == install_root
             assert provider.bin_dir == install_root / "node_modules" / ".bin"
             assert installed.loaded_abspath.parent == provider.bin_dir
+            assert installed.loaded_abspath != ambient_installed.loaded_abspath
             assert installed.loaded_version is not None
             assert ambient_installed.loaded_version is not None
             assert installed.loaded_version > ambient_installed.loaded_version
@@ -102,7 +87,14 @@ class TestYarnProvider:
                 postinstall_scripts=True,
                 min_release_age=0,
             )
-            test_machine.exercise_provider_lifecycle(provider, bin_name="zx")
+            installed, _ = test_machine.exercise_provider_lifecycle(
+                provider,
+                bin_name="zx",
+            )
+            assert installed is not None
+            assert installed.loaded_abspath is not None
+            assert provider.install_root is not None
+            assert installed.loaded_abspath.is_relative_to(provider.install_root)
 
     def test_provider_direct_min_version_revalidates_old_install_and_upgrades(
         self,
@@ -130,11 +122,14 @@ class TestYarnProvider:
                 upgraded,
                 expected_version=SemVer("8.8.0"),
             )
+            assert upgraded is not None
+            assert upgraded.loaded_version is not None
+            assert old_installed.loaded_version is not None
+            assert upgraded.loaded_version > old_installed.loaded_version
 
     def test_provider_defaults_and_binary_overrides_enforce_min_release_age(
         self,
         test_machine,
-        caplog,
     ):
         with tempfile.TemporaryDirectory() as tmpdir:
             strict_provider = YarnProvider(
@@ -142,22 +137,26 @@ class TestYarnProvider:
                 postinstall_scripts=True,
                 min_release_age=36500,
             )
-            if strict_provider.supports_min_release_age("install"):
-                with pytest.raises(Exception):
-                    strict_provider.install("zx")
-                test_machine.assert_provider_missing(strict_provider, "zx")
-            else:
-                direct_default = strict_provider.install("zx")
-                test_machine.assert_shallow_binary_loaded(direct_default)
-                assert (
-                    "ignoring unsupported min_release_age=36500.0 for provider yarn"
-                    in caplog.text
-                )
-                assert strict_provider.uninstall("zx")
+            # The CI matrix installs Yarn 4.x via corepack, which supports
+            # npmMinimalAgeGate.
+            assert strict_provider.supports_min_release_age("install") is True
+
+            with pytest.raises(BinProviderInstallError):
+                strict_provider.install("zx")
+            test_machine.assert_provider_missing(strict_provider, "zx")
+
+            # The .yarnrc.yml side effect must reflect the strict 36500 days.
+            yarnrc = Path(tmpdir) / "strict-yarn" / ".yarnrc.yml"
+            assert yarnrc.exists()
+            assert "npmMinimalAgeGate: 36500d" in yarnrc.read_text()
 
             direct_override = strict_provider.install("zx", min_release_age=0)
             test_machine.assert_shallow_binary_loaded(direct_override)
             assert strict_provider.uninstall("zx", min_release_age=0)
+
+            # After the override, the .yarnrc.yml entry must have been
+            # rewritten away (no longer enforces the strict gate).
+            assert "npmMinimalAgeGate" not in yarnrc.read_text()
 
             binary = Binary(
                 name="zx",
@@ -174,10 +173,6 @@ class TestYarnProvider:
             installed = binary.install()
             test_machine.assert_shallow_binary_loaded(installed)
 
-    @pytest.mark.skipif(
-        not _yarn_supports_age_gate(),
-        reason="yarn 4.10+ required for npmMinimalAgeGate",
-    )
     def test_min_release_age_pins_to_older_version_when_strict(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             strict_provider = YarnProvider(
@@ -185,13 +180,18 @@ class TestYarnProvider:
                 postinstall_scripts=True,
                 min_release_age=365,
             )
+            assert strict_provider.supports_min_release_age("install") is True
             installed = strict_provider.install("zx")
             assert installed is not None
             assert installed.loaded_version is not None
-            # zx 8.8.5 was released too recently to satisfy 365d
             ceiling = SemVer.parse("8.8.0")
             assert ceiling is not None
+            # zx 8.8.x was published too recently to clear a 365-day gate.
             assert installed.loaded_version < ceiling
+            # Side effect: the .yarnrc.yml records the gate.
+            yarnrc = Path(tmpdir) / "yarn" / ".yarnrc.yml"
+            assert yarnrc.exists()
+            assert "npmMinimalAgeGate: 365d" in yarnrc.read_text()
 
     def test_provider_defaults_and_binary_overrides_enforce_postinstall_scripts(
         self,
@@ -204,22 +204,60 @@ class TestYarnProvider:
             ).get_provider_with_overrides(
                 overrides={"optipng": {"install_args": ["optipng-bin"]}},
             )
+            assert strict_provider.supports_postinstall_disable("install") is True
+
             strict_installed = strict_provider.install("optipng")
             assert strict_installed is not None
             assert strict_installed.loaded_abspath is not None
-            if strict_provider.supports_postinstall_disable("install"):
-                # On Yarn 2+, --mode skip-build / enableScripts: false actually
-                # blocks the postinstall, so the optipng-bin wrapper has no
-                # vendor binary to spawn and exits non-zero.
-                strict_proc = strict_installed.exec(cmd=("--version",), quiet=True)
-                assert strict_proc.returncode != 0
+            strict_proc = strict_installed.exec(cmd=("--version",), quiet=True)
+            assert strict_proc.returncode != 0, (
+                "strict optipng install with postinstall_scripts=False "
+                "should have left the binary broken (no vendor download)"
+            )
+            yarnrc = Path(tmpdir) / "strict-yarn" / ".yarnrc.yml"
+            assert "enableScripts: false" in yarnrc.read_text()
 
-            direct_override = strict_provider.install(
+            # Use a fresh prefix for the override case so we don't reuse the
+            # cached package from the previous --mode skip-build run.
+            override_provider = YarnProvider(
+                yarn_prefix=Path(tmpdir) / "override-yarn",
+                postinstall_scripts=False,
+                min_release_age=0,
+            ).get_provider_with_overrides(
+                overrides={"optipng": {"install_args": ["optipng-bin"]}},
+            )
+            direct_override = override_provider.install(
                 "optipng",
                 postinstall_scripts=True,
             )
             assert direct_override is not None
             assert direct_override.loaded_abspath is not None
+            override_proc = direct_override.exec(cmd=("--version",), quiet=True)
+            assert override_proc.returncode == 0, (
+                f"postinstall_scripts=True override should produce a working "
+                f"binary, but exec returned {override_proc.returncode}: "
+                f"stdout={override_proc.stdout!r} stderr={override_proc.stderr!r}"
+            )
+
+            binary = Binary(
+                name="optipng",
+                binproviders=[
+                    YarnProvider(
+                        yarn_prefix=Path(tmpdir) / "binary-yarn",
+                        postinstall_scripts=False,
+                        min_release_age=0,
+                    ).get_provider_with_overrides(
+                        overrides={"optipng": {"install_args": ["optipng-bin"]}},
+                    ),
+                ],
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+            installed = binary.install()
+            assert installed is not None
+            assert installed.loaded_abspath is not None
+            installed_proc = installed.exec(cmd=("--version",), quiet=True)
+            assert installed_proc.returncode == 0
 
     def test_binary_direct_methods_exercise_real_lifecycle(self, test_machine):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -245,3 +283,59 @@ class TestYarnProvider:
                 min_release_age=0,
             )
             test_machine.exercise_provider_dry_run(provider, bin_name="zx")
+            modules_dir = Path(temp_dir) / "yarn" / "node_modules"
+            if modules_dir.exists():
+                assert not (modules_dir / "zx").exists()
+
+    def test_workspace_setup_writes_node_modules_linker(self):
+        # Yarn 4 defaults to PnP. The provider must write a .yarnrc.yml that
+        # forces ``nodeLinker: node-modules`` so binaries land in
+        # ``<workspace>/node_modules/.bin``.
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yarn_prefix = Path(tmpdir) / "yarn"
+            provider = YarnProvider(
+                yarn_prefix=yarn_prefix,
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+            provider.setup()
+            yarnrc = yarn_prefix / ".yarnrc.yml"
+            assert yarnrc.exists()
+            content = yarnrc.read_text()
+            assert "nodeLinker: node-modules" in content
+            # The auto-init must NOT write a packageManager field, since
+            # Yarn 1.22 corepack would refuse to run.
+            import json as _json
+
+            pkg = _json.loads((yarn_prefix / "package.json").read_text())
+            assert "packageManager" not in pkg
+
+    def test_supports_methods_do_not_emit_unsupported_warnings(self, caplog):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+                provider = YarnProvider(
+                    yarn_prefix=Path(tmpdir) / "yarn",
+                    postinstall_scripts=False,
+                    min_release_age=0,
+                )
+                installed = provider.install("zx")
+                assert installed is not None
+            assert "ignoring unsupported postinstall_scripts" not in caplog.text
+            assert "ignoring unsupported min_release_age" not in caplog.text
+
+    def test_binary_install_failure_propagates_as_BinaryInstallError(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            failing_binary = Binary(
+                name="zx",
+                binproviders=[
+                    YarnProvider(
+                        yarn_prefix=Path(tmpdir) / "yarn",
+                        postinstall_scripts=True,
+                        min_release_age=36500,
+                    ),
+                ],
+                postinstall_scripts=True,
+                min_release_age=36500,
+            )
+            with pytest.raises(BinaryInstallError):
+                failing_binary.install()

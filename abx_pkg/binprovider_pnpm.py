@@ -20,29 +20,16 @@ from .base_types import (
     PATHStr,
     bin_abspath,
 )
-from .binprovider import (
-    BinProvider,
-    env_flag_is_true,
-    remap_kwargs,
-)
-from .logging import format_subprocess_output, get_logger
+from .binprovider import BinProvider, env_flag_is_true, remap_kwargs
+from .logging import format_subprocess_output
 from .semver import SemVer
-
-logger = get_logger(__name__)
-
-
-_CACHED_HOME_DIR: Path = Path("~").expanduser().absolute()
 
 
 USER_CACHE_PATH = Path(tempfile.gettempdir()) / "pnpm-cache"
 try:
-    pnpm_user_cache_path = user_cache_path(
-        appname="pnpm",
-        appauthor="abx-pkg",
-        ensure_exists=True,
-    )
-    if os.access(pnpm_user_cache_path, os.W_OK):
-        USER_CACHE_PATH = pnpm_user_cache_path
+    _user_cache = user_cache_path("pnpm", "abx-pkg", ensure_exists=True)
+    if os.access(_user_cache, os.W_OK):
+        USER_CACHE_PATH = _user_cache
 except Exception:
     pass
 
@@ -51,8 +38,8 @@ class PnpmProvider(BinProvider):
     """Standalone pnpm package manager provider.
 
     Behaves like ``NpmProvider`` but always shells out to ``pnpm`` directly,
-    with no auto-switching to ``npm``.  ``minimumReleaseAge`` is enforced
-    via ``--config.minimumReleaseAge=<minutes>`` (pnpm 10.16+).
+    with no auto-switching to ``npm``.  ``minimumReleaseAge`` is enforced via
+    ``--config.minimumReleaseAge=<minutes>`` (pnpm 10.16+).
     """
 
     name: BinProviderName = "pnpm"
@@ -76,48 +63,23 @@ class PnpmProvider(BinProvider):
 
     pnpm_install_args: list[str] = ["--loglevel=error"]
 
-    _CACHED_LOCAL_PNPM_PREFIX: Path | None = None
-    _CACHED_PNPM_VERSION: SemVer | None = None
-
     def supports_min_release_age(self, action) -> bool:
         if action not in ("install", "update"):
             return False
-        # pnpm 10.16+ ships minimumReleaseAge support
         threshold = SemVer.parse("10.16.0")
-        version = self._pnpm_version()
-        if version is None or threshold is None:
-            return False
-        return version >= threshold
+        installer = self.INSTALLER_BINARY
+        version = installer.loaded_version if installer else None
+        return bool(version and threshold and version >= threshold)
 
     def supports_postinstall_disable(self, action) -> bool:
         return action in ("install", "update")
 
-    def _pnpm_version(self) -> SemVer | None:
-        if self._CACHED_PNPM_VERSION is not None:
-            return self._CACHED_PNPM_VERSION
-        if not self.INSTALLER_BIN_ABSPATH:
-            return None
-        try:
-            proc = self.exec(
-                bin_name=self.INSTALLER_BIN_ABSPATH,
-                cmd=["--version"],
-                quiet=True,
-                timeout=self.version_timeout,
-            )
-            version = SemVer.parse((proc.stdout or proc.stderr).strip())
-            if version:
-                self._CACHED_PNPM_VERSION = version
-        except Exception:
-            return None
-        return self._CACHED_PNPM_VERSION
-
     @computed_field
     @property
     def is_valid(self) -> bool:
-        """False if pnpm_prefix is not created yet or if pnpm binary is not found in PATH"""
         if self.pnpm_prefix:
-            pnpm_bin_dir = self.pnpm_prefix / "node_modules" / ".bin"
-            if not (os.path.isdir(pnpm_bin_dir) and os.access(pnpm_bin_dir, os.R_OK)):
+            bin_dir = self.pnpm_prefix / "node_modules" / ".bin"
+            if not (bin_dir.is_dir() and os.access(bin_dir, os.R_OK)):
                 return False
         return bool(self.INSTALLER_BIN_ABSPATH)
 
@@ -129,38 +91,7 @@ class PnpmProvider(BinProvider):
     @computed_field
     @property
     def bin_dir(self) -> Path | None:
-        return (
-            self.install_root / "node_modules" / ".bin" if self.install_root else None
-        )
-
-    @computed_field
-    @property
-    def INSTALLER_BIN_ABSPATH(self) -> HostBinPath | None:
-        """Resolve the pnpm executable, honoring ``PNPM_BINARY`` for explicit overrides."""
-        if self._INSTALLER_BIN_ABSPATH:
-            return self._INSTALLER_BIN_ABSPATH
-
-        manual_binary = os.environ.get("PNPM_BINARY")
-        if manual_binary and os.path.isabs(manual_binary):
-            try:
-                valid_abspath = TypeAdapter(HostBinPath).validate_python(
-                    Path(manual_binary).resolve(),
-                )
-                self._INSTALLER_BIN_ABSPATH = valid_abspath
-                return valid_abspath
-            except Exception:
-                return None
-
-        abspath = bin_abspath(self.INSTALLER_BIN, PATH=self.PATH) or bin_abspath(
-            self.INSTALLER_BIN,
-        )
-        if not abspath:
-            return None
-
-        valid_abspath = TypeAdapter(HostBinPath).validate_python(abspath)
-        if valid_abspath:
-            self._INSTALLER_BIN_ABSPATH = valid_abspath
-        return valid_abspath
+        return self.pnpm_prefix / "node_modules" / ".bin" if self.pnpm_prefix else None
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
@@ -173,85 +104,31 @@ class PnpmProvider(BinProvider):
 
     @model_validator(mode="after")
     def load_PATH_from_pnpm_prefix(self) -> Self:
-        self.PATH = self._load_PATH()
+        if self.pnpm_prefix:
+            self.PATH = self._merge_PATH(self.pnpm_prefix / "node_modules" / ".bin")
+        else:
+            # In global mode, pnpm puts shims under PNPM_HOME (from env, or
+            # ``~/.local/share/pnpm`` by default). Make sure we can find them.
+            pnpm_home = os.environ.get("PNPM_HOME") or os.path.expanduser(
+                "~/.local/share/pnpm",
+            )
+            self.PATH = self._merge_PATH(pnpm_home, PATH=self.PATH)
         return self
 
-    def _load_PATH(self) -> str:
-        PATH = self.PATH
-
-        if self.pnpm_prefix:
-            return self._merge_PATH(self.pnpm_prefix / "node_modules/.bin")
-
-        pnpm_bin_dirs: set[Path] = set()
-        pnpm_abspath = self.INSTALLER_BIN_ABSPATH
-        if pnpm_abspath:
-            try:
-                local_root = (
-                    self._CACHED_LOCAL_PNPM_PREFIX
-                    or Path(
-                        self.exec(
-                            bin_name=pnpm_abspath,
-                            cmd=["bin"],
-                            quiet=True,
-                            timeout=self.version_timeout,
-                        ).stdout.strip(),
-                    ).parent.parent
-                )
-                self._CACHED_LOCAL_PNPM_PREFIX = local_root
-
-                search_dir = local_root
-                stop_if_reached = [str(Path("/")), str(_CACHED_HOME_DIR)]
-                num_hops, max_hops = 0, 6
-                while num_hops < max_hops and str(search_dir) not in stop_if_reached:
-                    try:
-                        pnpm_bin_dirs.add(
-                            list(search_dir.glob("node_modules/.bin"))[0],
-                        )
-                        break
-                    except (IndexError, OSError, Exception):
-                        pass
-                    search_dir = search_dir.parent
-                    num_hops += 1
-            except Exception:
-                pass
-
-            try:
-                global_bin = Path(
-                    self.exec(
-                        bin_name=pnpm_abspath,
-                        cmd=["bin", "-g"],
-                        quiet=True,
-                        timeout=self.version_timeout,
-                    ).stdout.strip(),
-                )
-                if str(global_bin):
-                    pnpm_bin_dirs.add(global_bin)
-            except Exception:
-                pass
-
-        return self._merge_PATH(*sorted(pnpm_bin_dirs), PATH=PATH)
-
-    def exec(
-        self,
-        bin_name,
-        cmd=(),
-        cwd: Path | str = ".",
-        quiet=False,
-        **kwargs,
-    ):
-        """Inject ``PNPM_HOME`` (required by pnpm for global installs) before delegating."""
+    def exec(self, bin_name, cmd=(), cwd: Path | str = ".", quiet=False, **kwargs):
+        # pnpm REQUIRES PNPM_HOME on PATH for global installs to work.
         env = (kwargs.pop("env", None) or os.environ.copy()).copy()
         pnpm_home = Path(
             env.get("PNPM_HOME")
             or (
-                self.pnpm_prefix / "node_modules/.bin"
+                self.pnpm_prefix / "node_modules" / ".bin"
                 if self.pnpm_prefix
                 else self.cache_dir / "pnpm-home"
             ),
         )
         pnpm_home.mkdir(parents=True, exist_ok=True)
         env["PNPM_HOME"] = str(pnpm_home)
-        path_entries = [entry for entry in env.get("PATH", "").split(":") if entry]
+        path_entries = [e for e in env.get("PATH", "").split(":") if e]
         if str(pnpm_home) not in path_entries:
             env["PATH"] = ":".join([str(pnpm_home), *path_entries])
         return super().exec(
@@ -270,70 +147,13 @@ class PnpmProvider(BinProvider):
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
     ) -> None:
-        """create pnpm install prefix and node_modules_dir if needed"""
-        if not self.PATH or not self._CACHED_LOCAL_PNPM_PREFIX:
-            self.PATH = self._load_PATH()
-
         if not self._ensure_writable_cache_dir(self.cache_dir):
             self.cache_arg = "--no-cache"
-
         if self.pnpm_prefix:
-            (self.pnpm_prefix / "node_modules/.bin").mkdir(parents=True, exist_ok=True)
-
-    def _common_cli_args(
-        self,
-        install_args: InstallArgs,
-        *,
-        postinstall_scripts: bool,
-        min_release_age: float | None,
-        for_remove: bool = False,
-    ) -> list[str]:
-        """Build the shared list of pnpm CLI flags shared by add/update/remove.
-
-        ``pnpm remove`` rejects ``--ignore-scripts`` and ``--config.minimumReleaseAge``,
-        so set ``for_remove=True`` to skip both.
-        """
-        explicit = [*self.pnpm_install_args, self.cache_arg, *install_args]
-        cmd_args: list[str] = [*self.pnpm_install_args, self.cache_arg]
-        if not for_remove:
-            has_ignore_scripts = any(arg == "--ignore-scripts" for arg in explicit)
-            if not postinstall_scripts and not has_ignore_scripts:
-                cmd_args.append("--ignore-scripts")
-            # pnpm 10+ blocks ALL postinstall scripts unless explicitly allow-listed,
-            # so opt in via dangerouslyAllowAllBuilds when scripts are requested.
-            # Match both ``--flag value`` (space-separated) and ``--flag=value`` forms.
-            if postinstall_scripts and not any(
-                arg == "--config.dangerouslyAllowAllBuilds"
-                or arg.startswith("--config.dangerouslyAllowAllBuilds=")
-                for arg in explicit
-            ):
-                cmd_args.append("--config.dangerouslyAllowAllBuilds=true")
-            has_release_age = any(
-                arg
-                in (
-                    "--config.minimumReleaseAge",
-                    "--config.minimum-release-age",
-                )
-                or arg.startswith(
-                    (
-                        "--config.minimumReleaseAge=",
-                        "--config.minimum-release-age=",
-                    ),
-                )
-                for arg in explicit
+            (self.pnpm_prefix / "node_modules" / ".bin").mkdir(
+                parents=True,
+                exist_ok=True,
             )
-            if (
-                min_release_age is not None
-                and min_release_age > 0
-                and not has_release_age
-            ):
-                minutes = max(int(float(min_release_age) * 24 * 60), 1)
-                cmd_args.append(f"--config.minimumReleaseAge={minutes}")
-        if self.pnpm_prefix:
-            cmd_args.append(f"--dir={self.pnpm_prefix}")
-        else:
-            cmd_args.append("--global")
-        return cmd_args
 
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(
@@ -345,14 +165,9 @@ class PnpmProvider(BinProvider):
         min_version: SemVer | None = None,
         timeout: int | None = None,
     ) -> str:
-        self.setup(
-            postinstall_scripts=postinstall_scripts,
-            min_release_age=min_release_age,
-            min_version=min_version,
-        )
-        postinstall_scripts = (
-            False if postinstall_scripts is None else postinstall_scripts
-        )
+        self.setup()
+        installer_bin = self._require_installer_bin()
+        postinstall_scripts = bool(postinstall_scripts)
         install_args = install_args or self.get_install_args(bin_name)
         if min_version:
             install_args = [
@@ -367,16 +182,28 @@ class PnpmProvider(BinProvider):
         if any(arg == "--ignore-scripts" for arg in install_args):
             postinstall_scripts = False
 
-        cli_args = self._common_cli_args(
-            install_args,
-            postinstall_scripts=postinstall_scripts,
-            min_release_age=min_release_age,
-        )
-        proc = self.exec(
-            bin_name=self._require_installer_bin(),
-            cmd=["add", *cli_args, *install_args],
-            timeout=timeout,
-        )
+        cmd: list[str] = ["add", *self.pnpm_install_args, self.cache_arg]
+        if not postinstall_scripts:
+            cmd.append("--ignore-scripts")
+        else:
+            # pnpm 10+ blocks ALL postinstall scripts unless explicitly allowed.
+            cmd.append("--config.dangerouslyAllowAllBuilds=true")
+        if (
+            min_release_age is not None
+            and min_release_age > 0
+            and not any(
+                arg == "--config.minimumReleaseAge"
+                or arg.startswith("--config.minimumReleaseAge=")
+                for arg in install_args
+            )
+        ):
+            cmd.append(
+                f"--config.minimumReleaseAge={max(int(min_release_age * 24 * 60), 1)}",
+            )
+        cmd.append(f"--dir={self.pnpm_prefix}" if self.pnpm_prefix else "--global")
+        cmd.extend(install_args)
+
+        proc = self.exec(bin_name=installer_bin, cmd=cmd, timeout=timeout)
         if proc.returncode != 0:
             self._raise_proc_error("install", install_args, proc)
         return format_subprocess_output(proc.stdout, proc.stderr)
@@ -391,14 +218,9 @@ class PnpmProvider(BinProvider):
         min_version: SemVer | None = None,
         timeout: int | None = None,
     ) -> str:
-        self.setup(
-            postinstall_scripts=postinstall_scripts,
-            min_release_age=min_release_age,
-            min_version=min_version,
-        )
-        postinstall_scripts = (
-            False if postinstall_scripts is None else postinstall_scripts
-        )
+        self.setup()
+        installer_bin = self._require_installer_bin()
+        postinstall_scripts = bool(postinstall_scripts)
         install_args = install_args or self.get_install_args(bin_name)
         if min_version:
             install_args = [
@@ -413,16 +235,27 @@ class PnpmProvider(BinProvider):
         if any(arg == "--ignore-scripts" for arg in install_args):
             postinstall_scripts = False
 
-        cli_args = self._common_cli_args(
-            install_args,
-            postinstall_scripts=postinstall_scripts,
-            min_release_age=min_release_age,
-        )
-        proc = self.exec(
-            bin_name=self._require_installer_bin(),
-            cmd=["update", *cli_args, *install_args],
-            timeout=timeout,
-        )
+        cmd: list[str] = ["update", *self.pnpm_install_args, self.cache_arg]
+        if not postinstall_scripts:
+            cmd.append("--ignore-scripts")
+        else:
+            cmd.append("--config.dangerouslyAllowAllBuilds=true")
+        if (
+            min_release_age is not None
+            and min_release_age > 0
+            and not any(
+                arg == "--config.minimumReleaseAge"
+                or arg.startswith("--config.minimumReleaseAge=")
+                for arg in install_args
+            )
+        ):
+            cmd.append(
+                f"--config.minimumReleaseAge={max(int(min_release_age * 24 * 60), 1)}",
+            )
+        cmd.append(f"--dir={self.pnpm_prefix}" if self.pnpm_prefix else "--global")
+        cmd.extend(install_args)
+
+        proc = self.exec(bin_name=installer_bin, cmd=cmd, timeout=timeout)
         if proc.returncode != 0:
             self._raise_proc_error("update", install_args, proc)
         return format_subprocess_output(proc.stdout, proc.stderr)
@@ -437,24 +270,16 @@ class PnpmProvider(BinProvider):
         min_version: SemVer | None = None,
         timeout: int | None = None,
     ) -> bool:
-        postinstall_scripts = (
-            False if postinstall_scripts is None else postinstall_scripts
-        )
+        installer_bin = self._require_installer_bin()
         install_args = install_args or self.get_install_args(bin_name)
-        if any(arg == "--ignore-scripts" for arg in install_args):
-            postinstall_scripts = False
 
-        cli_args = self._common_cli_args(
-            install_args,
-            postinstall_scripts=postinstall_scripts,
-            min_release_age=None,
-            for_remove=True,
-        )
-        proc = self.exec(
-            bin_name=self._require_installer_bin(),
-            cmd=["remove", *cli_args, *install_args],
-            timeout=timeout,
-        )
+        # pnpm remove rejects --ignore-scripts and --config.minimumReleaseAge,
+        # so don't pass either even if they were set as provider defaults.
+        cmd: list[str] = ["remove", *self.pnpm_install_args, self.cache_arg]
+        cmd.append(f"--dir={self.pnpm_prefix}" if self.pnpm_prefix else "--global")
+        cmd.extend(install_args)
+
+        proc = self.exec(bin_name=installer_bin, cmd=cmd, timeout=timeout)
         if proc.returncode != 0:
             self._raise_proc_error("uninstall", install_args, proc)
         return True
@@ -474,13 +299,14 @@ class PnpmProvider(BinProvider):
         if not self.INSTALLER_BIN_ABSPATH:
             return None
 
+        # Fallback: ask `pnpm view` for the package's bin entries and look
+        # them up by name in our PATH.
         try:
             install_args = self.get_install_args(str(bin_name)) or [str(bin_name)]
-            main_package = install_args[0]
             package_info = json.loads(
                 self.exec(
                     bin_name=self.INSTALLER_BIN_ABSPATH,
-                    cmd=["view", "--json", main_package, "bin"],
+                    cmd=["view", "--json", install_args[0], "bin"],
                     timeout=self.version_timeout,
                     quiet=True,
                 ).stdout.strip(),
@@ -519,17 +345,18 @@ class PnpmProvider(BinProvider):
         if not self.INSTALLER_BIN_ABSPATH:
             return None
 
-        package = None
+        # Fallback: ask `pnpm ls --json` for the installed version of the
+        # main package, and finally fall back to reading its package.json.
+        install_args = self.get_install_args(str(bin_name), **context) or [
+            str(bin_name),
+        ]
+        main_package = install_args[0]
+        package = (
+            "@" + main_package[1:].split("@", 1)[0]
+            if main_package.startswith("@")
+            else main_package.split("@", 1)[0]
+        )
         try:
-            install_args = self.get_install_args(str(bin_name), **context) or [
-                str(bin_name),
-            ]
-            main_package = install_args[0]
-            if main_package[0] == "@":
-                package = "@" + main_package[1:].split("@", 1)[0]
-            else:
-                package = main_package.split("@", 1)[0]
-
             json_output = self.exec(
                 bin_name=self.INSTALLER_BIN_ABSPATH,
                 cmd=[
@@ -542,15 +369,14 @@ class PnpmProvider(BinProvider):
                 timeout=timeout,
                 quiet=True,
             ).stdout.strip()
-            package_listing = json.loads(json_output)
-            if isinstance(package_listing, list):
-                package_listing = package_listing[0] if package_listing else {}
-            return package_listing["dependencies"][package]["version"]
+            listing = json.loads(json_output)
+            if isinstance(listing, list):
+                listing = listing[0] if listing else {}
+            return listing["dependencies"][package]["version"]
         except Exception:
             pass
 
         try:
-            assert package
             modules_dir = Path(
                 self.exec(
                     bin_name=self.INSTALLER_BIN_ABSPATH,
@@ -574,15 +400,10 @@ if __name__ == "__main__":
     # Usage:
     # ./binprovider_pnpm.py load zx
     # ./binprovider_pnpm.py install zx
-    # ./binprovider_pnpm.py get_version zx
-    # ./binprovider_pnpm.py get_abspath zx
     result = pnpm = PnpmProvider()
     func = None
-
     if len(sys.argv) > 1:
         result = func = getattr(pnpm, sys.argv[1])
-
     if len(sys.argv) > 2 and callable(func):
         result = func(sys.argv[2])
-
     print(result)

@@ -1,18 +1,13 @@
-import shutil
+import logging
 import tempfile
 from pathlib import Path
 
 import pytest
 
 from abx_pkg import Binary, BunProvider, SemVer
-
-requires_bun = pytest.mark.skipif(
-    shutil.which("bun") is None,
-    reason="bun is not installed on this host",
-)
+from abx_pkg.exceptions import BinaryInstallError, BinProviderInstallError
 
 
-@requires_bun
 class TestBunProvider:
     def test_install_args_win_for_ignore_scripts_and_min_release_age(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -36,10 +31,20 @@ class TestBunProvider:
             installed = provider.install("gifsicle")
 
             assert installed is not None
+            assert installed.loaded_abspath is not None
             proc = installed.exec(cmd=("--version",), quiet=True)
+            assert proc.returncode != 0
+            # The provider's strict 100-year min_release_age was overridden
+            # by the explicit --minimum-release-age=0 in install_args, so
+            # the install resolved a real version.
             assert (
-                proc.returncode != 0
-            )  # gifsicle without postinstall download is broken
+                bun_prefix
+                / "install"
+                / "global"
+                / "node_modules"
+                / "gifsicle"
+                / "package.json"
+            ).exists()
 
     def test_install_root_alias_installs_into_the_requested_prefix(self, test_machine):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -60,6 +65,15 @@ class TestBunProvider:
             assert provider.install_root == install_root
             assert provider.bin_dir == install_root / "bin"
             assert installed.loaded_abspath.parent == provider.bin_dir
+            # Bun's global node_modules side effect must exist on disk.
+            assert (
+                install_root
+                / "install"
+                / "global"
+                / "node_modules"
+                / "zx"
+                / "package.json"
+            ).exists()
 
     def test_explicit_prefix_bin_dir_takes_precedence_over_existing_PATH_entries(
         self,
@@ -79,6 +93,8 @@ class TestBunProvider:
                 min_version=SemVer("1.0.0"),
             )
             assert ambient_installed is not None
+            assert ambient_installed.loaded_abspath is not None
+            assert ambient_installed.loaded_abspath.parent == ambient_provider.bin_dir
 
             install_root = temp_dir_path / "bun-root"
             provider = BunProvider(
@@ -96,6 +112,7 @@ class TestBunProvider:
             assert provider.install_root == install_root
             assert provider.bin_dir == install_root / "bin"
             assert installed.loaded_abspath.parent == provider.bin_dir
+            assert installed.loaded_abspath != ambient_installed.loaded_abspath
             assert installed.loaded_version is not None
             assert ambient_installed.loaded_version is not None
             assert installed.loaded_version > ambient_installed.loaded_version
@@ -127,7 +144,12 @@ class TestBunProvider:
                 postinstall_scripts=True,
                 min_release_age=0,
             )
-            test_machine.exercise_provider_lifecycle(provider, bin_name="zx")
+            installed, _ = test_machine.exercise_provider_lifecycle(
+                provider,
+                bin_name="zx",
+            )
+            assert installed.loaded_abspath is not None
+            assert installed.loaded_abspath.is_relative_to(provider.install_root)
 
     def test_provider_direct_min_version_revalidates_old_install_and_upgrades(
         self,
@@ -155,11 +177,14 @@ class TestBunProvider:
                 upgraded,
                 expected_version=SemVer("8.8.0"),
             )
+            assert upgraded is not None
+            assert upgraded.loaded_version is not None
+            assert old_installed.loaded_version is not None
+            assert upgraded.loaded_version > old_installed.loaded_version
 
     def test_provider_defaults_and_binary_overrides_enforce_min_release_age(
         self,
         test_machine,
-        caplog,
     ):
         with tempfile.TemporaryDirectory() as tmpdir:
             strict_provider = BunProvider(
@@ -167,18 +192,11 @@ class TestBunProvider:
                 postinstall_scripts=True,
                 min_release_age=36500,
             )
-            if strict_provider.supports_min_release_age("install"):
-                with pytest.raises(Exception):
-                    strict_provider.install("zx")
-                test_machine.assert_provider_missing(strict_provider, "zx")
-            else:
-                direct_default = strict_provider.install("zx")
-                test_machine.assert_shallow_binary_loaded(direct_default)
-                assert (
-                    "ignoring unsupported min_release_age=36500.0 for provider bun"
-                    in caplog.text
-                )
-                assert strict_provider.uninstall("zx")
+            assert strict_provider.supports_min_release_age("install") is True
+
+            with pytest.raises(BinProviderInstallError):
+                strict_provider.install("zx")
+            test_machine.assert_provider_missing(strict_provider, "zx")
 
             direct_override = strict_provider.install("zx", min_release_age=0)
             test_machine.assert_shallow_binary_loaded(direct_override)
@@ -199,6 +217,20 @@ class TestBunProvider:
             installed = binary.install()
             test_machine.assert_shallow_binary_loaded(installed)
 
+    def test_min_release_age_pins_to_older_version_when_strict(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            strict_provider = BunProvider(
+                bun_prefix=Path(tmpdir) / "bun",
+                postinstall_scripts=True,
+                min_release_age=365,
+            )
+            installed = strict_provider.install("zx")
+            assert installed is not None
+            assert installed.loaded_version is not None
+            ceiling = SemVer.parse("8.8.0")
+            assert ceiling is not None
+            assert installed.loaded_version < ceiling
+
     def test_provider_defaults_and_binary_overrides_enforce_postinstall_scripts(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             strict_provider = BunProvider(
@@ -214,9 +246,14 @@ class TestBunProvider:
             strict_proc = strict_installed.exec(cmd=("--version",), quiet=True)
             assert strict_proc.returncode != 0
 
-            assert strict_provider.uninstall("optipng")
-
-            direct_override = strict_provider.install(
+            override_provider = BunProvider(
+                bun_prefix=Path(tmpdir) / "override-bun",
+                postinstall_scripts=False,
+                min_release_age=0,
+            ).get_provider_with_overrides(
+                overrides={"optipng": {"install_args": ["optipng-bin"]}},
+            )
+            direct_override = override_provider.install(
                 "optipng",
                 postinstall_scripts=True,
             )
@@ -224,8 +261,8 @@ class TestBunProvider:
             assert direct_override.loaded_abspath is not None
             override_proc = direct_override.exec(cmd=("--version",), quiet=True)
             assert override_proc.returncode == 0, (
-                "postinstall_scripts=True override should produce a working binary, "
-                f"but exec returned {override_proc.returncode}: "
+                f"postinstall_scripts=True override should produce a working "
+                f"binary, but exec returned {override_proc.returncode}: "
                 f"stdout={override_proc.stdout!r} stderr={override_proc.stderr!r}"
             )
 
@@ -253,3 +290,58 @@ class TestBunProvider:
                 min_release_age=0,
             )
             test_machine.exercise_provider_dry_run(provider, bin_name="zx")
+            global_modules = (
+                Path(temp_dir) / "bun" / "install" / "global" / "node_modules"
+            )
+            if global_modules.exists():
+                assert not (global_modules / "zx").exists()
+
+    def test_provider_action_args_override_provider_defaults(self, test_machine):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            provider = BunProvider(
+                bun_prefix=Path(temp_dir) / "bun",
+                dry_run=True,
+                postinstall_scripts=False,
+                min_release_age=36500,
+            )
+
+            installed = provider.install(
+                "zx",
+                dry_run=False,
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+            test_machine.assert_shallow_binary_loaded(installed)
+            assert installed is not None
+            assert installed.loaded_abspath is not None
+            assert installed.loaded_abspath.parent == provider.bin_dir
+
+    def test_supports_methods_do_not_emit_unsupported_warnings(self, caplog):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+                provider = BunProvider(
+                    bun_prefix=Path(tmpdir) / "bun",
+                    postinstall_scripts=False,
+                    min_release_age=0,
+                )
+                installed = provider.install("zx")
+                assert installed is not None
+            assert "ignoring unsupported postinstall_scripts" not in caplog.text
+            assert "ignoring unsupported min_release_age" not in caplog.text
+
+    def test_binary_install_failure_propagates_as_BinaryInstallError(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            failing_binary = Binary(
+                name="zx",
+                binproviders=[
+                    BunProvider(
+                        bun_prefix=Path(tmpdir) / "bun",
+                        postinstall_scripts=True,
+                        min_release_age=36500,
+                    ),
+                ],
+                postinstall_scripts=True,
+                min_release_age=36500,
+            )
+            with pytest.raises(BinaryInstallError):
+                failing_binary.install()

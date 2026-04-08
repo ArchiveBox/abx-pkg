@@ -113,6 +113,22 @@ jobs:
       with:
         node-version: '22'
 
+    - name: Setup Yarn (Berry / 4.x via corepack)
+      run: |
+        corepack enable
+        corepack prepare yarn@4.13.0 --activate
+        yarn --version
+
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: latest
+
+    - name: Setup Deno
+      uses: denoland/setup-deno@v2
+      with:
+        deno-version: v2.x
+
     - name: Setup Go
       uses: actions/setup-go@v6
       with:
@@ -219,6 +235,22 @@ jobs:
       uses: actions/setup-node@v6
       with:
         node-version: '22'
+
+    - name: Setup Yarn (Berry / 4.x via corepack)
+      run: |
+        corepack enable
+        corepack prepare yarn@4.13.0 --activate
+        yarn --version
+
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: latest
+
+    - name: Setup Deno
+      uses: denoland/setup-deno@v2
+      with:
+        deno-version: v2.x
 
     - name: Setup Go
       uses: actions/setup-go@v6
