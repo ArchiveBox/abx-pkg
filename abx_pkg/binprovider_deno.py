@@ -9,9 +9,16 @@ from pathlib import Path
 from typing import ClassVar, Self
 
 from platformdirs import user_cache_path
-from pydantic import Field, computed_field, model_validator
+from pydantic import Field, TypeAdapter, computed_field, model_validator
 
-from .base_types import BinName, BinProviderName, InstallArgs, PATHStr
+from .base_types import (
+    BinName,
+    BinProviderName,
+    HostBinPath,
+    InstallArgs,
+    PATHStr,
+    bin_abspath,
+)
 from .binprovider import BinProvider, env_flag_is_true, remap_kwargs
 from .logging import format_subprocess_output
 from .semver import SemVer
@@ -92,6 +99,35 @@ class DenoProvider(BinProvider):
     @property
     def bin_dir(self) -> Path | None:
         return self.deno_root / "bin" if self.deno_root else None
+
+    @computed_field
+    @property
+    def INSTALLER_BIN_ABSPATH(self) -> HostBinPath | None:
+        """Resolve the deno executable, honoring ``DENO_BINARY`` for explicit overrides."""
+        if self._INSTALLER_BIN_ABSPATH:
+            return self._INSTALLER_BIN_ABSPATH
+
+        manual_binary = os.environ.get("DENO_BINARY")
+        if manual_binary and os.path.isabs(manual_binary):
+            try:
+                valid_abspath = TypeAdapter(HostBinPath).validate_python(
+                    Path(manual_binary).resolve(),
+                )
+                self._INSTALLER_BIN_ABSPATH = valid_abspath
+                return valid_abspath
+            except Exception:
+                return None
+
+        abspath = bin_abspath(self.INSTALLER_BIN, PATH=self.PATH) or bin_abspath(
+            self.INSTALLER_BIN,
+        )
+        if not abspath:
+            return None
+
+        valid_abspath = TypeAdapter(HostBinPath).validate_python(abspath)
+        if valid_abspath:
+            self._INSTALLER_BIN_ABSPATH = valid_abspath
+        return valid_abspath
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:

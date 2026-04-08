@@ -59,9 +59,18 @@ class PnpmProvider(BinProvider):
     pnpm_prefix: Path | None = None  # None = -g global, otherwise it's a path
 
     cache_dir: Path = USER_CACHE_PATH
-    cache_arg: str = f"--store-dir={cache_dir}"
+    cache_arg: str = ""  # re-derived per-instance from cache_dir in detect_cache_arg
 
     pnpm_install_args: list[str] = ["--loglevel=error"]
+
+    @model_validator(mode="after")
+    def detect_cache_arg(self) -> Self:
+        # Re-derive cache_arg from the instance's cache_dir so that passing
+        # ``cache_dir=Path(...)`` at construction time actually takes effect
+        # (instead of silently inheriting the module-level default).
+        if not self.cache_arg or "--store-dir=" in self.cache_arg:
+            self.cache_arg = f"--store-dir={self.cache_dir}"
+        return self
 
     def supports_min_release_age(self, action) -> bool:
         if action not in ("install", "update"):
@@ -73,6 +82,35 @@ class PnpmProvider(BinProvider):
 
     def supports_postinstall_disable(self, action) -> bool:
         return action in ("install", "update")
+
+    @computed_field
+    @property
+    def INSTALLER_BIN_ABSPATH(self) -> HostBinPath | None:
+        """Resolve the pnpm executable, honoring ``PNPM_BINARY`` for explicit overrides."""
+        if self._INSTALLER_BIN_ABSPATH:
+            return self._INSTALLER_BIN_ABSPATH
+
+        manual_binary = os.environ.get("PNPM_BINARY")
+        if manual_binary and os.path.isabs(manual_binary):
+            try:
+                valid_abspath = TypeAdapter(HostBinPath).validate_python(
+                    Path(manual_binary).resolve(),
+                )
+                self._INSTALLER_BIN_ABSPATH = valid_abspath
+                return valid_abspath
+            except Exception:
+                return None
+
+        abspath = bin_abspath(self.INSTALLER_BIN, PATH=self.PATH) or bin_abspath(
+            self.INSTALLER_BIN,
+        )
+        if not abspath:
+            return None
+
+        valid_abspath = TypeAdapter(HostBinPath).validate_python(abspath)
+        if valid_abspath:
+            self._INSTALLER_BIN_ABSPATH = valid_abspath
+        return valid_abspath
 
     @computed_field
     @property
@@ -108,9 +146,9 @@ class PnpmProvider(BinProvider):
             self.PATH = self._merge_PATH(self.pnpm_prefix / "node_modules" / ".bin")
         else:
             # In global mode, pnpm puts shims under PNPM_HOME (from env, or
-            # ``~/.local/share/pnpm`` by default). Make sure we can find them.
-            pnpm_home = os.environ.get("PNPM_HOME") or os.path.expanduser(
-                "~/.local/share/pnpm",
+            # ``<cache_dir>/pnpm-home`` — the same fallback exec() uses).
+            pnpm_home = os.environ.get("PNPM_HOME") or str(
+                self.cache_dir / "pnpm-home",
             )
             self.PATH = self._merge_PATH(pnpm_home, PATH=self.PATH)
         return self
@@ -179,7 +217,10 @@ class PnpmProvider(BinProvider):
                 else arg
                 for arg in install_args
             ]
-        if any(arg == "--ignore-scripts" for arg in install_args):
+        if any(
+            arg == "--ignore-scripts"
+            for arg in (*self.pnpm_install_args, *install_args)
+        ):
             postinstall_scripts = False
 
         cmd: list[str] = ["add", *self.pnpm_install_args, self.cache_arg]
@@ -194,7 +235,7 @@ class PnpmProvider(BinProvider):
             and not any(
                 arg == "--config.minimumReleaseAge"
                 or arg.startswith("--config.minimumReleaseAge=")
-                for arg in install_args
+                for arg in (*self.pnpm_install_args, *install_args)
             )
         ):
             cmd.append(
@@ -232,7 +273,10 @@ class PnpmProvider(BinProvider):
                 else arg
                 for arg in install_args
             ]
-        if any(arg == "--ignore-scripts" for arg in install_args):
+        if any(
+            arg == "--ignore-scripts"
+            for arg in (*self.pnpm_install_args, *install_args)
+        ):
             postinstall_scripts = False
 
         cmd: list[str] = ["update", *self.pnpm_install_args, self.cache_arg]
@@ -246,7 +290,7 @@ class PnpmProvider(BinProvider):
             and not any(
                 arg == "--config.minimumReleaseAge"
                 or arg.startswith("--config.minimumReleaseAge=")
-                for arg in install_args
+                for arg in (*self.pnpm_install_args, *install_args)
             )
         ):
             cmd.append(

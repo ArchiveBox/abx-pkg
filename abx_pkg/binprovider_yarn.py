@@ -18,6 +18,7 @@ from .base_types import (
     HostBinPath,
     InstallArgs,
     PATHStr,
+    bin_abspath,
 )
 from .binprovider import BinProvider, env_flag_is_true, remap_kwargs
 from .logging import format_subprocess_output
@@ -93,6 +94,35 @@ class YarnProvider(BinProvider):
         installer = self.INSTALLER_BINARY
         version = installer.loaded_version if installer else None
         return bool(version and threshold and version >= threshold)
+
+    @computed_field
+    @property
+    def INSTALLER_BIN_ABSPATH(self) -> HostBinPath | None:
+        """Resolve the yarn executable, honoring ``YARN_BINARY`` for explicit overrides."""
+        if self._INSTALLER_BIN_ABSPATH:
+            return self._INSTALLER_BIN_ABSPATH
+
+        manual_binary = os.environ.get("YARN_BINARY")
+        if manual_binary and os.path.isabs(manual_binary):
+            try:
+                valid_abspath = TypeAdapter(HostBinPath).validate_python(
+                    Path(manual_binary).resolve(),
+                )
+                self._INSTALLER_BIN_ABSPATH = valid_abspath
+                return valid_abspath
+            except Exception:
+                return None
+
+        abspath = bin_abspath(self.INSTALLER_BIN, PATH=self.PATH) or bin_abspath(
+            self.INSTALLER_BIN,
+        )
+        if not abspath:
+            return None
+
+        valid_abspath = TypeAdapter(HostBinPath).validate_python(abspath)
+        if valid_abspath:
+            self._INSTALLER_BIN_ABSPATH = valid_abspath
+        return valid_abspath
 
     @computed_field
     @property

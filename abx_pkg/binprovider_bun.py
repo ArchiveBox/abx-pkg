@@ -10,9 +10,16 @@ from pathlib import Path
 from typing import ClassVar, Self
 
 from platformdirs import user_cache_path
-from pydantic import Field, computed_field, model_validator
+from pydantic import Field, TypeAdapter, computed_field, model_validator
 
-from .base_types import BinName, BinProviderName, InstallArgs, PATHStr
+from .base_types import (
+    BinName,
+    BinProviderName,
+    HostBinPath,
+    InstallArgs,
+    PATHStr,
+    bin_abspath,
+)
 from .binprovider import BinProvider, env_flag_is_true, remap_kwargs
 from .logging import format_subprocess_output
 from .semver import SemVer
@@ -56,9 +63,18 @@ class BunProvider(BinProvider):
     bun_prefix: Path | None = None  # None = inherit BUN_INSTALL / ~/.bun
 
     cache_dir: Path = USER_CACHE_PATH
-    cache_arg: str = f"--cache-dir={cache_dir}"
+    cache_arg: str = ""  # re-derived per-instance from cache_dir in detect_cache_arg
 
     bun_install_args: list[str] = []
+
+    @model_validator(mode="after")
+    def detect_cache_arg(self) -> Self:
+        # Re-derive cache_arg from the instance's cache_dir so that passing
+        # ``cache_dir=Path(...)`` at construction time actually takes effect
+        # (instead of silently inheriting the module-level default).
+        if not self.cache_arg or "--cache-dir=" in self.cache_arg:
+            self.cache_arg = f"--cache-dir={self.cache_dir}"
+        return self
 
     def supports_min_release_age(self, action) -> bool:
         if action not in ("install", "update"):
@@ -89,6 +105,35 @@ class BunProvider(BinProvider):
     @property
     def bin_dir(self) -> Path | None:
         return self.bun_prefix / "bin" if self.bun_prefix else None
+
+    @computed_field
+    @property
+    def INSTALLER_BIN_ABSPATH(self) -> HostBinPath | None:
+        """Resolve the bun executable, honoring ``BUN_BINARY`` for explicit overrides."""
+        if self._INSTALLER_BIN_ABSPATH:
+            return self._INSTALLER_BIN_ABSPATH
+
+        manual_binary = os.environ.get("BUN_BINARY")
+        if manual_binary and os.path.isabs(manual_binary):
+            try:
+                valid_abspath = TypeAdapter(HostBinPath).validate_python(
+                    Path(manual_binary).resolve(),
+                )
+                self._INSTALLER_BIN_ABSPATH = valid_abspath
+                return valid_abspath
+            except Exception:
+                return None
+
+        abspath = bin_abspath(self.INSTALLER_BIN, PATH=self.PATH) or bin_abspath(
+            self.INSTALLER_BIN,
+        )
+        if not abspath:
+            return None
+
+        valid_abspath = TypeAdapter(HostBinPath).validate_python(abspath)
+        if valid_abspath:
+            self._INSTALLER_BIN_ABSPATH = valid_abspath
+        return valid_abspath
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
@@ -168,7 +213,9 @@ class BunProvider(BinProvider):
                 else arg
                 for arg in install_args
             ]
-        if any(arg == "--ignore-scripts" for arg in install_args):
+        if any(
+            arg == "--ignore-scripts" for arg in (*self.bun_install_args, *install_args)
+        ):
             postinstall_scripts = False
 
         cmd: list[str] = ["add", *self.bun_install_args, self.cache_arg, "-g"]
@@ -180,7 +227,7 @@ class BunProvider(BinProvider):
             and not any(
                 arg == "--minimum-release-age"
                 or arg.startswith("--minimum-release-age=")
-                for arg in install_args
+                for arg in (*self.bun_install_args, *install_args)
             )
         ):
             cmd.append(
@@ -217,7 +264,9 @@ class BunProvider(BinProvider):
                 else arg
                 for arg in install_args
             ]
-        if any(arg == "--ignore-scripts" for arg in install_args):
+        if any(
+            arg == "--ignore-scripts" for arg in (*self.bun_install_args, *install_args)
+        ):
             postinstall_scripts = False
 
         cmd: list[str] = ["update", *self.bun_install_args, self.cache_arg, "-g"]
@@ -229,7 +278,7 @@ class BunProvider(BinProvider):
             and not any(
                 arg == "--minimum-release-age"
                 or arg.startswith("--minimum-release-age=")
-                for arg in install_args
+                for arg in (*self.bun_install_args, *install_args)
             )
         ):
             cmd.append(

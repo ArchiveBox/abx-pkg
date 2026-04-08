@@ -115,9 +115,15 @@ jobs:
 
     - name: Setup Yarn (Berry / 4.x via corepack)
       run: |
+        # github-hosted ubuntu runners ship a system-wide yarn 1.22 that
+        # shadows corepack's shim. Wipe it out before enabling corepack so
+        # `yarn` unambiguously resolves to the 4.x shim from node's bin dir.
+        sudo rm -f /usr/local/bin/yarn /usr/local/bin/yarnpkg /usr/bin/yarn /usr/bin/yarnpkg
         corepack enable
         corepack prepare yarn@4.13.0 --activate
+        which yarn
         yarn --version
+        yarn --version | grep -q '^4\.' || { echo "ERROR: yarn is not 4.x"; exit 1; }
 
     - name: Setup Bun
       uses: oven-sh/setup-bun@v2
@@ -238,9 +244,15 @@ jobs:
 
     - name: Setup Yarn (Berry / 4.x via corepack)
       run: |
+        # github-hosted ubuntu runners ship a system-wide yarn 1.22 that
+        # shadows corepack's shim. Wipe it out before enabling corepack so
+        # `yarn` unambiguously resolves to the 4.x shim from node's bin dir.
+        sudo rm -f /usr/local/bin/yarn /usr/local/bin/yarnpkg /usr/bin/yarn /usr/bin/yarnpkg
         corepack enable
         corepack prepare yarn@4.13.0 --activate
+        which yarn
         yarn --version
+        yarn --version | grep -q '^4\.' || { echo "ERROR: yarn is not 4.x"; exit 1; }
 
     - name: Setup Bun
       uses: oven-sh/setup-bun@v2
