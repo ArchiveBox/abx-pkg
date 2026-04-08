@@ -154,12 +154,22 @@ jobs:
         echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
         if [ -d /nix/var/nix/profiles/default/bin ]; then echo "/nix/var/nix/profiles/default/bin" >> "$GITHUB_PATH"; fi
 
+    - name: Environment diagnostic
+      run: |
+        echo "=== OS ==="; uname -a
+        echo "=== PATH ==="; echo "$PATH" | tr ':' '\n'
+        echo "=== node ==="; which -a node && node --version
+        echo "=== pnpm ==="; which -a pnpm && pnpm --version
+        echo "=== yarn ==="; which -a yarn && yarn --version
+        echo "=== bun ==="; which -a bun && bun --version
+        echo "=== deno ==="; which -a deno && deno --version
+
     - name: Run standard test file
       run: |
         export PNPM_HOME="${RUNNER_TEMP}/pnpm"
         export PATH="$PNPM_HOME:$PATH"
         set +e
-        uv run pytest -m "not root_required and not docker_required" "${{ matrix.test.path }}"
+        uv run pytest -vv --tb=long -m "not root_required and not docker_required" "${{ matrix.test.path }}"
         status=$?
         set -e
         if [ "$status" -eq 0 ] || [ "$status" -eq 5 ]; then

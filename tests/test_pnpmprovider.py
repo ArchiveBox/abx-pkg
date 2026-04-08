@@ -381,7 +381,9 @@ class TestPnpmProvider:
         # Hermetic global install: point PNPM_HOME at a temp dir so we can
         # verify the global install side effects without polluting $HOME.
         with tempfile.TemporaryDirectory() as temp_dir:
-            pnpm_home = Path(temp_dir) / "pnpm-home"
+            # ``.resolve()`` so macOS's /var/folders tempdirs (which resolve
+            # through /private) compare equal to the paths pnpm produces.
+            pnpm_home = (Path(temp_dir) / "pnpm-home").resolve()
             previous = os.environ.get("PNPM_HOME")
             os.environ["PNPM_HOME"] = str(pnpm_home)
             try:
@@ -396,7 +398,7 @@ class TestPnpmProvider:
                 assert installed is not None
                 assert installed.loaded_abspath is not None
                 # The shim must end up under PNPM_HOME, not the user's $HOME.
-                assert installed.loaded_abspath.is_relative_to(pnpm_home)
+                assert installed.loaded_abspath.resolve().is_relative_to(pnpm_home)
                 # Real on-disk side effect: pnpm's global package manifest exists.
                 assert (pnpm_home / "global").exists()
                 assert provider.uninstall("zx", nocache=True) is True

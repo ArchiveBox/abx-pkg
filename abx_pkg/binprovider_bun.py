@@ -300,7 +300,7 @@ class BunProvider(BinProvider):
                 and not any(
                     arg == "--minimum-release-age"
                     or arg.startswith("--minimum-release-age=")
-                    for arg in install_args
+                    for arg in (*self.bun_install_args, *install_args)
                 )
             ):
                 cmd.append(
