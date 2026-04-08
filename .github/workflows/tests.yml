@@ -158,11 +158,15 @@ jobs:
       run: |
         echo "=== OS ==="; uname -a
         echo "=== PATH ==="; echo "$PATH" | tr ':' '\n'
-        echo "=== node ==="; which -a node && node --version
-        echo "=== pnpm ==="; which -a pnpm && pnpm --version
-        echo "=== yarn ==="; which -a yarn && yarn --version
-        echo "=== bun ==="; which -a bun && bun --version
-        echo "=== deno ==="; which -a deno && deno --version
+        for bin in python pip uv node npm pnpm yarn bun deno go gem cargo rustc brew apt-get dpkg docker nix nix-env ansible ansible-playbook pyinfra sh bash; do
+          path=$(command -v "$bin" 2>/dev/null || true)
+          if [ -n "$path" ]; then
+            ver=$("$bin" --version 2>&1 | head -1 || true)
+            echo "=== $bin === $path :: $ver"
+          else
+            echo "=== $bin === (not installed)"
+          fi
+        done
 
     - name: Run standard test file
       run: |
