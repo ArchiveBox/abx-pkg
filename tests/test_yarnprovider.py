@@ -207,8 +207,12 @@ class TestYarnProvider:
             strict_installed = strict_provider.install("optipng")
             assert strict_installed is not None
             assert strict_installed.loaded_abspath is not None
-            strict_proc = strict_installed.exec(cmd=("--version",), quiet=True)
-            assert strict_proc.returncode != 0
+            if strict_provider.supports_postinstall_disable("install"):
+                # On Yarn 2+, --mode skip-build / enableScripts: false actually
+                # blocks the postinstall, so the optipng-bin wrapper has no
+                # vendor binary to spawn and exits non-zero.
+                strict_proc = strict_installed.exec(cmd=("--version",), quiet=True)
+                assert strict_proc.returncode != 0
 
             direct_override = strict_provider.install(
                 "optipng",

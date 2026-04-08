@@ -301,13 +301,24 @@ class PnpmProvider(BinProvider):
                 cmd_args.append("--ignore-scripts")
             # pnpm 10+ blocks ALL postinstall scripts unless explicitly allow-listed,
             # so opt in via dangerouslyAllowAllBuilds when scripts are requested.
+            # Match both ``--flag value`` (space-separated) and ``--flag=value`` forms.
             if postinstall_scripts and not any(
-                arg.startswith("--config.dangerouslyAllowAllBuilds") for arg in explicit
+                arg == "--config.dangerouslyAllowAllBuilds"
+                or arg.startswith("--config.dangerouslyAllowAllBuilds=")
+                for arg in explicit
             ):
                 cmd_args.append("--config.dangerouslyAllowAllBuilds=true")
             has_release_age = any(
-                arg.startswith(
-                    ("--config.minimumReleaseAge", "--config.minimum-release-age"),
+                arg
+                in (
+                    "--config.minimumReleaseAge",
+                    "--config.minimum-release-age",
+                )
+                or arg.startswith(
+                    (
+                        "--config.minimumReleaseAge=",
+                        "--config.minimum-release-age=",
+                    ),
                 )
                 for arg in explicit
             )

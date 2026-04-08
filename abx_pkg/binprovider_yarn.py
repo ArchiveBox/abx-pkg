@@ -200,13 +200,15 @@ class YarnProvider(BinProvider):
         prefix.mkdir(parents=True, exist_ok=True)
         package_json = prefix / "package.json"
         if not package_json.exists():
+            # Note: do NOT write a ``packageManager`` field here. Yarn 1.22
+            # treats it as an opt-in to corepack and refuses to install if
+            # the running yarn version doesn't match.
             package_json.write_text(
                 json.dumps(
                     {
                         "name": "abx-pkg-yarn-workspace",
                         "version": "0.0.0",
                         "private": True,
-                        "packageManager": "yarn@4.13.0",
                     },
                     indent=2,
                 )
