@@ -237,7 +237,7 @@ class UvProvider(BinProvider):
         from datetime import datetime, timedelta, timezone
 
         return (datetime.now(timezone.utc) - timedelta(days=min_release_age)).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
+            "%Y-%m-%dT%H:%M:%SZ",
         )
 
     def _pip_flags(
