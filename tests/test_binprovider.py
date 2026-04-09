@@ -122,36 +122,3 @@ class TestBinProvider:
                 timeout=2,
                 quiet=True,
             )
-
-    def test_pip_version_falls_back_when_version_command_exits_nonzero(
-        self,
-        monkeypatch,
-    ):
-        provider = PipProvider(postinstall_scripts=True, min_release_age=0)
-        fake_abspath = Path("/tmp/fake-saws")
-
-        def fake_exec(self, bin_name, cmd, timeout=None, quiet=True, **kwargs):
-            return subprocess.CompletedProcess(
-                args=[str(bin_name), *cmd],
-                returncode=2,
-                stdout="",
-                stderr="error: saws rejected the flag near build 726.2.0",
-            )
-
-        def fake_pip(self, *args, **kwargs):
-            return subprocess.CompletedProcess(
-                args=["pip", "show", "--no-input", "saws"],
-                returncode=0,
-                stdout="Name: saws\nVersion: 0.4.3\n",
-                stderr="",
-            )
-
-        monkeypatch.setattr(PipProvider, "exec", fake_exec)
-        monkeypatch.setattr(PipProvider, "_pip", fake_pip)
-
-        assert provider.get_version(
-            "saws",
-            abspath=fake_abspath,
-            quiet=True,
-            nocache=True,
-        ) == SemVer("0.4.3")

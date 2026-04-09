@@ -1,5 +1,4 @@
 import logging
-import subprocess
 import tempfile
 from pathlib import Path
 
@@ -10,62 +9,66 @@ from abx_pkg.exceptions import BinaryInstallError, BinProviderInstallError
 
 
 class TestUvProvider:
-    def test_version_falls_back_to_uv_metadata_after_failed_console_script_probe(
+    def test_version_falls_back_to_uv_metadata_when_console_script_rejects_flags(
         self,
-        monkeypatch,
     ):
-        provider = UvProvider(
-            uv_venv=Path("/tmp/fake-uv-venv"),
-            cache_dir=Path("/tmp/fake-uv-cache"),
-            postinstall_scripts=True,
-            min_release_age=0,
-        )
-        provider._INSTALLER_BIN_ABSPATH = Path("/tmp/fake-uv")
-        fake_abspath = Path("/tmp/fake-saws")
-        assert provider.uv_venv is not None
-        uv_python = provider.uv_venv / "bin" / "python"
-        version_args_seen: list[str] = []
+        with tempfile.TemporaryDirectory() as tmpdir:
+            provider = UvProvider(
+                uv_venv=Path(tmpdir) / "venv",
+                cache_dir=Path(tmpdir) / "cache",
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+            installed = provider.install("saws")
 
-        def fake_exec(
-            self,
-            bin_name,
-            cmd: tuple[str, ...] = (),
-            cwd=".",
-            quiet=False,
-            **kwargs,
-        ):
-            first_cmd = cmd[0] if cmd else None
-            if first_cmd in {"--version", "-version", "-v"}:
-                version_args_seen.append(first_cmd)
-                return subprocess.CompletedProcess(
-                    args=[str(bin_name), *cmd],
-                    returncode=2,
-                    stdout="",
-                    stderr="error near build 726.2.0",
+            assert installed is not None
+            assert installed.loaded_abspath is not None
+            assert installed.loaded_version is not None
+            assert provider.INSTALLER_BIN_ABSPATH is not None
+            assert provider.uv_venv is not None
+
+            metadata_proc = provider.exec(
+                bin_name=provider.INSTALLER_BIN_ABSPATH,
+                cmd=[
+                    "pip",
+                    "show",
+                    "--python",
+                    str(provider.uv_venv / "bin" / "python"),
+                    "saws",
+                ],
+                timeout=provider.version_timeout,
+                quiet=True,
+            )
+            assert metadata_proc.returncode == 0, (
+                metadata_proc.stderr or metadata_proc.stdout
+            )
+            metadata_version = next(
+                (
+                    SemVer.parse(line.split("Version: ", 1)[1])
+                    for line in metadata_proc.stdout.splitlines()
+                    if line.startswith("Version: ")
+                ),
+                None,
+            )
+            assert metadata_version is not None
+
+            failing_version_cmd = provider.exec(
+                bin_name=installed.loaded_abspath,
+                cmd=["--version"],
+                quiet=True,
+            )
+            assert failing_version_cmd.returncode != 0
+
+            assert installed.loaded_version == metadata_version
+            assert (
+                provider.get_version(
+                    "saws",
+                    abspath=installed.loaded_abspath,
+                    quiet=True,
+                    nocache=True,
                 )
-            if list(cmd[:4]) == [
-                "pip",
-                "show",
-                "--python",
-                str(uv_python),
-            ] and cmd[4:] == ["saws"]:
-                return subprocess.CompletedProcess(
-                    args=[str(bin_name), *cmd],
-                    returncode=0,
-                    stdout="Name: saws\nVersion: 0.4.3\n",
-                    stderr="",
-                )
-            raise AssertionError(f"unexpected uv exec call: {cmd!r}")
-
-        monkeypatch.setattr(UvProvider, "exec", fake_exec)
-
-        assert provider.get_version(
-            "saws",
-            abspath=fake_abspath,
-            quiet=True,
-            nocache=True,
-        ) == SemVer("0.4.3")
-        assert version_args_seen == ["--version", "-version", "-v"]
+                == metadata_version
+            )
 
     def test_install_args_win_for_exclude_newer_flag(self):
         with tempfile.TemporaryDirectory() as temp_dir:
