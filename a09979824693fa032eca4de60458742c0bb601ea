@@ -1,0 +1,45 @@
+pyproject.toml
+  67a976da5825c26a 47
+  e0f7776e004f20b5 50-52
+abx_pkg/cli.py
+  e0f7776e004f20b5 1-447
+tests/test_cli.py
+  e0f7776e004f20b5 1-131
+abx_pkg/binprovider.py
+  67a976da5825c26a 873-877
+tests/test_binprovider.py
+  67a976da5825c26a 125-157
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.6",
+  "base_commit_sha": "a09979824693fa032eca4de60458742c0bb601ea",
+  "prompts": {
+    "67a976da5825c26a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d717c-705b-75f1-8c2f-c652b4164be1",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 39,
+      "total_deletions": 0,
+      "accepted_lines": 39,
+      "overriden_lines": 0
+    },
+    "e0f7776e004f20b5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d717d-0bd5-7192-b6c6-9afd3c4305b6",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 581,
+      "total_deletions": 0,
+      "accepted_lines": 581,
+      "overriden_lines": 0
+    }
+  }
+}
