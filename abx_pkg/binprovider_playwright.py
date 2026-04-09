@@ -21,28 +21,20 @@ from .semver import SemVer
 logger = get_logger(__name__)
 
 
-# Fallback location for the managed npm prefix + bin symlink dir when
-# the caller leaves ``playwright_root`` unset. Browsers themselves land
-# wherever playwright's own default points to (``~/.cache/ms-playwright``
-# on Linux, ``~/Library/Caches/ms-playwright`` on macOS, etc.) — we don't
-# override ``PLAYWRIGHT_BROWSERS_PATH`` unless ``playwright_root`` is
-# explicitly set.
-DEFAULT_ABX_PLAYWRIGHT_BOOKKEEPING_DIR = Path(
-    os.environ.get("ABX_PKG_PLAYWRIGHT_ROOT", "~/.cache/abx-pkg/playwright"),
-).expanduser()
-
-
 class PlaywrightProvider(BinProvider):
     """Playwright browser installer provider.
 
-    Bootstraps the ``playwright`` npm package into a managed prefix and
-    drives ``playwright install --with-deps <install_args>``. When
-    ``playwright_root`` is set it doubles as ``PLAYWRIGHT_BROWSERS_PATH``
-    and browsers land directly inside it (``chromium-<build>/`` etc.).
-    When it's left unset, playwright picks its own default and we leave
-    ``PLAYWRIGHT_BROWSERS_PATH`` alone. Either way each requested
-    browser is symlinked into ``browser_bin_dir`` so ``load(bin_name)``
-    finds it directly.
+    Drives ``playwright install --with-deps <install_args>`` against the
+    ``playwright`` npm package. When ``playwright_root`` is set it
+    doubles as the abx-pkg install root AND ``PLAYWRIGHT_BROWSERS_PATH``:
+    browsers land inside it (``chromium-<build>/`` etc.), a dedicated
+    npm prefix is nested under it, and each requested browser is
+    symlinked into ``browser_bin_dir`` so ``load(bin_name)`` finds it
+    directly. When ``playwright_root`` is left unset, playwright picks
+    its own default browsers path, the npm CLI bootstraps against the
+    host's npm default, and ``load()`` returns the resolved
+    ``executablePath()`` directly without creating any managed
+    symlinks.
 
     ``--with-deps`` installs system packages and requires root on
     Linux, so ``euid`` defaults to ``0``: the base ``BinProvider.exec``
@@ -91,22 +83,24 @@ class PlaywrightProvider(BinProvider):
 
     @computed_field
     @property
-    def bin_dir(self) -> Path:
+    def bin_dir(self) -> Path | None:
+        # Only maintain a managed symlink dir when the caller pinned
+        # ``playwright_root`` — otherwise there's nothing abx-pkg is
+        # managing, so ``load()`` just returns ``executablePath()``.
         if self.browser_bin_dir:
             return self.browser_bin_dir
         if self.playwright_root:
             return self.playwright_root / "bin"
-        return DEFAULT_ABX_PLAYWRIGHT_BOOKKEEPING_DIR / "bin"
+        return None
 
     @computed_field
     @property
-    def npm_prefix(self) -> Path:
+    def npm_prefix(self) -> Path | None:
+        # Nest the npm bootstrap inside ``playwright_root`` when set;
+        # otherwise let ``NpmProvider`` use the host's npm default.
         if self.playwright_root:
-            # Nest inside install_root; playwright only tracks
-            # ``<browser>-<version>/`` directories so this cohabits
-            # cleanly with the browser tree.
             return self.playwright_root / "_abx_npm"
-        return DEFAULT_ABX_PLAYWRIGHT_BOOKKEEPING_DIR / "npm"
+        return None
 
     @computed_field
     @property
@@ -115,12 +109,17 @@ class PlaywrightProvider(BinProvider):
 
     @model_validator(mode="after")
     def load_PATH_from_root(self) -> Self:
-        self.PATH = self._merge_PATH(
-            self.bin_dir,
-            self.npm_prefix / "node_modules" / ".bin",
-            PATH=self.PATH,
-            prepend=True,
-        )
+        path_entries: list[Path] = []
+        if self.bin_dir is not None:
+            path_entries.append(self.bin_dir)
+        if self.npm_prefix is not None:
+            path_entries.append(self.npm_prefix / "node_modules" / ".bin")
+        if path_entries:
+            self.PATH = self._merge_PATH(
+                *path_entries,
+                PATH=self.PATH,
+                prepend=True,
+            )
         return self
 
     def exec(
@@ -160,43 +159,59 @@ class PlaywrightProvider(BinProvider):
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
     ) -> None:
-        self.bin_dir.mkdir(parents=True, exist_ok=True)
         if self.playwright_root is not None:
             self.playwright_root.mkdir(parents=True, exist_ok=True)
+        if self.bin_dir is not None:
+            self.bin_dir.mkdir(parents=True, exist_ok=True)
 
         # Bootstrap the ``playwright`` npm package (which ships the CLI
-        # and its ``playwright-core`` peer) into our managed prefix.
+        # and its ``playwright-core`` peer). Nest it under
+        # ``playwright_root`` when one is pinned; otherwise leave
+        # ``npm_prefix`` unset so ``NpmProvider`` falls back to the
+        # host's own npm default.
+        npm_provider_kwargs: dict = {
+            "postinstall_scripts": True,
+            "min_release_age": 0,
+        }
+        if self.npm_prefix is not None:
+            npm_provider_kwargs["npm_prefix"] = self.npm_prefix
         cli = Binary(
             name="playwright",
-            binproviders=[
-                NpmProvider(
-                    npm_prefix=self.npm_prefix,
-                    postinstall_scripts=True,
-                    min_release_age=0,
-                ),
-            ],
+            binproviders=[NpmProvider(**npm_provider_kwargs)],
             overrides={"npm": {"install_args": ["playwright"]}},
             postinstall_scripts=True,
             min_release_age=0,
         ).load_or_install()
         self._INSTALLER_BIN_ABSPATH = cli.abspath
-        self.PATH = self._merge_PATH(
-            self.bin_dir,
-            self.npm_prefix / "node_modules" / ".bin",
-            PATH="",
-            prepend=True,
-        )
+        path_entries: list[Path] = []
+        if self.bin_dir is not None:
+            path_entries.append(self.bin_dir)
+        if self.npm_prefix is not None:
+            path_entries.append(self.npm_prefix / "node_modules" / ".bin")
+        if path_entries:
+            self.PATH = self._merge_PATH(
+                *path_entries,
+                PATH="",
+                prepend=True,
+            )
 
     def _playwright_executable_path(self, bin_name: str) -> Path | None:
         """Return ``playwright[bin_name].executablePath()`` via node.
 
         Delegates to ``playwright-core`` so we stay consistent with
         upstream layout across OSes and builds without hardcoding
-        browser-specific path patterns.
+        browser-specific path patterns. When ``npm_prefix`` is pinned
+        we ``require()`` the absolute ``<prefix>/node_modules/playwright``
+        path so the managed install wins; otherwise we let node's own
+        module resolution find whichever ``playwright`` the host ships.
         """
-        node_modules = self.npm_prefix / "node_modules"
-        if not (node_modules / "playwright").is_dir():
-            return None
+        if self.npm_prefix is not None:
+            pw_require_target = self.npm_prefix / "node_modules" / "playwright"
+            if not pw_require_target.is_dir():
+                return None
+            require_arg = str(pw_require_target)
+        else:
+            require_arg = "playwright"
         script = (
             "const pw=require(process.argv[1]);"
             "const bt=pw[process.argv[2]];"
@@ -206,7 +221,7 @@ class PlaywrightProvider(BinProvider):
         )
         proc = self.exec(
             bin_name="node",
-            cmd=["-e", script, str(node_modules / "playwright"), bin_name],
+            cmd=["-e", script, require_arg, bin_name],
             quiet=True,
             timeout=self.version_timeout,
         )
@@ -238,13 +253,14 @@ class PlaywrightProvider(BinProvider):
         bin_name: BinName | HostBinPath,
         **context,
     ) -> HostBinPath | None:
-        link = self.bin_dir / str(bin_name)
-        if link.exists() and os.access(link, os.X_OK):
-            return link
+        if self.bin_dir is not None:
+            link = self.bin_dir / str(bin_name)
+            if link.exists() and os.access(link, os.X_OK):
+                return link
         resolved = self._playwright_executable_path(str(bin_name))
         if not resolved:
             return None
-        # If the caller pinned ``playwright_root``, a hit from
+        # When ``playwright_root`` is pinned, a hit from
         # ``executablePath()`` that points outside that managed tree
         # (e.g. an ambient system install) should not satisfy
         # ``load()`` — otherwise an unrelated host-wide playwright
@@ -253,6 +269,8 @@ class PlaywrightProvider(BinProvider):
             root_real = self.playwright_root.resolve(strict=False)
             if root_real not in resolved.resolve(strict=False).parents:
                 return None
+        if self.bin_dir is None:
+            return resolved
         try:
             return self._refresh_symlink(str(bin_name), resolved)
         except OSError:
@@ -287,7 +305,8 @@ class PlaywrightProvider(BinProvider):
                 f"{self.__class__.__name__} could not resolve installed browser "
                 f"path for {bin_name} (playwright_root={self.playwright_root})",
             )
-        self._refresh_symlink(bin_name, resolved)
+        if self.bin_dir is not None:
+            self._refresh_symlink(bin_name, resolved)
         return format_subprocess_output(proc.stdout, proc.stderr)
 
     @remap_kwargs({"packages": "install_args"})
@@ -298,6 +317,30 @@ class PlaywrightProvider(BinProvider):
         timeout: int | None = None,
         **context,
     ) -> str:
+        # Browser versions are pinned by the ``playwright`` npm package,
+        # so a real upgrade means bumping that package first and then
+        # re-running ``playwright install`` to pull the new browser
+        # builds. When ``npm_prefix`` is pinned, drive the bump through
+        # our managed NpmProvider; otherwise trust the host-installed
+        # playwright to already be at the desired version.
+        if self.npm_prefix is not None:
+            try:
+                NpmProvider(
+                    npm_prefix=self.npm_prefix,
+                    postinstall_scripts=True,
+                    min_release_age=0,
+                ).update("playwright", packages=["playwright"])
+            except Exception:
+                logger.debug(
+                    "PlaywrightProvider: npm update for ``playwright`` failed, "
+                    "falling through to re-running ``playwright install``",
+                    exc_info=True,
+                )
+            # Drop the cached installer abspath so ``setup()`` in the
+            # install handler below re-resolves against the (possibly
+            # new) bin location.
+            self._INSTALLER_BIN_ABSPATH = None
+
         merged_args = list(install_args or self.get_install_args(bin_name))
         if "--force" not in merged_args:
             merged_args = ["--force", *merged_args]
@@ -315,9 +358,11 @@ class PlaywrightProvider(BinProvider):
         install_args: InstallArgs | None = None,
         **context,
     ) -> bool:
-        # Drop the symlink first so ``load()`` stops seeing the tool
-        # even if browser dir removal partially fails.
-        (self.bin_dir / bin_name).unlink(missing_ok=True)
+        # Drop the symlink first (if we're managing one) so ``load()``
+        # stops seeing the tool even if browser dir removal partially
+        # fails.
+        if self.bin_dir is not None:
+            (self.bin_dir / bin_name).unlink(missing_ok=True)
 
         # ``playwright uninstall`` only removes *unused* browsers from
         # the entire host, so drop the matching directories ourselves.

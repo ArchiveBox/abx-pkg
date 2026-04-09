@@ -245,6 +245,41 @@ class TestPlaywrightProvider:
                 assert_version_command=False,
             )
 
+    def test_update_refreshes_chromium_in_place(self, test_machine):
+        test_machine.require_tool("node")
+        test_machine.require_tool("npm")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            playwright_root = Path(temp_dir) / "playwright-root"
+            provider = PlaywrightProvider(playwright_root=playwright_root)
+
+            installed = provider.install("chromium", nocache=True)
+            assert installed is not None
+            assert installed.loaded_abspath is not None
+            original_target = installed.loaded_abspath.resolve()
+            assert original_target.exists()
+
+            updated = provider.update("chromium", nocache=True)
+            test_machine.assert_shallow_binary_loaded(
+                updated,
+                assert_version_command=False,
+            )
+            assert updated is not None
+            assert updated.loaded_abspath is not None
+            # The symlink resolves to a chromium build that actually
+            # exists on disk after update (whether the build-id moved
+            # depends on the current playwright release, but the
+            # resolved target must always exist and still live inside
+            # ``playwright_root``).
+            updated_target = updated.loaded_abspath.resolve()
+            assert updated_target.exists()
+            assert playwright_root.resolve() in updated_target.parents
+            assert any(
+                child.name.startswith("chromium-")
+                for child in playwright_root.iterdir()
+                if child.is_dir()
+            )
+
     def test_provider_dry_run_does_not_install_chromium(self, test_machine):
         test_machine.require_tool("node")
         test_machine.require_tool("npm")
