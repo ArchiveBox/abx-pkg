@@ -200,7 +200,7 @@ curl = Binary(
 #### Advanced Usage
 
 <details>
-<summary><strong>Define a reusable <code>Binary</code> subclass with per-provider overrides</strong></summary>
+<summary><h4>Define a reusable <code>Binary</code> subclass with per-provider overrides</h4></summary>
 
 ```python
 from pydantic import InstanceOf
@@ -244,7 +244,7 @@ assert ytdlp.abspath is None and ytdlp.version is None
 </details>
 
 <details>
-<summary><strong>Pick a binary dynamically (e.g. podman-or-docker) via overrides</strong></summary>
+<summary><h4>Pick a binary dynamically (e.g. podman-or-docker) via overrides</h4></summary>
 
 ```python
 import os
@@ -278,7 +278,7 @@ docker = DockerBinary().load_or_install()
 </details>
 
 <details>
-<summary><strong>Subclass <code>BinProvider</code> to add support for a new package manager</strong></summary>
+<summary><h4>Subclass <code>BinProvider</code> to add support for a new package manager</h4></summary>
 
 ```python
 from pathlib import Path
@@ -338,7 +338,7 @@ print(rg.version)        # SemVer(...)
 </details>
 
 <details>
-<summary><strong>Django integration: store <code>BinProvider</code> / <code>Binary</code> in model fields and render them in the Admin</strong></summary>
+<summary><h4>Django integration: store <code>BinProvider</code> / <code>Binary</code> in model fields and render them in the Admin</h4></summary>
 
 With a few more packages, you get type-checked Django fields & forms that support `BinProvider` and `Binary`.
 
