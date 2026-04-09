@@ -350,31 +350,51 @@ class UvProvider(BinProvider):
         )
 
         if self.uv_venv:
-            # ``--reinstall`` (in addition to ``--upgrade``) forces uv to
-            # fully replace the old package's on-disk files instead of
-            # just overwriting matching filenames. Without it, stale
-            # compiled ``.so`` / ``.pyc`` files from the previous version
-            # can shadow the newly-installed ``.py`` files (manifested as
-            # ``black --version`` still reporting the old version after a
-            # successful upgrade).
+            # ``uv pip install --upgrade`` (with or without ``--reinstall``)
+            # in uv 0.11+ leaves the previous version's compiled ``.so``
+            # files in place, so ``import pkg`` keeps loading the stale
+            # compiled module instead of the freshly-installed ``.py``
+            # sources. Avoid this by doing an explicit uninstall + install
+            # cycle, which fully drops the old package directory before
+            # laying down the new one.
+            tool_names = [
+                arg.split("[", 1)[0].split("=", 1)[0].split(">", 1)[0].split("<", 1)[0]
+                for arg in install_args
+                if arg and not arg.startswith("-")
+            ] or [bin_name]
+            uninstall_proc = self.exec(
+                bin_name=installer_bin,
+                cmd=[
+                    "pip",
+                    "uninstall",
+                    "--python",
+                    str(self.uv_venv / "bin" / "python"),
+                    *tool_names,
+                ],
+                timeout=timeout,
+            )
+            # Treat "no packages to uninstall" as a no-op success.
+            if uninstall_proc.returncode != 0 and "No packages to uninstall" not in (
+                uninstall_proc.stderr or ""
+            ):
+                self._raise_proc_error("update", tool_names, uninstall_proc)
             cmd = [
                 "pip",
                 "install",
                 "--python",
                 str(self.uv_venv / "bin" / "python"),
-                "--upgrade",
-                "--reinstall",
                 self.cache_arg,
                 *flags,
                 *self.uv_install_args,
                 *install_args,
             ]
         else:
+            # ``uv tool install --force`` creates a fresh per-tool venv each
+            # time, so there's no stale-compiled-artifact hazard.
             cmd = [
                 "tool",
                 "install",
                 "--force",
-                "--reinstall",
                 self.cache_arg,
                 *flags,
                 *self.uv_install_args,
