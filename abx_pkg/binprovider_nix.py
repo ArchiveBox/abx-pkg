@@ -15,6 +15,7 @@ from .base_types import (
     BinName,
     InstallArgs,
     HostBinPath,
+    abx_pkg_install_root_default,
     bin_abspath,
 )
 from .semver import SemVer
@@ -22,9 +23,9 @@ from .binprovider import BinProvider, DEFAULT_ENV_PATH, remap_kwargs
 from .logging import format_subprocess_output
 
 
-DEFAULT_NIX_PROFILE = Path(
-    os.environ.get("ABX_PKG_NIX_PROFILE", "~/.nix-profile"),
-).expanduser()
+# Ultimate fallback when neither the constructor arg nor
+# ``ABX_PKG_NIX_ROOT`` nor ``ABX_PKG_LIB_DIR`` is set.
+DEFAULT_NIX_PROFILE = Path("~/.nix-profile").expanduser()
 DEFAULT_NIX_BIN_DIR = Path("/nix/var/nix/profiles/default/bin")
 
 
@@ -35,7 +36,8 @@ class NixProvider(BinProvider):
 
     PATH: PATHStr = ""
 
-    nix_profile: Path = DEFAULT_NIX_PROFILE
+    # Default: ABX_PKG_NIX_ROOT > ABX_PKG_LIB_DIR/nix > ~/.nix-profile.
+    nix_profile: Path = abx_pkg_install_root_default("nix") or DEFAULT_NIX_PROFILE
     nix_state_dir: Path | None = None
     nix_install_args: list[str] = [
         "--extra-experimental-features",

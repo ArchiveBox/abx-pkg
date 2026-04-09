@@ -17,6 +17,7 @@ from .base_types import (
     HostBinPath,
     InstallArgs,
     PATHStr,
+    abx_pkg_install_root_default,
     bin_abspath,
 )
 from .binprovider import BinProvider, env_flag_is_true, remap_kwargs
@@ -61,7 +62,9 @@ class DenoProvider(BinProvider):
         repr=False,
     )
 
-    deno_root: Path | None = None  # mirrors $DENO_INSTALL_ROOT, defaults to ~/.deno
+    # Mirrors $DENO_INSTALL_ROOT, defaults to ~/.deno when None.
+    # Default: ABX_PKG_DENO_ROOT > ABX_PKG_LIB_DIR/deno > None.
+    deno_root: Path | None = abx_pkg_install_root_default("deno")
     deno_dir: Path | None = None  # mirrors $DENO_DIR for cache isolation
 
     cache_dir: Path = USER_CACHE_PATH

@@ -177,7 +177,7 @@ Use `min_version=None` to explicitly disable version floor checks.
 
 ### [`BinProvider`](https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/binprovider.py#:~:text=class%20BinProvider)
 
-**Built-in implementations:** `EnvProvider`, `AptProvider`, `BrewProvider`, `PipProvider`, `UvProvider`, `NpmProvider`, `PnpmProvider`, `YarnProvider`, `BunProvider`, `DenoProvider`, `CargoProvider`, `GemProvider`, `GoGetProvider`, `NixProvider`, `DockerProvider`, `PyinfraProvider`, `AnsibleProvider`, `BashProvider`, `ChromeWebstoreProvider`, `PuppeteerProvider`
+**Built-in implementations:** `EnvProvider`, `AptProvider`, `BrewProvider`, `PipProvider`, `UvProvider`, `NpmProvider`, `PnpmProvider`, `YarnProvider`, `BunProvider`, `DenoProvider`, `CargoProvider`, `GemProvider`, `GoGetProvider`, `NixProvider`, `DockerProvider`, `PyinfraProvider`, `AnsibleProvider`, `BashProvider`, `ChromeWebstoreProvider`, `PuppeteerProvider`, `PlaywrightProvider`
 
 This type represents a provider of binaries, e.g. a package manager like `apt` / `pip` / `npm`, or `env` (which only resolves binaries already present in `$PATH`).
 
@@ -207,6 +207,45 @@ dry_run = False                      # or ABX_PKG_DRY_RUN=1 / DRY_RUN=1
 - `postinstall_scripts` and `min_release_age` are standard provider/binary/action kwargs, but only supporting providers hydrate default values from `ABX_PKG_POSTINSTALL_SCRIPTS` and `ABX_PKG_MIN_RELEASE_AGE`.
 - Providers that do not support one of those controls leave the provider default as `None`. If you pass an explicit unsupported value during `install()` / `update()`, it is logged as a warning and ignored.
 - Precedence is: explicit action args > `Binary(...)` defaults > provider defaults.
+
+#### 🌱 Environment variables
+
+All abx-pkg env vars are read once at import time and only apply when set. Explicit constructor kwargs always override these defaults.
+
+**Behavioral controls** (apply across all providers):
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `ABX_PKG_DRY_RUN` / `DRY_RUN` | `0` | Flips the shared `dry_run` default. `ABX_PKG_DRY_RUN` wins if both are set. Provider subprocesses are logged and skipped, `install()` / `update()` return a placeholder, `uninstall()` returns `True`. |
+| `ABX_PKG_INSTALL_TIMEOUT` | `120` | Seconds to wait for `install()` / `update()` / `uninstall()` handler subprocesses. |
+| `ABX_PKG_VERSION_TIMEOUT` | `10` | Seconds to wait for version / metadata probes (`--version`, `npm show`, `pip show`, etc.). |
+| `ABX_PKG_POSTINSTALL_SCRIPTS` | unset | Hydrates the provider-level default for the `postinstall_scripts` kwarg on every provider that supports it (`pip`, `uv`, `npm`, `pnpm`, `yarn`, `bun`, `deno`, `brew`, `chromewebstore`, `puppeteer`). |
+| `ABX_PKG_MIN_RELEASE_AGE` | `7` | Hydrates the provider-level default (in days) for the `min_release_age` kwarg on every provider that supports it (`pip`, `uv`, `npm`, `pnpm`, `yarn`, `bun`, `deno`). |
+
+**Install-root controls** (one global default + one per-provider override):
+
+| Variable | Applies to | Effect |
+| --- | --- | --- |
+| `ABX_PKG_LIB_DIR` | **every** provider with an `INSTALL_ROOT_FIELD` | Centralized install root. When set, each provider defaults its install root to `$ABX_PKG_LIB_DIR/<provider name>` (e.g. `<lib>/npm`, `<lib>/pip`, `<lib>/gem`, `<lib>/playwright`). Accepts relative (`./lib`), tilde (`~/.config/abx/lib`), and absolute (`/tmp/abxlib`) paths. |
+| `ABX_PKG_BASH_ROOT` | `BashProvider` (`bash_root`) | Per-provider override; beats `ABX_PKG_LIB_DIR/bash`. |
+| `ABX_PKG_BREW_ROOT` | `BrewProvider` (`brew_prefix`) | Per-provider override; beats `ABX_PKG_LIB_DIR/brew`. |
+| `ABX_PKG_BUN_ROOT` | `BunProvider` (`bun_prefix`) | Per-provider override; beats `ABX_PKG_LIB_DIR/bun`. |
+| `ABX_PKG_CARGO_ROOT` | `CargoProvider` (`cargo_root`) | Per-provider override; beats `ABX_PKG_LIB_DIR/cargo`. |
+| `ABX_PKG_CHROMEWEBSTORE_ROOT` | `ChromeWebstoreProvider` (`extensions_root`) | Per-provider override; beats `ABX_PKG_LIB_DIR/chromewebstore`. |
+| `ABX_PKG_DENO_ROOT` | `DenoProvider` (`deno_root`) | Per-provider override; beats `ABX_PKG_LIB_DIR/deno`. |
+| `ABX_PKG_DOCKER_ROOT` | `DockerProvider` (`docker_root`) | Per-provider override; beats `ABX_PKG_LIB_DIR/docker`. |
+| `ABX_PKG_GEM_ROOT` | `GemProvider` (`gem_home`) | Per-provider override; beats `ABX_PKG_LIB_DIR/gem`. |
+| `ABX_PKG_GOGET_ROOT` | `GoGetProvider` (`gopath`) | Per-provider override; beats `ABX_PKG_LIB_DIR/goget`. |
+| `ABX_PKG_NIX_ROOT` | `NixProvider` (`nix_profile`) | Per-provider override; beats `ABX_PKG_LIB_DIR/nix`. |
+| `ABX_PKG_NPM_ROOT` | `NpmProvider` (`npm_prefix`) | Per-provider override; beats `ABX_PKG_LIB_DIR/npm`. |
+| `ABX_PKG_PIP_ROOT` | `PipProvider` (`pip_venv`) | Per-provider override; beats `ABX_PKG_LIB_DIR/pip`. |
+| `ABX_PKG_PLAYWRIGHT_ROOT` | `PlaywrightProvider` (`playwright_root`) | Per-provider override; beats `ABX_PKG_LIB_DIR/playwright`. |
+| `ABX_PKG_PNPM_ROOT` | `PnpmProvider` (`pnpm_prefix`) | Per-provider override; beats `ABX_PKG_LIB_DIR/pnpm`. |
+| `ABX_PKG_PUPPETEER_ROOT` | `PuppeteerProvider` (`puppeteer_root`) | Per-provider override; beats `ABX_PKG_LIB_DIR/puppeteer`. |
+| `ABX_PKG_UV_ROOT` | `UvProvider` (`uv_venv`) | Per-provider override; beats `ABX_PKG_LIB_DIR/uv`. |
+| `ABX_PKG_YARN_ROOT` | `YarnProvider` (`yarn_prefix`) | Per-provider override; beats `ABX_PKG_LIB_DIR/yarn`. |
+
+Install-root precedence (most specific wins): explicit `install_root=` / provider-specific kwarg (e.g. `npm_prefix=`, `pip_venv=`) > `ABX_PKG_<NAME>_ROOT` > `ABX_PKG_LIB_DIR/<name>` > built-in default.
 
 Supported override keys are the same everywhere:
 
@@ -579,6 +618,27 @@ browser_cache_dir = <puppeteer_root>/cache
 - Security: `min_release_age` is unsupported for browser installs and is ignored with a warning if explicitly requested. `postinstall_scripts=False` is supported for the underlying npm bootstrap path, and `ABX_PKG_POSTINSTALL_SCRIPTS` hydrates the provider default here.
 - Overrides: `install_args` are passed through to `@puppeteer/browsers install ...`, with the provider appending its managed `--path=<cache_dir>`.
 - Notes: installed-browser resolution uses semantic version ordering, not lexicographic string sorting.
+
+#### 🎬 [`PlaywrightProvider`](./abx_pkg/binprovider_playwright.py) (`playwright`)
+
+Source: [`abx_pkg/binprovider_playwright.py`](./abx_pkg/binprovider_playwright.py) • Tests: [`tests/test_playwrightprovider.py`](./tests/test_playwrightprovider.py)
+
+```python
+INSTALLER_BIN = "playwright"
+PATH = ""
+playwright_root = None           # when set, doubles as PLAYWRIGHT_BROWSERS_PATH
+browser_bin_dir = <playwright_root>/bin  # symlink dir for resolved browsers
+playwright_install_args = ["--with-deps"]
+euid = 0                         # routes exec() through sudo-first-then-fallback
+```
+
+- Install root: set `playwright_root` / `install_root` to pin both the abx-pkg managed root AND `PLAYWRIGHT_BROWSERS_PATH` to the same directory. Leave it unset to let playwright use its own OS-default browsers path (`~/.cache/ms-playwright` on Linux etc.) — in that case abx-pkg maintains no managed symlink dir or npm prefix at all, the `playwright` npm CLI bootstraps against the host's npm default, and `load()` returns the resolved `executablePath()` directly. `browser_bin_dir` / `bin_dir` overrides the symlink directory when `playwright_root` is pinned.
+- Auto-switching: bootstraps the `playwright` npm package through `NpmProvider`, then runs `playwright install --with-deps <install_args>` against it. Resolves each installed browser's real executable via the `playwright-core` Node.js API (`chromium.executablePath()` etc.) and writes a symlink into `bin_dir` when one is configured.
+- `dry_run`: shared behavior — the install handler short-circuits to a placeholder without touching the host.
+- Privilege handling: `--with-deps` installs system packages and requires root on Linux. ``euid`` defaults to ``0``, which routes every ``exec()`` call through the base ``BinProvider.exec`` sudo-first-then-fallback path — it tries ``sudo -n -- playwright install --with-deps ...`` first on non-root hosts, falls back to running the command directly if sudo fails or isn't available, and merges both stderr outputs into the final error if both attempts fail.
+- Security: `min_release_age` and `postinstall_scripts=False` are unsupported for browser installs and are ignored with a warning if explicitly requested.
+- Overrides: `install_args` are appended onto `playwright install` after `playwright_install_args` (defaults to `["--with-deps"]`) and passed through verbatim — use whatever browser names / flags the `playwright install` CLI accepts (`chromium`, `firefox`, `webkit`, `--no-shell`, `--only-shell`, `--force`, etc.).
+- Notes: `update()` bumps the managed `playwright` npm package first (via `NpmProvider.update`) so its pinned browser versions refresh, then re-runs `playwright install --force <install_args>` to pull any new browser builds. `uninstall()` removes the relevant `<bin_name>-*/` directories from `playwright_root` alongside the bin-dir symlink, since `playwright uninstall` only drops *unused* browsers on its own. Both `update()` and `uninstall()` leave playwright's OS-default cache untouched when `playwright_root` is unset.
 
 #### 🛠️ [`PyinfraProvider`](./abx_pkg/binprovider_pyinfra.py) (`pyinfra`)
 

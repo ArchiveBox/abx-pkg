@@ -20,6 +20,7 @@ from .base_types import (
     BinName,
     InstallArgs,
     HostBinPath,
+    abx_pkg_install_root_default,
     bin_abspath,
 )
 from .semver import SemVer
@@ -65,7 +66,9 @@ class NpmProvider(BinProvider):
         repr=False,
     )
 
-    npm_prefix: Path | None = None  # None = -g global, otherwise it's a path
+    # None = -g global, otherwise it's a path.
+    # Default: ABX_PKG_NPM_ROOT > ABX_PKG_LIB_DIR/npm > None.
+    npm_prefix: Path | None = abx_pkg_install_root_default("npm")
 
     cache_dir: Path = USER_CACHE_PATH
     cache_arg: str = f"--cache={cache_dir}"

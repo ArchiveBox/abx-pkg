@@ -18,6 +18,7 @@ from .base_types import (
     HostBinPath,
     InstallArgs,
     PATHStr,
+    abx_pkg_install_root_default,
     bin_abspath,
 )
 from .binprovider import BinProvider, env_flag_is_true, remap_kwargs
@@ -34,11 +35,10 @@ except Exception:
     pass
 
 
-_DEFAULT_YARN_ROOT = (
-    Path(os.environ.get("ABX_PKG_YARN_ROOT") or "~/.cache/abx-pkg/yarn")
-    .expanduser()
-    .absolute()
-)
+# Ultimate fallback when neither ``yarn_prefix=`` nor
+# ``ABX_PKG_YARN_ROOT`` nor ``ABX_PKG_LIB_DIR`` is set (those are
+# resolved via ``abx_pkg_install_root_default("yarn")``).
+_DEFAULT_YARN_ROOT = Path("~/.cache/abx-pkg/yarn").expanduser().absolute()
 
 
 class YarnProvider(BinProvider):
@@ -71,7 +71,8 @@ class YarnProvider(BinProvider):
         repr=False,
     )
 
-    yarn_prefix: Path | None = None  # workspace dir; defaults to a managed cache dir
+    # Workspace dir. Default: ABX_PKG_YARN_ROOT > ABX_PKG_LIB_DIR/yarn > None.
+    yarn_prefix: Path | None = abx_pkg_install_root_default("yarn")
 
     cache_dir: Path = USER_CACHE_PATH
 

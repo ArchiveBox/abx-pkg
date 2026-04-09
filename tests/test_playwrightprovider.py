@@ -1,0 +1,307 @@
+import tempfile
+from pathlib import Path
+
+from abx_pkg import Binary, PlaywrightProvider
+
+
+class TestPlaywrightProvider:
+    def test_chromium_install_puts_real_browser_into_managed_bin_dir(
+        self,
+        test_machine,
+    ):
+        test_machine.require_tool("node")
+        test_machine.require_tool("npm")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            playwright_root = Path(temp_dir) / "playwright-root"
+            provider = PlaywrightProvider(playwright_root=playwright_root)
+
+            installed = provider.install("chromium", nocache=True)
+            assert installed is not None
+            test_machine.assert_shallow_binary_loaded(
+                installed,
+                assert_version_command=False,
+            )
+            assert installed.name == "chromium"
+            assert installed.loaded_abspath is not None
+            assert installed.loaded_abspath.exists()
+            assert provider.bin_dir is not None
+            assert installed.loaded_abspath.parent == provider.bin_dir
+            assert installed.loaded_abspath == provider.bin_dir / "chromium"
+            # The symlink resolves into playwright_root (which is also
+            # PLAYWRIGHT_BROWSERS_PATH for this provider).
+            real_target = installed.loaded_abspath.resolve()
+            assert playwright_root.resolve() in real_target.parents
+            # Playwright lays out chromium builds as chromium-<build>/.
+            assert any(
+                child.name.startswith("chromium-")
+                for child in playwright_root.iterdir()
+                if child.is_dir()
+            )
+
+            loaded = provider.load("chromium", nocache=True)
+            test_machine.assert_shallow_binary_loaded(
+                loaded,
+                assert_version_command=False,
+            )
+            assert loaded is not None
+            assert loaded.loaded_abspath is not None
+            assert loaded.loaded_abspath.resolve() == installed.loaded_abspath.resolve()
+
+            loaded_or_installed = provider.load_or_install("chromium", nocache=True)
+            test_machine.assert_shallow_binary_loaded(
+                loaded_or_installed,
+                assert_version_command=False,
+            )
+            assert loaded_or_installed is not None
+            assert loaded_or_installed.loaded_abspath is not None
+            assert (
+                loaded_or_installed.loaded_abspath.resolve()
+                == installed.loaded_abspath.resolve()
+            )
+
+    def test_install_root_alias_without_explicit_bin_dir_uses_root_bin(
+        self,
+        test_machine,
+    ):
+        test_machine.require_tool("node")
+        test_machine.require_tool("npm")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            install_root = Path(temp_dir) / "pw-root"
+            provider = PlaywrightProvider.model_validate(
+                {
+                    "install_root": install_root,
+                },
+            )
+
+            installed = provider.install("chromium")
+
+            test_machine.assert_shallow_binary_loaded(
+                installed,
+                assert_version_command=False,
+            )
+            assert installed is not None
+            assert provider.install_root == install_root
+            assert provider.bin_dir == install_root / "bin"
+            assert installed.loaded_abspath is not None
+            assert installed.loaded_abspath.parent == provider.bin_dir
+            # Chromium build landed directly under install_root (which is
+            # the effective PLAYWRIGHT_BROWSERS_PATH for this provider).
+            assert any(
+                child.name.startswith("chromium-")
+                for child in install_root.iterdir()
+                if child.is_dir()
+            )
+
+    def test_install_root_and_bin_dir_aliases_install_into_the_requested_paths(
+        self,
+        test_machine,
+    ):
+        test_machine.require_tool("node")
+        test_machine.require_tool("npm")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            install_root = Path(temp_dir) / "pw-root"
+            bin_dir = Path(temp_dir) / "custom-bin"
+            provider = PlaywrightProvider.model_validate(
+                {
+                    "install_root": install_root,
+                    "bin_dir": bin_dir,
+                },
+            )
+
+            installed = provider.install("chromium")
+
+            test_machine.assert_shallow_binary_loaded(
+                installed,
+                assert_version_command=False,
+            )
+            assert installed is not None
+            assert provider.install_root == install_root
+            assert provider.bin_dir == bin_dir
+            assert installed.loaded_abspath is not None
+            assert installed.loaded_abspath.parent == bin_dir
+            # Browser tree still landed in install_root, not bin_dir.
+            assert any(
+                child.name.startswith("chromium-")
+                for child in install_root.iterdir()
+                if child.is_dir()
+            )
+
+    def test_explicit_browser_bin_dir_takes_precedence_over_existing_PATH_entries(
+        self,
+        test_machine,
+    ):
+        test_machine.require_tool("node")
+        test_machine.require_tool("npm")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_dir_path = Path(temp_dir)
+            ambient_provider = PlaywrightProvider(
+                playwright_root=temp_dir_path / "ambient-root",
+                browser_bin_dir=temp_dir_path / "ambient-root/bin",
+            )
+            ambient_installed = ambient_provider.install("chromium")
+            assert ambient_installed is not None
+            assert ambient_installed.loaded_abspath is not None
+            assert ambient_installed.loaded_abspath.parent == ambient_provider.bin_dir
+
+            provider = PlaywrightProvider(
+                PATH=str(ambient_provider.bin_dir),
+                playwright_root=temp_dir_path / "playwright-root",
+                browser_bin_dir=temp_dir_path / "custom-bin",
+            )
+
+            installed = provider.install("chromium")
+
+            test_machine.assert_shallow_binary_loaded(
+                installed,
+                assert_version_command=False,
+            )
+            assert installed is not None
+            assert provider.bin_dir == temp_dir_path / "custom-bin"
+            assert installed.loaded_abspath is not None
+            assert installed.loaded_abspath.parent == provider.bin_dir
+            # The two providers resolve to different on-disk symlinks.
+            assert installed.loaded_abspath != ambient_installed.loaded_abspath
+
+    def test_provider_install_args_are_passed_through_to_playwright_install(
+        self,
+        test_machine,
+    ):
+        test_machine.require_tool("node")
+        test_machine.require_tool("npm")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            playwright_root = Path(temp_dir) / "playwright-root"
+            # Use ``--no-shell`` to skip the headless shell download, which
+            # is a real playwright install flag we can verify by checking
+            # that ``chromium_headless_shell-*`` does NOT end up on disk.
+            provider = PlaywrightProvider(
+                playwright_root=playwright_root,
+            ).get_provider_with_overrides(
+                overrides={"chromium": {"install_args": ["chromium", "--no-shell"]}},
+            )
+
+            installed = provider.install("chromium")
+
+            test_machine.assert_shallow_binary_loaded(
+                installed,
+                assert_version_command=False,
+            )
+            assert installed is not None
+            assert installed.loaded_abspath is not None
+            assert installed.loaded_abspath.exists()
+            chromium_dirs = [
+                child
+                for child in playwright_root.iterdir()
+                if child.is_dir()
+                and child.name.startswith("chromium-")
+                and not child.name.startswith("chromium_headless_shell")
+            ]
+            assert chromium_dirs, "chromium-<build> dir should exist on disk"
+            # ``--no-shell`` should have skipped the headless shell download.
+            headless_shell_dirs = [
+                child
+                for child in playwright_root.iterdir()
+                if child.is_dir() and child.name.startswith("chromium_headless_shell")
+            ]
+            assert not headless_shell_dirs, (
+                f"--no-shell should have skipped chromium_headless_shell, "
+                f"but found: {[p.name for p in headless_shell_dirs]}"
+            )
+
+    def test_provider_direct_methods_exercise_real_lifecycle(self, test_machine):
+        test_machine.require_tool("node")
+        test_machine.require_tool("npm")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            provider = PlaywrightProvider(
+                playwright_root=Path(temp_dir) / "playwright-root",
+            )
+
+            test_machine.exercise_provider_lifecycle(
+                provider,
+                bin_name="chromium",
+                assert_version_command=False,
+            )
+
+    def test_binary_direct_methods_exercise_real_lifecycle(self, test_machine):
+        test_machine.require_tool("node")
+        test_machine.require_tool("npm")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            binary = Binary(
+                name="chromium",
+                binproviders=[
+                    PlaywrightProvider(
+                        playwright_root=Path(temp_dir) / "playwright-root",
+                    ),
+                ],
+            )
+
+            test_machine.exercise_binary_lifecycle(
+                binary,
+                assert_version_command=False,
+            )
+
+    def test_update_refreshes_chromium_in_place(self, test_machine):
+        test_machine.require_tool("node")
+        test_machine.require_tool("npm")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            playwright_root = Path(temp_dir) / "playwright-root"
+            provider = PlaywrightProvider(playwright_root=playwright_root)
+
+            installed = provider.install("chromium", nocache=True)
+            assert installed is not None
+            assert installed.loaded_abspath is not None
+            original_target = installed.loaded_abspath.resolve()
+            assert original_target.exists()
+
+            updated = provider.update("chromium", nocache=True)
+            test_machine.assert_shallow_binary_loaded(
+                updated,
+                assert_version_command=False,
+            )
+            assert updated is not None
+            assert updated.loaded_abspath is not None
+            # The symlink resolves to a chromium build that actually
+            # exists on disk after update (whether the build-id moved
+            # depends on the current playwright release, but the
+            # resolved target must always exist and still live inside
+            # ``playwright_root``).
+            updated_target = updated.loaded_abspath.resolve()
+            assert updated_target.exists()
+            assert playwright_root.resolve() in updated_target.parents
+            assert any(
+                child.name.startswith("chromium-")
+                for child in playwright_root.iterdir()
+                if child.is_dir()
+            )
+
+    def test_provider_dry_run_does_not_install_chromium(self, test_machine):
+        test_machine.require_tool("node")
+        test_machine.require_tool("npm")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            playwright_root = Path(temp_dir) / "playwright-root"
+            provider = PlaywrightProvider(playwright_root=playwright_root)
+
+            test_machine.exercise_provider_dry_run(provider, bin_name="chromium")
+            # dry_run must not have actually downloaded any browsers.
+            browser_dirs = (
+                [
+                    p
+                    for p in playwright_root.iterdir()
+                    if p.is_dir()
+                    and p.name.startswith(("chromium-", "firefox-", "webkit-"))
+                ]
+                if playwright_root.is_dir()
+                else []
+            )
+            assert not browser_dirs, (
+                f"dry_run should not have created any browser dirs, got: "
+                f"{[p.name for p in browser_dirs]}"
+            )

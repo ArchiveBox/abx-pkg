@@ -22,7 +22,7 @@ class TestNixProvider:
                 },
             )
 
-            installed = provider.install("jq")
+            installed = provider.install("hello")
 
             test_machine.assert_shallow_binary_loaded(installed)
             assert installed is not None
@@ -41,7 +41,7 @@ class TestNixProvider:
                 postinstall_scripts=True,
                 min_release_age=0,
             )
-            test_machine.exercise_provider_lifecycle(provider, bin_name="jq")
+            test_machine.exercise_provider_lifecycle(provider, bin_name="hello")
 
     def test_provider_direct_min_version_revalidates_final_installed_package(
         self,
@@ -57,9 +57,9 @@ class TestNixProvider:
                 min_release_age=0,
             )
             with pytest.raises(ValueError):
-                provider.install("jq", min_version=SemVer("999.0.0"))
+                provider.install("hello", min_version=SemVer("999.0.0"))
 
-            loaded = provider.load("jq", quiet=True, nocache=True)
+            loaded = provider.load("hello", quiet=True, nocache=True)
             test_machine.assert_shallow_binary_loaded(loaded)
             assert loaded is not None
             assert loaded.loaded_version is not None
@@ -81,7 +81,7 @@ class TestNixProvider:
                 postinstall_scripts=True,
                 min_release_age=0,
             )
-            ambient_installed = ambient_provider.install("jq")
+            ambient_installed = ambient_provider.install("hello")
             assert ambient_installed is not None
 
             nix_profile = temp_dir_path / "nix-profile"
@@ -93,7 +93,7 @@ class TestNixProvider:
                 min_release_age=0,
             )
 
-            installed = provider.install("jq")
+            installed = provider.install("hello")
 
             test_machine.assert_shallow_binary_loaded(installed)
             assert installed is not None
@@ -114,16 +114,18 @@ class TestNixProvider:
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
-                overrides={"jq": {"install_args": ["nixpkgs#jq", "nixpkgs#hello"]}},
+                overrides={
+                    "hello": {"install_args": ["nixpkgs#hello", "nixpkgs#figlet"]},
+                },
             )
 
-            installed = provider.install("jq")
+            installed = provider.install("hello")
             test_machine.assert_shallow_binary_loaded(installed)
-            assert provider.load("hello", quiet=True, nocache=True) is not None
+            assert provider.load("figlet", quiet=True, nocache=True) is not None
 
-            assert provider.uninstall("jq")
-            assert provider.load("jq", quiet=True, nocache=True) is None
-            assert provider.load("hello", quiet=True, nocache=True) is not None
+            assert provider.uninstall("hello")
+            assert provider.load("hello", quiet=True, nocache=True) is None
+            assert provider.load("figlet", quiet=True, nocache=True) is not None
 
     def test_unsupported_security_controls_warn_and_continue(
         self,
@@ -139,14 +141,14 @@ class TestNixProvider:
                     nix_state_dir=Path(temp_dir) / "bad-state",
                     postinstall_scripts=False,
                     min_release_age=1,
-                ).install("jq")
+                ).install("hello")
             test_machine.assert_shallow_binary_loaded(installed)
             assert "ignoring unsupported min_release_age=1" in caplog.text
             assert "ignoring unsupported postinstall_scripts=False" in caplog.text
 
             caplog.clear()
             binary = Binary(
-                name="jq",
+                name="hello",
                 binproviders=[
                     NixProvider(
                         nix_profile=Path(temp_dir) / "ok-profile",
@@ -169,7 +171,7 @@ class TestNixProvider:
 
         with tempfile.TemporaryDirectory() as temp_dir:
             binary = Binary(
-                name="jq",
+                name="hello",
                 binproviders=[
                     NixProvider(
                         nix_profile=Path(temp_dir) / "nix-profile",
@@ -183,7 +185,7 @@ class TestNixProvider:
             )
             test_machine.exercise_binary_lifecycle(binary)
 
-    def test_provider_dry_run_does_not_install_jq(self, test_machine):
+    def test_provider_dry_run_does_not_install_hello(self, test_machine):
         assert NixProvider().INSTALLER_BIN_ABSPATH, "nix is required on this host"
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -193,4 +195,4 @@ class TestNixProvider:
                 postinstall_scripts=True,
                 min_release_age=0,
             )
-            test_machine.exercise_provider_dry_run(provider, bin_name="jq")
+            test_machine.exercise_provider_dry_run(provider, bin_name="hello")

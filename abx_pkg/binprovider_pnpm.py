@@ -18,6 +18,7 @@ from .base_types import (
     HostBinPath,
     InstallArgs,
     PATHStr,
+    abx_pkg_install_root_default,
     bin_abspath,
 )
 from .binprovider import BinProvider, env_flag_is_true, remap_kwargs
@@ -56,7 +57,9 @@ class PnpmProvider(BinProvider):
         repr=False,
     )
 
-    pnpm_prefix: Path | None = None  # None = -g global, otherwise it's a path
+    # None = -g global, otherwise it's a path.
+    # Default: ABX_PKG_PNPM_ROOT > ABX_PKG_LIB_DIR/pnpm > None.
+    pnpm_prefix: Path | None = abx_pkg_install_root_default("pnpm")
 
     cache_dir: Path = USER_CACHE_PATH
     cache_arg: str = ""  # re-derived per-instance from cache_dir in detect_cache_arg

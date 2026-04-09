@@ -9,7 +9,14 @@ from typing import Any, ClassVar, Self
 
 from pydantic import Field, TypeAdapter, computed_field, model_validator
 
-from .base_types import BinName, BinProviderName, HostBinPath, InstallArgs, PATHStr
+from .base_types import (
+    BinName,
+    BinProviderName,
+    HostBinPath,
+    InstallArgs,
+    PATHStr,
+    abx_pkg_install_root_default,
+)
 from .binprovider import (
     BinProviderOverrides,
     EnvProvider,
@@ -19,9 +26,9 @@ from .binprovider import (
 from .logging import format_subprocess_output
 
 
-DEFAULT_BASH_ROOT = Path(
-    os.environ.get("ABX_PKG_BASH_ROOT", "~/.cache/abx-pkg/bash"),
-).expanduser()
+# Ultimate fallback when neither the constructor arg nor
+# ``ABX_PKG_BASH_ROOT`` nor ``ABX_PKG_LIB_DIR`` is set.
+DEFAULT_BASH_ROOT = Path("~/.cache/abx-pkg/bash").expanduser()
 
 
 class BashProvider(EnvProvider):
@@ -34,7 +41,8 @@ class BashProvider(EnvProvider):
     postinstall_scripts: bool | None = Field(default=None, repr=False)
     min_release_age: float | None = Field(default=None, repr=False)
 
-    bash_root: Path | None = None
+    # Default: ABX_PKG_BASH_ROOT > ABX_PKG_LIB_DIR/bash > None.
+    bash_root: Path | None = abx_pkg_install_root_default("bash")
     bash_bin_dir: Path | None = None
 
     overrides: BinProviderOverrides = {

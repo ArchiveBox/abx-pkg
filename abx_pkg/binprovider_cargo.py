@@ -8,7 +8,13 @@ from pathlib import Path
 from pydantic import model_validator, computed_field
 from typing import ClassVar, Self
 
-from .base_types import BinProviderName, PATHStr, BinName, InstallArgs
+from .base_types import (
+    BinProviderName,
+    PATHStr,
+    BinName,
+    InstallArgs,
+    abx_pkg_install_root_default,
+)
 from .semver import SemVer
 from .binprovider import BinProvider, remap_kwargs
 from .logging import format_subprocess_output
@@ -24,7 +30,8 @@ class CargoProvider(BinProvider):
 
     PATH: PATHStr = ""
 
-    cargo_root: Path | None = None
+    # Default: ABX_PKG_CARGO_ROOT > ABX_PKG_LIB_DIR/cargo > None.
+    cargo_root: Path | None = abx_pkg_install_root_default("cargo")
     cargo_home: Path = DEFAULT_CARGO_HOME
     cargo_install_args: list[str] = ["--locked"]
 

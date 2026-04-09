@@ -10,7 +10,12 @@ from typing import Any, ClassVar, Self
 
 from pydantic import Field, computed_field, model_validator
 
-from .base_types import BinName, BinProviderName, PATHStr
+from .base_types import (
+    BinName,
+    BinProviderName,
+    PATHStr,
+    abx_pkg_install_root_default,
+)
 from .binprovider import (
     BinProvider,
     BinProviderOverrides,
@@ -22,9 +27,9 @@ from .logging import format_subprocess_output, get_logger
 logger = get_logger(__name__)
 
 
-DEFAULT_CHROMEWEBSTORE_ROOT = Path(
-    os.environ.get("ABX_PKG_CHROMEWEBSTORE_ROOT", "~/.cache/abx-pkg/chromewebstore"),
-).expanduser()
+# Ultimate fallback when neither the constructor arg nor
+# ``ABX_PKG_CHROMEWEBSTORE_ROOT`` nor ``ABX_PKG_LIB_DIR`` is set.
+DEFAULT_CHROMEWEBSTORE_ROOT = Path("~/.cache/abx-pkg/chromewebstore").expanduser()
 CHROME_UTILS_PATH = Path(__file__).with_name("js") / "chrome" / "chrome_utils.js"
 
 
@@ -41,7 +46,8 @@ class ChromeWebstoreProvider(BinProvider):
     )
     min_release_age: float | None = Field(default=None, repr=False)
 
-    extensions_root: Path | None = None
+    # Default: ABX_PKG_CHROMEWEBSTORE_ROOT > ABX_PKG_LIB_DIR/chromewebstore > None.
+    extensions_root: Path | None = abx_pkg_install_root_default("chromewebstore")
     extensions_dir: Path | None = None
     overrides: BinProviderOverrides = {
         "*": {
