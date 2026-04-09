@@ -308,12 +308,9 @@ class NpmProvider(BinProvider):
             "--ignore-scripts",
         ):
             extra.append("--ignore-scripts")
-        if (
-            min_release_age > 0
-            and not self._install_args_have_option(
-                explicit_args,
-                "--min-release-age",
-            )
+        if min_release_age > 0 and not self._install_args_have_option(
+            explicit_args,
+            "--min-release-age",
         ):
             extra.append(f"--min-release-age={min_release_age_days}")
 
