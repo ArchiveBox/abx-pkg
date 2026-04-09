@@ -44,7 +44,11 @@ dependencies = [
     "typing-extensions>=4.15.0",
     "platformdirs>=4.9.2",
     "pydantic>=2.12.5",
+    "rich-click>=1.9.7",
 ]
+
+[project.scripts]
+abx-pkg = "abx_pkg.cli:main"
 
 [project.optional-dependencies]
 rich = [

@@ -870,6 +870,11 @@ class BinProvider(BaseModel):
             )
             version_output = proc.stdout.strip() or proc.stderr.strip()
             version_outputs.append(version_output)
+            if proc.returncode != 0:
+                validation_err = validation_err or AssertionError(
+                    f"$ {bin_name} {version_arg} exited with status {proc.returncode}",
+                )
+                continue
             try:
                 version = SemVer.parse(version_output)
                 assert version, (

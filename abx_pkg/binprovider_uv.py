@@ -4,6 +4,7 @@ __package__ = "abx_pkg"
 
 import os
 import shutil
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -266,6 +267,72 @@ class UvProvider(BinProvider):
             flags.append(f"--exclude-newer={cutoff}")
         return flags
 
+    @staticmethod
+    def _package_name_from_install_arg(install_arg: str) -> str | None:
+        if not install_arg or install_arg.startswith("-"):
+            return None
+        if "://" in install_arg:
+            return None
+        if install_arg.startswith((".", "/", "~")):
+            return None
+        package_name = re.split(r"[<>=!~;]", install_arg, maxsplit=1)[0]
+        package_name = package_name.split("[", 1)[0].strip()
+        return package_name or None
+
+    def _package_name_for_bin(self, bin_name: BinName, **context) -> str:
+        install_args = self.get_install_args(str(bin_name), **context) or [
+            str(bin_name),
+        ]
+        for install_arg in install_args:
+            package_name = self._package_name_from_install_arg(install_arg)
+            if package_name:
+                return package_name
+        return str(bin_name)
+
+    def _version_from_uv_metadata(
+        self,
+        package_name: str,
+        timeout: int | None = None,
+    ) -> SemVer | None:
+        if not self.INSTALLER_BIN_ABSPATH:
+            return None
+
+        if self.uv_venv:
+            proc = self.exec(
+                bin_name=self.INSTALLER_BIN_ABSPATH,
+                cmd=[
+                    "pip",
+                    "show",
+                    "--python",
+                    str(self.uv_venv / "bin" / "python"),
+                    package_name,
+                ],
+                timeout=timeout,
+                quiet=True,
+            )
+            if proc.returncode == 0:
+                for line in proc.stdout.splitlines():
+                    if line.startswith("Version: "):
+                        return SemVer.parse(line.split("Version: ", 1)[1])
+            return None
+
+        proc = self.exec(
+            bin_name=self.INSTALLER_BIN_ABSPATH,
+            cmd=["tool", "list"],
+            timeout=timeout,
+            quiet=True,
+        )
+        if proc.returncode != 0:
+            return None
+        for line in proc.stdout.splitlines():
+            line = line.strip()
+            if not line or line.startswith("-"):
+                continue
+            parts = line.split(" v", 1)
+            if len(parts) == 2 and parts[0] == package_name:
+                return SemVer.parse(parts[1])
+        return None
+
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(
         self,
@@ -486,14 +553,7 @@ class UvProvider(BinProvider):
 
         # Fallback: ``uv pip show`` for venv mode.
         if self.uv_venv:
-            install_args = self.get_install_args(str(bin_name)) or [str(bin_name)]
-            tool_name = (
-                install_args[0]
-                .split("[", 1)[0]
-                .split("=", 1)[0]
-                .split(">", 1)[0]
-                .split("<", 1)[0]
-            )
+            tool_name = self._package_name_for_bin(str(bin_name), **context)
             proc = self.exec(
                 bin_name=self.INSTALLER_BIN_ABSPATH,
                 cmd=[
@@ -530,57 +590,8 @@ class UvProvider(BinProvider):
         except ValueError:
             pass
 
-        if not self.INSTALLER_BIN_ABSPATH:
-            return None
-
-        install_args = self.get_install_args(str(bin_name), **context) or [
-            str(bin_name),
-        ]
-        main_package = install_args[0]
-        tool_name = (
-            main_package.split("[", 1)[0]
-            .split("=", 1)[0]
-            .split(">", 1)[0]
-            .split("<", 1)[0]
-        )
-
-        if self.uv_venv:
-            # Fallback: ``uv pip show`` for venv mode.
-            proc = self.exec(
-                bin_name=self.INSTALLER_BIN_ABSPATH,
-                cmd=[
-                    "pip",
-                    "show",
-                    "--python",
-                    str(self.uv_venv / "bin" / "python"),
-                    tool_name,
-                ],
-                timeout=timeout,
-                quiet=True,
-            )
-            if proc.returncode == 0:
-                for line in proc.stdout.splitlines():
-                    if line.startswith("Version: "):
-                        return SemVer.parse(line.split("Version: ", 1)[1])
-            return None
-
-        # Global mode: fallback to ``uv tool list``.
-        proc = self.exec(
-            bin_name=self.INSTALLER_BIN_ABSPATH,
-            cmd=["tool", "list"],
-            timeout=timeout,
-            quiet=True,
-        )
-        if proc.returncode != 0:
-            return None
-        for line in proc.stdout.splitlines():
-            line = line.strip()
-            if not line or line.startswith("-"):
-                continue
-            parts = line.split(" v", 1)
-            if len(parts) == 2 and parts[0] == tool_name:
-                return SemVer.parse(parts[1])
-        return None
+        tool_name = self._package_name_for_bin(str(bin_name), **context)
+        return self._version_from_uv_metadata(tool_name, timeout=timeout)
 
 
 if __name__ == "__main__":

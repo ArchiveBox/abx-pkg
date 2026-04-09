@@ -5,6 +5,7 @@ __package__ = "abx_pkg"
 import os
 import sys
 import site
+import re
 import shlex
 import shutil
 import sysconfig
@@ -610,6 +611,48 @@ class PipProvider(BinProvider):
         else:
             return None
 
+    @staticmethod
+    def _package_name_from_install_arg(install_arg: str) -> str | None:
+        if not install_arg or install_arg.startswith("-"):
+            return None
+        if "://" in install_arg:
+            return None
+        if install_arg.startswith((".", "/", "~")):
+            return None
+        package_name = re.split(r"[<>=!~;]", install_arg, maxsplit=1)[0]
+        package_name = package_name.split("[", 1)[0].strip()
+        return package_name or None
+
+    def _package_name_for_bin(self, bin_name: BinName) -> str | None:
+        install_args = self.get_install_args(bin_name, quiet=True)
+        for install_arg in install_args:
+            package_name = self._package_name_from_install_arg(install_arg)
+            if package_name:
+                return package_name
+        return None
+
+    def _version_from_pip_show(
+        self,
+        package_name: str,
+        timeout: int | None = None,
+    ) -> SemVer | None:
+        output_lines = (
+            self._pip(
+                ["show", "--no-input", package_name],
+                quiet=False,
+                timeout=timeout,
+            )
+            .stdout.strip()
+            .split("\n")
+        )
+        try:
+            version_str = [
+                line for line in output_lines if line.startswith("Version: ")
+            ][0].split("Version: ", 1)[-1]
+            return SemVer.parse(version_str)
+        except Exception:
+            return None
+
     def default_version_handler(
         self,
         bin_name: BinName,
@@ -629,25 +672,11 @@ class PipProvider(BinProvider):
             pass
 
         # fallback to using pip show to get the version (slower)
-        output_lines = (
-            self._pip(
-                ["show", "--no-input", str(bin_name)],
-                quiet=False,
-                timeout=timeout,
-            )
-            .stdout.strip()
-            .split("\n")
+        package_name = self._package_name_for_bin(bin_name)
+        return self._version_from_pip_show(
+            package_name or str(bin_name),
+            timeout=timeout,
         )
-        # Name: yt-dlp
-        # Version: 1.3.0
-        # Location: /Volumes/NVME/Users/squash/Library/Python/3.11/lib/python/site-packages
-        try:
-            version_str = [
-                line for line in output_lines if line.startswith("Version: ")
-            ][0].split("Version: ", 1)[-1]
-            return version_str
-        except Exception:
-            return None
 
 
 if __name__ == "__main__":
