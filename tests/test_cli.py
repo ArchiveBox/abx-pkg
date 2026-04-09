@@ -1088,18 +1088,18 @@ def test_expand_bare_bool_flags_rewrites_bare_forms_in_place(argv, expected):
     ],
 )
 def test_install_command_accepts_every_supported_flag_form(extra_flag, tmp_path):
-    """Live smoke-test: every flag form resolves `ls` via env without raising."""
+    """Live smoke-test: every flag form resolves python3 via env without raising."""
 
     proc = _run_abx_pkg_cli(
         f"--lib={tmp_path}",
         "--binproviders=env",
         extra_flag,
         "install",
-        "ls",
+        "python3",
     )
 
     assert proc.returncode == 0, (
-        f"--lib={tmp_path} --binproviders=env {extra_flag} install ls "
+        f"--lib={tmp_path} --binproviders=env {extra_flag} install python3 "
         f"failed with exit {proc.returncode}\nstderr:\n{proc.stderr}"
     )
 
@@ -1121,11 +1121,11 @@ def test_every_subcommand_accepts_the_full_option_surface(subcommand, tmp_path):
         "--version-timeout=10",
         "--dry-run=False",
         subcommand,
-        "ls",
+        "python3",
     )
 
     assert proc.returncode == 0, proc.stderr
-    assert "ls" in proc.stdout
+    assert "python3" in proc.stdout
 
 
 def test_update_subcommand_accepts_the_full_option_surface(tmp_path):
@@ -1141,7 +1141,7 @@ def test_update_subcommand_accepts_the_full_option_surface(tmp_path):
         "--version-timeout=10",
         "--dry-run=False",
         "update",
-        "ls",
+        "python3",
     )
 
     assert proc.returncode == 0, proc.stderr
@@ -1154,12 +1154,12 @@ def test_subcommand_level_option_overrides_group_level():
         "--binproviders=apt",  # group-level: would match nothing useful
         "install",
         "--binproviders=env",  # subcommand-level: wins
-        "ls",
+        "python3",
     )
 
     assert proc.returncode == 0, proc.stderr
     assert "env" in proc.stdout
-    assert "ls" in proc.stdout
+    assert "python3" in proc.stdout
 
 
 # ---------------------------------------------------------------------------

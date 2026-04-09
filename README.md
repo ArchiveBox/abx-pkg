@@ -147,7 +147,7 @@ Options before the binary name (`--lib`, `--binproviders`, `--dry-run`, `--updat
 
 #### Per-`Binary` / per-`BinProvider` options as CLI flags
 
-Every [`Binary` / `BinProvider` configuration field](#configuration) is exposed as a CLI flag on the group and on every subcommand (`run`, `install`, `update`, `uninstall`, `load`, `load-or-install`) as well as `abx`. Providers that can't enforce a given option emit a warning to `stderr` and continue — no hard failure.
+Every [`Binary` / `BinProvider` configuration field](#configuration) is exposed as a CLI flag on the group and on subcommands (`install`, `update`, `uninstall`, `load`, `load-or-install`), and is also available to `run` / `abx` via group-level flags placed before the binary name. Providers that can't enforce a given option emit a warning to `stderr` and continue — no hard failure.
 
 ```bash
 abx-pkg --min-version=1.2.3 --min-release-age=7 install yt-dlp

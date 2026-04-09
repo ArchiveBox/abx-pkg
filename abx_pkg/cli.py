@@ -218,13 +218,6 @@ def resolve_dry_run(flag_value: bool | None) -> bool:
     return env_flag_is_true("ABX_PKG_DRY_RUN") or env_flag_is_true("DRY_RUN")
 
 
-def _provider_install_root(provider_name: str, lib_dir: Path) -> Path | None:
-    suffix = MANAGED_PROVIDER_ROOTS.get(provider_name)
-    if suffix is None:
-        return None
-    return lib_dir / suffix
-
-
 def build_providers(
     provider_names: list[str],
     lib_dir: Path,
@@ -246,17 +239,17 @@ def build_providers(
             provider_kwargs["install_timeout"] = install_timeout
         if version_timeout is not None:
             provider_kwargs["version_timeout"] = version_timeout
-        # Use the user-supplied --install-root if given; otherwise fall
-        # back to the managed ABX_PKG_LIB_DIR layout. BinProvider.__init__
+        # User-supplied --install-root wins; otherwise use the managed
+        # ``<lib_dir>/<provider>/<suffix>`` layout for providers that
+        # have one in MANAGED_PROVIDER_ROOTS. BinProvider.__init__
         # warns-and-ignores install_root for providers whose
-        # INSTALL_ROOT_FIELD is None, so the CLI can pass it blindly.
-        root = (
-            install_root
-            if install_root is not None
-            else _provider_install_root(provider_name, lib_dir)
-        )
-        if root is not None:
-            provider_kwargs["install_root"] = root
+        # INSTALL_ROOT_FIELD is None, so we can pass it blindly.
+        if install_root is not None:
+            provider_kwargs["install_root"] = install_root
+        else:
+            suffix = MANAGED_PROVIDER_ROOTS.get(provider_name)
+            if suffix is not None:
+                provider_kwargs["install_root"] = lib_dir / suffix
         if bin_dir is not None:
             provider_kwargs["bin_dir"] = bin_dir
         providers.append(provider_class(**provider_kwargs))
@@ -793,9 +786,27 @@ _BARE_TRUE_BOOL_FLAGS = frozenset({"--dry-run", "--postinstall-scripts"})
 
 def _expand_bare_bool_flags(argv: list[str]) -> list[str]:
     """Translate bare bool flags (``--dry-run``) into their value form
-    (``--dry-run=True``) so click's plain string option can parse both."""
+    (``--dry-run=True``) so a single click string option can handle both.
 
-    return [f"{tok}=True" if tok in _BARE_TRUE_BOOL_FLAGS else tok for tok in argv]
+    Crucially, the rewrite stops at the ``run`` subcommand: every token
+    after ``run`` is a child binary arg that must be forwarded verbatim
+    (a bare ``rsync --dry-run /src /dst`` must stay ``--dry-run``, not
+    ``--dry-run=True``, because many tools reject the value form).
+    """
+
+    out: list[str] = []
+    past_run = False
+    for tok in argv:
+        if past_run:
+            out.append(tok)
+        elif tok == "run":
+            past_run = True
+            out.append(tok)
+        elif tok in _BARE_TRUE_BOOL_FLAGS:
+            out.append(f"{tok}=True")
+        else:
+            out.append(tok)
+    return out
 
 
 def main() -> None:
@@ -813,12 +824,15 @@ def main() -> None:
 # _split_abx_argv to know when to pull an extra token into the
 # "pre-package-name" prefix; options written as `--name=value` never hit
 # this code path (they're handled by the `"=" in tok` branch).
+# Bare-bool-flags are click string options under the hood, but they're
+# used as bare flags (``--dry-run`` = True). Exclude them so the splitter
+# doesn't try to consume the next token as a value.
 _ABX_PKG_GROUP_OPTS_WITH_VALUES = frozenset(
     opt
     for param in cli.params
     if isinstance(param, click.Option) and not param.is_flag
     for opt in param.opts
-    if opt.startswith("--")
+    if opt.startswith("--") and opt not in _BARE_TRUE_BOOL_FLAGS
 )
 
 _ABX_USAGE = (
@@ -884,8 +898,11 @@ def abx_main() -> None:
     surface area — every option is still documented and parsed exactly
     once, by ``abx-pkg`` itself.
     """
-    argv = _expand_bare_bool_flags(list(sys.argv[1:]))
+    argv = list(sys.argv[1:])
     pre, rest = _split_abx_argv(argv)
+    # Expand bare bool flags only in the pre-binary-name slice; rest is
+    # the child binary's argv and must be forwarded verbatim.
+    pre = _expand_bare_bool_flags(pre)
 
     if not rest:
         # No binary name given. Forward info-only flags so `abx --version`
