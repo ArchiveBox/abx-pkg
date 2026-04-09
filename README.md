@@ -133,6 +133,18 @@ abx-pkg --binproviders=pip --update  run yt-dlp    # load_or_install + update be
 
 abx-pkg options (e.g. `--binproviders`, `--lib`, `--install`, `--update`) must appear before the `run` subcommand; every argument after the binary name is forwarded verbatim to the underlying binary. `run` exits with the child's exit code, passes its `stdout`/`stderr` through unbuffered, and routes any abx-pkg install/load logs to `stderr` only — no headers, no footers, no parsing.
 
+#### `abx`: auto-install-and-run shortcut
+
+Think `npx` / `uvx` / `pipx run` — but for **every** package manager abx-pkg supports. `abx` is a thin alias for `abx-pkg --install run ...`: it resolves the binary via the configured providers, installs it if missing, then execs it with the forwarded arguments.
+
+```bash
+abx yt-dlp --help                               # auto-install (if needed) and run yt-dlp
+abx --update yt-dlp --help                      # load_or_install + update before running
+abx --binproviders=env,uv,pip,apt,brew yt-dlp   # restrict provider resolution
+```
+
+Options before the binary name (`--lib`, `--binproviders`, `--dry-run`, `--update`) are forwarded to `abx-pkg`; everything after the binary name is forwarded to the binary itself.
+
 #### Select specific providers / re-order provider precedence
 
 ```bash

@@ -25,12 +25,24 @@ def _abx_pkg_executable() -> Path:
     return Path(resolved)
 
 
-def _run_abx_pkg_cli(
+def _abx_executable() -> Path:
+    """Locate the installed `abx` console script for subprocess-based tests."""
+
+    candidate = Path(sys.executable).parent / "abx"
+    if candidate.exists():
+        return candidate
+    resolved = shutil.which("abx")
+    assert resolved, "abx console script must be installed in the active venv"
+    return Path(resolved)
+
+
+def _run_cli(
+    script: Path,
     *args: str,
     env_overrides: dict[str, str] | None = None,
     timeout: float = 600,
 ) -> subprocess.CompletedProcess[str]:
-    """Invoke the real `abx-pkg` console script with a clean env."""
+    """Invoke a console script with a clean ABX_PKG_* environment."""
 
     env = {
         key: value
@@ -41,10 +53,40 @@ def _run_abx_pkg_cli(
         env.update(env_overrides)
 
     return subprocess.run(
-        [str(_abx_pkg_executable()), *args],
+        [str(script), *args],
         capture_output=True,
         text=True,
         env=env,
+        timeout=timeout,
+    )
+
+
+def _run_abx_pkg_cli(
+    *args: str,
+    env_overrides: dict[str, str] | None = None,
+    timeout: float = 600,
+) -> subprocess.CompletedProcess[str]:
+    """Invoke the real `abx-pkg` console script with a clean env."""
+
+    return _run_cli(
+        _abx_pkg_executable(),
+        *args,
+        env_overrides=env_overrides,
+        timeout=timeout,
+    )
+
+
+def _run_abx_cli(
+    *args: str,
+    env_overrides: dict[str, str] | None = None,
+    timeout: float = 600,
+) -> subprocess.CompletedProcess[str]:
+    """Invoke the real `abx` console script with a clean env."""
+
+    return _run_cli(
+        _abx_executable(),
+        *args,
+        env_overrides=env_overrides,
         timeout=timeout,
     )
 
@@ -419,3 +461,144 @@ def test_run_forwards_variadic_positional_args_to_binary(extra_args, expected_ex
         assert proc.returncode != 0
     else:
         assert proc.returncode == expected_exit, proc.stderr
+
+
+# ---------------------------------------------------------------------------
+# `abx` — thin alias for `abx-pkg --install run ...` (argv-rewriting wrapper)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("argv", "expected_pre", "expected_rest"),
+    [
+        (["yt-dlp", "--help"], [], ["yt-dlp", "--help"]),
+        (["--update", "yt-dlp"], ["--update"], ["yt-dlp"]),
+        (
+            ["--binproviders=env,uv,pip,apt,brew", "yt-dlp"],
+            ["--binproviders=env,uv,pip,apt,brew"],
+            ["yt-dlp"],
+        ),
+        (
+            ["--lib", "/tmp/abx-lib", "--dry-run", "yt-dlp", "--help"],
+            ["--lib", "/tmp/abx-lib", "--dry-run"],
+            ["yt-dlp", "--help"],
+        ),
+        (
+            ["--binproviders", "pip,brew", "black", "-v"],
+            ["--binproviders", "pip,brew"],
+            ["black", "-v"],
+        ),
+        (["--version"], ["--version"], []),
+        ([], [], []),
+    ],
+)
+def test_split_abx_argv_splits_options_from_binary(argv, expected_pre, expected_rest):
+    pre, rest = cli_module._split_abx_argv(argv)
+    assert pre == expected_pre
+    assert rest == expected_rest
+
+
+def test_abx_auto_installs_and_runs_preinstalled_env_binary():
+    """`abx BIN` on an already-present binary resolves it and execs it."""
+
+    proc = _run_abx_cli("--binproviders=env", "ls", "/")
+
+    assert proc.returncode == 0, proc.stderr
+    assert "bin" in proc.stdout.split()
+
+
+def test_abx_passes_flag_args_through_to_underlying_binary():
+    """Flags after the binary name must reach the binary, not abx-pkg."""
+
+    proc = _run_abx_cli("--binproviders=env", "ls", "--help")
+
+    assert proc.returncode == 0, proc.stderr
+    assert "Usage:" in proc.stdout
+
+
+def test_abx_propagates_underlying_exit_code():
+    proc = _run_abx_cli(
+        "--binproviders=env",
+        "ls",
+        "/__abx_nonexistent_path__",
+    )
+
+    assert proc.returncode != 0
+    assert proc.stdout == ""
+    assert proc.stderr != ""
+
+
+def test_abx_respects_binproviders_flag_before_binary_name():
+    """`abx --binproviders=LIST BIN ARGS` must forward LIST to abx-pkg."""
+
+    proc = _run_abx_cli(
+        "--binproviders=env,uv,pip,apt,brew",
+        "ls",
+        "/",
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert "bin" in proc.stdout
+
+
+def test_abx_version_flag_is_forwarded_without_running_a_binary():
+    proc = _run_abx_cli("--version")
+
+    assert proc.returncode == 0, proc.stderr
+    from abx_pkg.cli import get_package_version
+
+    assert get_package_version() in proc.stdout
+
+
+def test_abx_without_any_args_prints_usage_and_exits_two():
+    proc = _run_abx_cli()
+
+    assert proc.returncode == 2
+    assert proc.stdout == ""
+    assert "Usage: abx" in proc.stderr
+    assert "--install run" in proc.stderr
+
+
+def test_abx_installs_missing_binary_via_selected_provider(tmp_path):
+    """Auto-install behaviour: `abx` installs into the isolated lib dir."""
+
+    proc = _run_abx_cli(
+        f"--lib={tmp_path}",
+        "--binproviders=pip",
+        "black",
+        "--version",
+        timeout=900,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    # stdout must be *only* black --version output, not abx-pkg's install logs.
+    stdout_lines = proc.stdout.strip().splitlines()
+    assert stdout_lines
+    assert stdout_lines[0].startswith("black"), stdout_lines
+    for line in stdout_lines:
+        assert "Installing" not in line
+        assert "Loading" not in line
+    # Ensure black was actually installed under the isolated lib dir.
+    installed = list((tmp_path / "pip" / "venv").rglob("black"))
+    assert installed, (
+        f"Expected black to be installed under {tmp_path}/pip/venv. "
+        f"stderr was:\n{proc.stderr}"
+    )
+
+
+def test_abx_update_flag_is_forwarded_and_runs_after_update(tmp_path):
+    """`abx --update BIN ARGS` must trigger load_or_install+update then exec."""
+
+    proc = _run_abx_cli(
+        f"--lib={tmp_path}",
+        "--binproviders=pip",
+        "--update",
+        "black",
+        "--version",
+        timeout=900,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.strip().startswith("black")
+    installed = list((tmp_path / "pip" / "venv").rglob("black"))
+    assert installed

@@ -520,8 +520,93 @@ def main() -> None:
     cli()
 
 
+# ---------------------------------------------------------------------------
+# `abx` — thin alias for `abx-pkg --install run ...`
+# ---------------------------------------------------------------------------
+
+# Group-level options of the `abx-pkg` CLI that consume a following value
+# (e.g. `--lib PATH`, `--binproviders LIST`). Used by _split_abx_argv to
+# know when to pull an extra token into the "pre-package-name" prefix.
+# Options using the `--name=value` form don't need to be listed here.
+_ABX_PKG_GROUP_OPTS_WITH_VALUES = frozenset({"--lib", "--binproviders"})
+
+_ABX_USAGE = (
+    "Usage: abx [OPTIONS] BINARY_NAME [BINARY_ARGS]...\n"
+    "\n"
+    "Install (if needed) and run a package-managed binary.\n"
+    "Equivalent to `abx-pkg [OPTIONS] --install run BINARY_NAME [BINARY_ARGS]`.\n"
+    "\n"
+    "Options (forwarded to abx-pkg): --lib, --binproviders, --dry-run,\n"
+    "--update, --version, --help.\n"
+)
+
+
+def _split_abx_argv(argv: list[str]) -> tuple[list[str], list[str]]:
+    """Split ``argv`` around the first positional (binary name) token.
+
+    Everything up to (and not including) the first non-option token is
+    treated as `abx-pkg` group options and returned as ``pre``. The binary
+    name and all following tokens are returned verbatim as ``rest``.
+
+    Options that take a separate value (`--lib PATH`, `--binproviders LIST`)
+    are handled so the value token is kept with its option instead of being
+    mistaken for the binary name.
+    """
+    pre: list[str] = []
+    i = 0
+    while i < len(argv):
+        tok = argv[i]
+        if tok.startswith("--") and "=" in tok:
+            pre.append(tok)
+            i += 1
+            continue
+        if tok in _ABX_PKG_GROUP_OPTS_WITH_VALUES:
+            pre.append(tok)
+            if i + 1 < len(argv):
+                pre.append(argv[i + 1])
+                i += 2
+            else:
+                i += 1
+            continue
+        if tok.startswith("-") and tok != "-":
+            pre.append(tok)
+            i += 1
+            continue
+        # First non-option token: this is the binary name.
+        return pre, argv[i:]
+    return pre, []
+
+
+def abx_main() -> None:
+    """Console-script entrypoint for the thin ``abx`` alias.
+
+    Rewrites ``abx [OPTS] BINARY [ARGS]`` into
+    ``abx-pkg [OPTS] --install run BINARY [ARGS]`` and hands it off to the
+    existing click group. Keeps us from redefining any of the rich-click
+    surface area — every option is still documented and parsed exactly
+    once, by ``abx-pkg`` itself.
+    """
+    argv = list(sys.argv[1:])
+    pre, rest = _split_abx_argv(argv)
+
+    if not rest:
+        # No binary name given. Forward info-only flags so `abx --version`
+        # and `abx --help` still do something useful; otherwise print our
+        # own usage to stderr and exit 2 like click would.
+        if any(flag in pre for flag in ("--help", "-h", "--version")):
+            cli(pre)
+            return
+        click.echo(_ABX_USAGE, err=True)
+        sys.exit(2)
+
+    # --update already implies load_or_install, so adding --install alongside
+    # it is a no-op; always injecting --install keeps this wrapper stateless.
+    cli([*pre, "--install", "run", *rest])
+
+
 __all__ = [
     "CliOptions",
+    "abx_main",
     "build_binary",
     "build_providers",
     "cli",
