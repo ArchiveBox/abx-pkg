@@ -1,0 +1,23 @@
+README.md
+  67a976da5825c26a 335-336,351,353-354,371,373-374,391,393-394,414,416-417,440,442-443,462,464-465,484,486-487,506,508-509,528,530-531,552,554-555,573,575-576,595,597-598,617,619-620,639,641-642,664,666-667,685,687-688,706,708-709,728,730-731,752,754-755,773,775-776,794
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.6",
+  "base_commit_sha": "fc2ca08eb45f607ad8c5b66c20b49b9de42f5760",
+  "prompts": {
+    "67a976da5825c26a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d717c-705b-75f1-8c2f-c652b4164be1",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 84,
+      "total_deletions": 21,
+      "accepted_lines": 84,
+      "overriden_lines": 0
+    }
+  }
+}
