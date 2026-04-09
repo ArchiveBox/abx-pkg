@@ -49,10 +49,10 @@ from abx_pkg import Binary, apt, brew, pip, npm, env
 # Provider singletons are available as simple imports — no manual instantiation needed
 dependencies = [
     Binary(name='curl',       binproviders=[env, apt, brew]),
-    Binary(name='wget',       binproviders=[env, apt, brew]),
-    Binary(name='yt-dlp',     binproviders=[env, pip, apt, brew]),
-    Binary(name='playwright', binproviders=[env, pip, npm]),
-    Binary(name='puppeteer',  binproviders=[env, npm]),
+    Binary(name='yt-dlp',     binproviders=[env, pip, uv, apt, brew]),
+    Binary(name='playwright', binproviders=[env, npm, pnpm]),
+    Binary(name='chromium',   binproviders=[playwright, puppeteer, apt]),
+    Binary(name='postgres',   binproviders=[docker, env, apt, brew]),
 ]
 for binary in dependencies:
     binary = binary.load_or_install()
@@ -63,38 +63,16 @@ for binary in dependencies:
     binary.exec(cmd=['--version'])   # curl 7.81.0 (x86_64-apple-darwin23.0) libcurl/7.81.0 ...
 ```
 
-`Binary.min_version` is optional. Leave it as `None` when any discovered version is acceptable, or set it to a `SemVer`/string to enforce a minimum version after load/install.
+<br/>
 
-```python
-from abx_pkg import Binary, apt, brew, env
-
-# Use providers directly for package manager operations
-apt.install('wget')
-print(apt.PATH, apt.get_abspaths('wget'), apt.get_version('wget'))
-
-# our Binary API provides a nice type-checkable, validated, serializable handle
-ffmpeg = Binary(name='ffmpeg', binproviders=[env, apt, brew]).load()
-print(ffmpeg)                       # Binary(name='ffmpeg', abspath=Path(...), version=SemVer(...), sha256='...')
-print(ffmpeg.abspaths)              # show all matching binaries found via each provider PATH
-print(ffmpeg.model_dump(mode='json'))  # JSON-ready dict
-print(ffmpeg.model_json_schema())   # ... OpenAPI-ready JSON schema showing all available fields
-```
-
-```python
-from pydantic import InstanceOf
-from abx_pkg import Binary, BinProvider, BrewProvider, EnvProvider
-
-# You can also instantiate provider classes manually for custom configuration,
-# or define binaries as classes for type checking
-class CurlBinary(Binary):
-    name: str = 'curl'
-    binproviders: list[InstanceOf[BinProvider]] = [BrewProvider(), EnvProvider()]
-
-curl = CurlBinary().install()
-assert isinstance(curl, CurlBinary)                                 # CurlBinary is a unique type you can use in annotations now
-print(curl.abspath, curl.version, curl.binprovider, curl.is_valid)  # Path(...) SemVer(...) BrewProvider()/EnvProvider() True
-curl.exec(cmd=['--version'])                                        # curl 8.4.0 (x86_64-apple-darwin23.0) libcurl/8.4.0 ...
-```
+> [!TIP]
+> **🔒 Stay safe from supply-chain attcaks with `abx-pkg`:** We default to safe behavior (when providers allow):
+> 
+>  - `min_release_age=7` (we only installs packages that have been published for 7 days or longer)
+>  - `postinstall_scripts=False` (we don't run post-install scripts for packages by default)
+>  - `install_root=~/.config/abx/lib` (we install packages in a dedicated prefix so host system stays clean)
+>
+> You can customize these defaults on `Binary` or `BinProvider`, or with `ABX_PKG_MIN_RELEASE_AGE`/`ABX_PKG_POSTINSTALL_SCRIPTS=`/`ABX_PKG_LIB_DIR` (see [Configuration](#Configuration) below).
 
 ---
 
@@ -234,6 +212,43 @@ assert ytdlp.abspath is None and ytdlp.version is None
 ```
 
 </details>
+
+<details>
+<summary><h4>Use <code>Binary</code> objects as a stable typed interface to interact with installed packages</h4></summary>
+
+```python
+from abx_pkg import Binary, apt, brew, env
+
+# Use providers directly for package manager operations
+apt.install('wget')
+print(apt.PATH, apt.get_abspaths('wget'), apt.get_version('wget'))
+
+# our Binary API provides a nice type-checkable, validated, serializable handle
+ffmpeg = Binary(name='ffmpeg', binproviders=[env, apt, brew]).load()
+print(ffmpeg)                       # Binary(name='ffmpeg', abspath=Path(...), version=SemVer(...), sha256='...')
+print(ffmpeg.abspaths)              # show all matching binaries found via each provider PATH
+print(ffmpeg.model_dump(mode='json'))  # JSON-ready dict
+print(ffmpeg.model_json_schema())   # ... OpenAPI-ready JSON schema showing all available fields
+```
+
+```python
+from pydantic import InstanceOf
+from abx_pkg import Binary, BinProvider, BrewProvider, EnvProvider
+
+# You can also instantiate provider classes manually for custom configuration,
+# or define binaries as classes for type checking
+class CurlBinary(Binary):
+    name: str = 'curl'
+    binproviders: list[InstanceOf[BinProvider]] = [BrewProvider(), EnvProvider()]
+
+curl = CurlBinary().install()
+assert isinstance(curl, CurlBinary)                                 # CurlBinary is a unique type you can use in annotations now
+print(curl.abspath, curl.version, curl.binprovider, curl.is_valid)  # Path(...) SemVer(...) BrewProvider()/EnvProvider() True
+curl.exec(cmd=['--version'])                                        # curl 8.4.0 (x86_64-apple-darwin23.0) libcurl/8.4.0 ...
+```
+
+</details>
+
 
 <details>
 <summary><h4>Custom binary resolution at runtime (e.g. auto podman-or-docker) via overrides</h4></summary>
