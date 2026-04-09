@@ -122,7 +122,7 @@ env ABX_PKG_LIB_DIR=/any/dir/path abx-pkg install yt-dlp
 #### Run in "dry mode" to see what commands will do before executing
 
 ```bash
-abx-pkg install --dry-run some-dangerous-package      # outputs comamnds that would be run without executing them
+abx-pkg install --dry-run some-dangerous-package      # outputs commands that would be run without executing them
 # or
 env ABX_PKG_DRY_RUN=1 abx-pkg install some-dangerous-package
 ```
