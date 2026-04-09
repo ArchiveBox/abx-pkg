@@ -251,7 +251,7 @@ curl.exec(cmd=['--version'])                                        # curl 8.4.0
 
 
 <details>
-<summary><h4>Custom binary resolution at runtime (e.g. auto podman-or-docker) via overrides</h4></summary>
+<summary><h4>Customize binary resolution/install/other behavior via per-provider or per-binary overrides</h4></summary>
 
 ```python
 import os
@@ -345,7 +345,7 @@ print(rg.version)        # SemVer(...)
 </details>
 
 <details>
-<summary><h4>Configure python `logging` for `abx-pkg`</h4></summary>
+<summary><h4>Configure python <code>logging</code> to customize the stderr/stdout logging</h4></summary>
 
 `abx-pkg` uses the standard Python `logging` module. By default it stays quiet unless your application configures logging explicitly.
 
