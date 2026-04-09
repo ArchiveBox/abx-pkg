@@ -388,8 +388,20 @@ def test_run_pip_subcommand_uses_pip_provider_exec(tmp_path):
 
     assert proc.returncode == 0, proc.stderr
     assert "Name: black" in proc.stdout
-    # Ensure the pip that ran was from our isolated venv, not the system pip.
-    assert str(tmp_path) in proc.stdout or "Location:" in proc.stdout
+    # Ensure the pip that ran was from our isolated venv, not the system pip:
+    # pip show always prints a `Location:` line, so we must verify it points
+    # *inside* the tmp_path rather than just that the header is present.
+    location_lines = [
+        line for line in proc.stdout.splitlines() if line.startswith("Location:")
+    ]
+    assert location_lines, (
+        f"pip show did not emit a Location line; stdout was:\n{proc.stdout}"
+    )
+    assert str(tmp_path) in location_lines[0], (
+        f"pip show reported {location_lines[0]!r}, which is outside the "
+        f"isolated venv under {tmp_path}. The `run` subcommand probably "
+        f"exec'd the system pip instead of the PipProvider's pip."
+    )
 
 
 @pytest.mark.parametrize(
