@@ -215,8 +215,7 @@ class DenoProvider(BinProvider):
         if not any(arg in ("-f", "--force") for arg in install_args):
             cmd.append("--force")
         if not any(
-            arg in ("-n", "--name") or arg.startswith("--name=")
-            for arg in install_args
+            arg in ("-n", "--name") or arg.startswith("--name=") for arg in install_args
         ):
             cmd.extend(["-n", bin_name])
         if postinstall_scripts and not any(
