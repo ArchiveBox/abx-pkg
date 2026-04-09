@@ -145,6 +145,34 @@ abx --binproviders=env,uv,pip,apt,brew yt-dlp   # restrict provider resolution
 
 Options before the binary name (`--lib`, `--binproviders`, `--dry-run`, `--update`) are forwarded to `abx-pkg`; everything after the binary name is forwarded to the binary itself.
 
+#### Per-`Binary` / per-`BinProvider` options as CLI flags
+
+Every [`Binary` / `BinProvider` configuration field](#configuration) is exposed as a CLI flag on the group and on every subcommand (`run`, `install`, `update`, `uninstall`, `load`, `load-or-install`) as well as `abx`. Providers that can't enforce a given option emit a warning to `stderr` and continue — no hard failure.
+
+```bash
+abx-pkg --min-version=1.2.3 --min-release-age=7 install yt-dlp
+abx-pkg --postinstall-scripts=False --binproviders=apt,uv,pip install black
+abx-pkg --install-root=/tmp/yt-dlp-root --bin-dir=/tmp/yt-dlp-bin install yt-dlp
+abx-pkg --overrides='{"pip":{"install_args":["yt-dlp[default]"]}}' install yt-dlp
+abx-pkg --install-timeout=600 --version-timeout=20 --euid=1000 install yt-dlp
+abx --min-version=2024.1.1 --min-release-age=0 yt-dlp --help
+```
+
+| Flag | Type | Meaning |
+| --- | --- | --- |
+| `--min-version=SEMVER` | `str` | Minimum acceptable version (set on `Binary.min_version`). |
+| `--postinstall-scripts[=BOOL]` | `bool` | Allow post-install scripts. Bare `--postinstall-scripts` = `True`. Providers that can't disable them warn-and-ignore. |
+| `--min-release-age=DAYS` | `float` | Minimum days since publication. Non-supporting providers warn-and-ignore. |
+| `--overrides=JSON` | `dict` | Per-provider `Binary.overrides` handler replacements (`install_args`, `abspath`, `version`, …). |
+| `--install-root=PATH` | `Path` | Override the per-provider install directory. Providers without an `INSTALL_ROOT_FIELD` warn-and-ignore. |
+| `--bin-dir=PATH` | `Path` | Override the per-provider bin directory. Providers without a `BIN_DIR_FIELD` warn-and-ignore. |
+| `--euid=UID` | `int` | Pin the UID used when providers shell out. |
+| `--install-timeout=SECONDS` | `int` | Seconds to wait for install/update/uninstall subprocesses. |
+| `--version-timeout=SECONDS` | `int` | Seconds to wait for version/metadata probes. |
+| `--dry-run[=BOOL]` | `bool` | Show installer commands without executing them. Bare `--dry-run` = `True`. |
+
+Every value-taking flag also accepts the literal string `None` / `null` / `nil` / `""` to reset to the provider's built-in default (or its env-var-backed default). The precedence is: explicit per-subcommand flag > group-level flag > environment variable > built-in default.
+
 #### Select specific providers / re-order provider precedence
 
 ```bash

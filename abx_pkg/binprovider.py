@@ -368,17 +368,26 @@ class BinProvider(BaseModel):
 
         if install_root is not None:
             if not install_root_field:
-                raise TypeError(
-                    f"{self.__class__.__name__} does not support install_root",
+                # Warn and ignore so callers (e.g. the CLI) can pass a
+                # blanket install_root to every provider without having
+                # to know which subclasses actually support one.
+                logger.warning(
+                    "%s ignoring unsupported install_root=%s (no INSTALL_ROOT_FIELD)",
+                    self.__class__.__name__,
+                    install_root,
                 )
-            data.setdefault(install_root_field, install_root)
+            else:
+                data.setdefault(install_root_field, install_root)
 
         if bin_dir is not None:
             if not bin_dir_field:
-                raise TypeError(
-                    f"{self.__class__.__name__} does not support bin_dir",
+                logger.warning(
+                    "%s ignoring unsupported bin_dir=%s (no BIN_DIR_FIELD)",
+                    self.__class__.__name__,
+                    bin_dir,
                 )
-            data.setdefault(bin_dir_field, bin_dir)
+            else:
+                data.setdefault(bin_dir_field, bin_dir)
 
         super().__init__(**data)
 

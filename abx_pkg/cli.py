@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 import logging as py_logging
 import os
 import sys
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from importlib import metadata
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
@@ -46,6 +48,123 @@ class CliOptions:
     lib_dir: Path
     provider_names: list[str]
     dry_run: bool
+    # Binary-level fields forwarded verbatim to the Binary constructor.
+    # Binary's own model validators propagate them to each provider via
+    # the existing install/load_or_install/update kwarg path, which is
+    # also where the ``supports_postinstall_disable`` /
+    # ``supports_min_release_age`` warning emitters live.
+    min_version: str | None = None
+    postinstall_scripts: bool | None = None
+    min_release_age: float | None = None
+    overrides: dict[str, Any] | None = None
+    # Provider-level fields forwarded to every provider constructor.
+    # BinProvider.__init__ warns-and-ignores install_root / bin_dir
+    # when a provider subclass has no INSTALL_ROOT_FIELD / BIN_DIR_FIELD
+    # set, so the CLI can pass them unconditionally.
+    install_root: Path | None = None
+    bin_dir: Path | None = None
+    euid: int | None = None
+    install_timeout: int | None = None
+    version_timeout: int | None = None
+
+
+_NONE_STRINGS = frozenset({"", "none", "null", "nil"})
+
+
+def _none_or_stripped(raw: str | None) -> str | None:
+    """Return ``raw.strip()`` unless the value is the ``None`` /
+    ``'None'`` / ``'null'`` / ``'nil'`` / empty-string sentinel.
+
+    Called from every CLI parser below as a single short-circuit so
+    pyright can narrow ``raw`` past the ``None`` branch and each parser
+    stays focused on its one-value-type conversion logic.
+    """
+
+    if raw is None:
+        return None
+    stripped = raw.strip()
+    return None if stripped.lower() in _NONE_STRINGS else stripped
+
+
+def _parse_min_version(raw: str | None) -> str | None:
+    return _none_or_stripped(raw)
+
+
+def _parse_cli_bool(raw: str | None) -> bool | None:
+    stripped = _none_or_stripped(raw)
+    if stripped is None:
+        return None
+    lowered = stripped.lower()
+    if lowered in {"1", "true", "yes", "on"}:
+        return True
+    if lowered in {"0", "false", "no", "off"}:
+        return False
+    raise click.BadParameter(f"expected a bool or 'None', got {raw!r}")
+
+
+def _parse_cli_float(raw: str | None) -> float | None:
+    stripped = _none_or_stripped(raw)
+    if stripped is None:
+        return None
+    try:
+        return float(stripped)
+    except ValueError as err:
+        raise click.BadParameter(f"expected a float or 'None', got {raw!r}") from err
+
+
+def _parse_cli_int(raw: str | None) -> int | None:
+    """Parse an integer from a CLI flag, accepting ``"10"`` and ``"10.0"``.
+
+    Rejects ``"10.5"`` (non-integer float) so typos don't silently
+    truncate. Returns None for the ``None``/``null``/empty sentinels.
+    """
+
+    stripped = _none_or_stripped(raw)
+    if stripped is None:
+        return None
+    try:
+        return int(stripped)
+    except ValueError:
+        pass
+    try:
+        as_float = float(stripped)
+    except ValueError as err:
+        raise click.BadParameter(
+            f"expected an int or 'None', got {raw!r}",
+        ) from err
+    as_int = int(as_float)
+    if as_float != as_int:
+        raise click.BadParameter(f"expected an int or 'None', got {raw!r}")
+    return as_int
+
+
+def _parse_overrides(raw: str | None) -> dict[str, Any] | None:
+    stripped = _none_or_stripped(raw)
+    if stripped is None:
+        return None
+    try:
+        data = json.loads(stripped)
+    except json.JSONDecodeError as err:
+        raise click.BadParameter(f"--overrides must be valid JSON: {err}") from err
+    if not isinstance(data, dict):
+        raise click.BadParameter("--overrides must be a JSON object")
+    return data
+
+
+def _parse_cli_path(raw: str | None) -> Path | None:
+    stripped = _none_or_stripped(raw)
+    if stripped is None:
+        return None
+    return Path(stripped).expanduser().resolve()
+
+
+# Click ``callback=`` adapter: run the supplied parser over every raw
+# click value so each option's final value is already typed (bool / int
+# / float / Path / dict) by the time it reaches any command callback.
+# build_cli_options, build_binary, and build_providers downstream only
+# ever see typed values — no string parsing below this layer.
+def _click_parse(parser: Callable[[str | None], Any]) -> Callable[..., Any]:
+    return lambda _ctx, _param, value: parser(value)
 
 
 def get_package_version() -> str:
@@ -111,26 +230,144 @@ def build_providers(
     lib_dir: Path,
     *,
     dry_run: bool = False,
+    install_root: Path | None = None,
+    bin_dir: Path | None = None,
+    euid: int | None = None,
+    install_timeout: int | None = None,
+    version_timeout: int | None = None,
 ) -> list[BinProvider]:
     providers: list[BinProvider] = []
     for provider_name in provider_names:
         provider_class = PROVIDER_CLASS_BY_NAME[provider_name]
         provider_kwargs: dict[str, Any] = {"dry_run": dry_run}
-        install_root = _provider_install_root(provider_name, lib_dir)
-        if install_root is not None:
-            provider_kwargs["install_root"] = install_root
+        if euid is not None:
+            provider_kwargs["euid"] = euid
+        if install_timeout is not None:
+            provider_kwargs["install_timeout"] = install_timeout
+        if version_timeout is not None:
+            provider_kwargs["version_timeout"] = version_timeout
+        # Use the user-supplied --install-root if given; otherwise fall
+        # back to the managed ABX_PKG_LIB_DIR layout. BinProvider.__init__
+        # warns-and-ignores install_root for providers whose
+        # INSTALL_ROOT_FIELD is None, so the CLI can pass it blindly.
+        root = (
+            install_root
+            if install_root is not None
+            else _provider_install_root(provider_name, lib_dir)
+        )
+        if root is not None:
+            provider_kwargs["install_root"] = root
+        if bin_dir is not None:
+            provider_kwargs["bin_dir"] = bin_dir
         providers.append(provider_class(**provider_kwargs))
     return providers
 
 
 def build_binary(binary_name: str, options: CliOptions, *, dry_run: bool) -> Binary:
-    return Binary(
-        name=binary_name,
-        binproviders=build_providers(
+    binary_kwargs: dict[str, Any] = {
+        "name": binary_name,
+        "binproviders": build_providers(
             options.provider_names,
             options.lib_dir,
             dry_run=dry_run,
+            install_root=options.install_root,
+            bin_dir=options.bin_dir,
+            euid=options.euid,
+            install_timeout=options.install_timeout,
+            version_timeout=options.version_timeout,
         ),
+    }
+    # Binary's field validators coerce str → SemVer, dict → BinaryOverrides,
+    # etc., so just forward the parsed values verbatim. Binary.install /
+    # load_or_install / update then propagate postinstall_scripts /
+    # min_release_age to each provider's install() kwarg, where the
+    # existing ``supports_postinstall_disable`` / ``supports_min_release_age``
+    # warn-and-ignore path fires for providers that can't enforce them.
+    for key, value in (
+        ("min_version", options.min_version),
+        ("postinstall_scripts", options.postinstall_scripts),
+        ("min_release_age", options.min_release_age),
+        ("overrides", options.overrides),
+    ):
+        if value is not None:
+            binary_kwargs[key] = value
+    return Binary(**binary_kwargs)
+
+
+def build_cli_options(
+    ctx: click.Context | None,
+    *,
+    lib_dir: str | None,
+    binproviders: str | None,
+    dry_run: bool | None,
+    min_version: str | None,
+    postinstall_scripts: bool | None,
+    min_release_age: float | None,
+    overrides: dict[str, Any] | None,
+    install_root: Path | None,
+    bin_dir: Path | None,
+    euid: int | None,
+    install_timeout: int | None,
+    version_timeout: int | None,
+) -> CliOptions:
+    """Single entry-point used by the group callback and every subcommand.
+
+    All CLI flag values arrive here already typed — click's per-option
+    ``callback=`` parsers run first, so there's no string-to-bool /
+    string-to-int / JSON-decode work left at this layer. Every field is
+    forwarded verbatim into the returned ``CliOptions``; Binary /
+    BinProvider constructors downstream honor them via the existing
+    kwarg paths, and the warn-and-ignore machinery in
+    ``BinProvider.__init__`` / ``BinProvider.install`` handles providers
+    that can't enforce a given option.
+
+    Subcommand-level values override the group-level values on
+    ``ctx.obj['group_options']`` field-by-field; if ``ctx`` is ``None``
+    (the group callback itself), values are taken as-is.
+    """
+
+    group: CliOptions | None = (
+        cast(CliOptions, ctx.obj["group_options"])
+        if ctx is not None and ctx.obj and "group_options" in ctx.obj
+        else None
+    )
+
+    def _override(value: Any, group_value: Any) -> Any:
+        """Inherit from group unless the subcommand supplied a value."""
+        return group_value if value is None else value
+
+    if group is None:
+        return CliOptions(
+            lib_dir=resolve_lib_dir(lib_dir),
+            provider_names=parse_provider_names(binproviders),
+            dry_run=resolve_dry_run(dry_run),
+            min_version=min_version,
+            postinstall_scripts=postinstall_scripts,
+            min_release_age=min_release_age,
+            overrides=overrides,
+            install_root=install_root,
+            bin_dir=bin_dir,
+            euid=euid,
+            install_timeout=install_timeout,
+            version_timeout=version_timeout,
+        )
+    return CliOptions(
+        lib_dir=group.lib_dir if lib_dir is None else resolve_lib_dir(lib_dir),
+        provider_names=(
+            group.provider_names
+            if binproviders is None
+            else parse_provider_names(binproviders)
+        ),
+        dry_run=_override(dry_run, group.dry_run),
+        min_version=_override(min_version, group.min_version),
+        postinstall_scripts=_override(postinstall_scripts, group.postinstall_scripts),
+        min_release_age=_override(min_release_age, group.min_release_age),
+        overrides=_override(overrides, group.overrides),
+        install_root=_override(install_root, group.install_root),
+        bin_dir=_override(bin_dir, group.bin_dir),
+        euid=_override(euid, group.euid),
+        install_timeout=_override(install_timeout, group.install_timeout),
+        version_timeout=_override(version_timeout, group.version_timeout),
     )
 
 
@@ -179,44 +416,126 @@ def version_report(options: CliOptions) -> str:
 
 
 def shared_options(command):
-    command = click.option(
-        "--dry-run/--no-dry-run",
-        default=None,
-        help="Show installer commands without executing them.",
-    )(command)
-    command = click.option(
-        "--binproviders",
-        metavar="LIST",
-        default=None,
-        help="Comma-separated provider order. Defaults to ABX_PKG_BINPROVIDERS or all providers.",
-    )(command)
-    command = click.option(
-        "--lib",
-        "lib_dir",
-        metavar="PATH",
-        default=None,
-        help="Base library directory. Defaults to ABX_PKG_LIB_DIR or ~/.config/abx/lib.",
-    )(command)
+    # Options apply innermost-first; the --help listing order is the
+    # reverse of the decoration order, so --lib / --binproviders /
+    # --dry-run stay last here to preserve the pre-existing --help layout.
+    # Every non-trivial option gets a ``callback=`` that runs its raw
+    # string through a parser so the command receives a typed value
+    # (bool / int / float / Path / dict) instead of a string.
+    for decorator in (
+        click.option(
+            "--version-timeout",
+            metavar="SECONDS",
+            default=None,
+            callback=_click_parse(_parse_cli_int),
+            help="Seconds to wait for version/metadata probes. 'None' restores default.",
+        ),
+        click.option(
+            "--install-timeout",
+            metavar="SECONDS",
+            default=None,
+            callback=_click_parse(_parse_cli_int),
+            help="Seconds to wait for install/update/uninstall subprocesses. 'None' restores default.",
+        ),
+        click.option(
+            "--euid",
+            metavar="UID",
+            default=None,
+            callback=_click_parse(_parse_cli_int),
+            help="Pin the UID used when providers shell out. 'None' auto-detects.",
+        ),
+        click.option(
+            "--bin-dir",
+            metavar="PATH",
+            default=None,
+            callback=_click_parse(_parse_cli_path),
+            help="Override the per-provider bin directory (providers without BIN_DIR_FIELD warn and ignore). 'None' restores defaults.",
+        ),
+        click.option(
+            "--install-root",
+            metavar="PATH",
+            default=None,
+            callback=_click_parse(_parse_cli_path),
+            help="Override the per-provider install directory (providers without INSTALL_ROOT_FIELD warn and ignore). 'None' restores defaults.",
+        ),
+        click.option(
+            "--overrides",
+            metavar="JSON",
+            default=None,
+            callback=_click_parse(_parse_overrides),
+            help='JSON-encoded Binary.overrides dict, e.g. \'{"pip":{"install_args":["pkg"]}}\'. \'None\' restores defaults.',
+        ),
+        click.option(
+            "--min-release-age",
+            metavar="DAYS",
+            default=None,
+            callback=_click_parse(_parse_cli_float),
+            help="Minimum days since publication. Providers that can't enforce it warn and ignore. 'None' restores defaults.",
+        ),
+        click.option(
+            "--postinstall-scripts",
+            metavar="BOOL",
+            default=None,
+            callback=_click_parse(_parse_cli_bool),
+            help="Allow post-install scripts ('True'/'False'/'1'/'0'/'None' or bare `--postinstall-scripts` for implicit True). Providers that can't disable them warn and ignore.",
+        ),
+        click.option(
+            "--min-version",
+            metavar="SEMVER",
+            default=None,
+            callback=_click_parse(_parse_min_version),
+            help="Minimum acceptable version floor for the binary. 'None' means any version is acceptable.",
+        ),
+        click.option(
+            "--dry-run",
+            metavar="BOOL",
+            default=None,
+            callback=_click_parse(_parse_cli_bool),
+            help="Show installer commands without executing them ('True'/'False'/'None' or bare `--dry-run` for implicit True).",
+        ),
+        click.option(
+            "--binproviders",
+            metavar="LIST",
+            default=None,
+            help="Comma-separated provider order. Defaults to ABX_PKG_BINPROVIDERS or all providers.",
+        ),
+        click.option(
+            "--lib",
+            "lib_dir",
+            metavar="PATH",
+            default=None,
+            help="Base library directory. Defaults to ABX_PKG_LIB_DIR or ~/.config/abx/lib.",
+        ),
+    ):
+        command = decorator(command)
     return command
+
+
+# Single canonical list of kwargs carried by every CLI callback that
+# uses @shared_options. Defined once so command callbacks don't have to
+# enumerate all of them, and so ``get_command_options`` has a single
+# source of truth for what gets forwarded to ``build_cli_options``.
+_SHARED_OPTION_NAMES: tuple[str, ...] = (
+    "lib_dir",
+    "binproviders",
+    "dry_run",
+    "min_version",
+    "postinstall_scripts",
+    "min_release_age",
+    "overrides",
+    "install_root",
+    "bin_dir",
+    "euid",
+    "install_timeout",
+    "version_timeout",
+)
 
 
 def get_command_options(
     ctx: click.Context,
-    *,
-    lib_dir: str | None,
-    binproviders: str | None,
-    dry_run: bool | None,
+    **shared_kwargs: Any,
 ) -> CliOptions:
-    group_options = cast(CliOptions, ctx.obj["group_options"])
-    return CliOptions(
-        lib_dir=group_options.lib_dir if lib_dir is None else resolve_lib_dir(lib_dir),
-        provider_names=(
-            group_options.provider_names
-            if binproviders is None
-            else parse_provider_names(binproviders)
-        ),
-        dry_run=group_options.dry_run if dry_run is None else dry_run,
-    )
+    return build_cli_options(ctx, **shared_kwargs)
 
 
 def run_binary_command(
@@ -278,21 +597,15 @@ def run_binary_command(
 )
 def cli(
     ctx: click.Context,
-    lib_dir: str | None,
-    binproviders: str | None,
-    dry_run: bool | None,
     install_before_run: bool,
     update_before_run: bool,
     show_version: bool,
+    **shared_kwargs: Any,
 ) -> None:
     """Manage binaries via abx-pkg binproviders."""
 
-    options = CliOptions(
-        lib_dir=resolve_lib_dir(lib_dir),
-        provider_names=parse_provider_names(binproviders),
-        dry_run=resolve_dry_run(dry_run),
-    )
     ctx.ensure_object(dict)
+    options = build_cli_options(None, **shared_kwargs)
     ctx.obj["group_options"] = options
     ctx.obj["install_before_run"] = install_before_run
     ctx.obj["update_before_run"] = update_before_run
@@ -308,20 +621,10 @@ def cli(
 @cli.command("version")
 @click.pass_context
 @shared_options
-def version_command(
-    ctx: click.Context,
-    lib_dir: str | None,
-    binproviders: str | None,
-    dry_run: bool | None,
-) -> None:
+def version_command(ctx: click.Context, **shared_kwargs: Any) -> None:
     """Show the package version and available installer binaries."""
 
-    options = get_command_options(
-        ctx,
-        lib_dir=lib_dir,
-        binproviders=binproviders,
-        dry_run=dry_run,
-    )
+    options = get_command_options(ctx, **shared_kwargs)
     click.echo(version_report(options))
 
 
@@ -332,18 +635,11 @@ def version_command(
 def install_command(
     ctx: click.Context,
     binary_name: str,
-    lib_dir: str | None,
-    binproviders: str | None,
-    dry_run: bool | None,
+    **shared_kwargs: Any,
 ) -> None:
     """Install a binary via the selected providers in order."""
 
-    options = get_command_options(
-        ctx,
-        lib_dir=lib_dir,
-        binproviders=binproviders,
-        dry_run=dry_run,
-    )
+    options = get_command_options(ctx, **shared_kwargs)
     run_binary_command(binary_name, action="install", options=options)
 
 
@@ -354,18 +650,11 @@ def install_command(
 def update_command(
     ctx: click.Context,
     binary_name: str,
-    lib_dir: str | None,
-    binproviders: str | None,
-    dry_run: bool | None,
+    **shared_kwargs: Any,
 ) -> None:
     """Update a binary via the selected providers in order."""
 
-    options = get_command_options(
-        ctx,
-        lib_dir=lib_dir,
-        binproviders=binproviders,
-        dry_run=dry_run,
-    )
+    options = get_command_options(ctx, **shared_kwargs)
     run_binary_command(binary_name, action="update", options=options)
 
 
@@ -376,18 +665,11 @@ def update_command(
 def uninstall_command(
     ctx: click.Context,
     binary_name: str,
-    lib_dir: str | None,
-    binproviders: str | None,
-    dry_run: bool | None,
+    **shared_kwargs: Any,
 ) -> None:
     """Uninstall a binary via the selected providers in order."""
 
-    options = get_command_options(
-        ctx,
-        lib_dir=lib_dir,
-        binproviders=binproviders,
-        dry_run=dry_run,
-    )
+    options = get_command_options(ctx, **shared_kwargs)
     run_binary_command(binary_name, action="uninstall", options=options)
 
 
@@ -398,27 +680,16 @@ def uninstall_command(
 def load_command(
     ctx: click.Context,
     binary_name: str,
-    lib_dir: str | None,
-    binproviders: str | None,
-    dry_run: bool | None,
+    **shared_kwargs: Any,
 ) -> None:
     """Load an already-installed binary via the selected providers in order."""
 
-    options = get_command_options(
-        ctx,
-        lib_dir=lib_dir,
-        binproviders=binproviders,
-        dry_run=dry_run,
-    )
-    run_binary_command(
-        binary_name,
-        action="load",
-        options=CliOptions(
-            lib_dir=options.lib_dir,
-            provider_names=options.provider_names,
-            dry_run=False,
-        ),
-    )
+    options = get_command_options(ctx, **shared_kwargs)
+    # Load never installs, so force dry_run off regardless of what the
+    # user passed; the other option fields are preserved so min_version
+    # etc. still apply.
+    options = replace(options, dry_run=False)
+    run_binary_command(binary_name, action="load", options=options)
 
 
 @cli.command("load_or_install")
@@ -428,18 +699,11 @@ def load_command(
 def load_or_install_command(
     ctx: click.Context,
     binary_name: str,
-    lib_dir: str | None,
-    binproviders: str | None,
-    dry_run: bool | None,
+    **shared_kwargs: Any,
 ) -> None:
     """Load a binary or install it via the selected providers in order."""
 
-    options = get_command_options(
-        ctx,
-        lib_dir=lib_dir,
-        binproviders=binproviders,
-        dry_run=dry_run,
-    )
+    options = get_command_options(ctx, **shared_kwargs)
     run_binary_command(binary_name, action="load_or_install", options=options)
 
 
@@ -500,7 +764,7 @@ def run_command(
         ctx.exit(0)
         return
 
-    if binary.loaded_abspath is None or binary.loaded_binprovider is None:
+    if not binary.is_valid:
         click.echo(
             f"abx-pkg: {binary_name}: binary could not be loaded",
             err=True,
@@ -508,6 +772,9 @@ def run_command(
         ctx.exit(1)
         return
 
+    # binary.is_valid guarantees both fields are set; narrow for pyright.
+    assert binary.loaded_binprovider is not None
+    assert binary.loaded_abspath is not None
     proc = binary.loaded_binprovider.exec(
         bin_name=binary.loaded_abspath,
         cmd=list(binary_args),
@@ -516,19 +783,43 @@ def run_command(
     ctx.exit(proc.returncode)
 
 
+# Bool flags that should auto-set to True when passed bare (e.g. `--dry-run`
+# with no ``=VALUE``). Pre-processing in main() / abx_main() rewrites bare
+# occurrences to ``--flag=True`` so a single click string option can handle
+# both the bare and the value form. Callers pass ``--dry-run=False`` or
+# ``--dry-run=None`` to override the auto-True semantics.
+_BARE_TRUE_BOOL_FLAGS = frozenset({"--dry-run", "--postinstall-scripts"})
+
+
+def _expand_bare_bool_flags(argv: list[str]) -> list[str]:
+    """Translate bare bool flags (``--dry-run``) into their value form
+    (``--dry-run=True``) so click's plain string option can parse both."""
+
+    return [f"{tok}=True" if tok in _BARE_TRUE_BOOL_FLAGS else tok for tok in argv]
+
+
 def main() -> None:
-    cli()
+    cli(_expand_bare_bool_flags(sys.argv[1:]))
 
 
 # ---------------------------------------------------------------------------
 # `abx` — thin alias for `abx-pkg --install run ...`
 # ---------------------------------------------------------------------------
 
-# Group-level options of the `abx-pkg` CLI that consume a following value
-# (e.g. `--lib PATH`, `--binproviders LIST`). Used by _split_abx_argv to
-# know when to pull an extra token into the "pre-package-name" prefix.
-# Options using the `--name=value` form don't need to be listed here.
-_ABX_PKG_GROUP_OPTS_WITH_VALUES = frozenset({"--lib", "--binproviders"})
+# Group-level options that consume a following value (e.g. `--lib PATH`,
+# `--binproviders LIST`). Derived at import time by introspecting the
+# click group's own option definitions — no hardcoding — so any option
+# added later via @shared_options automatically joins this set. Used by
+# _split_abx_argv to know when to pull an extra token into the
+# "pre-package-name" prefix; options written as `--name=value` never hit
+# this code path (they're handled by the `"=" in tok` branch).
+_ABX_PKG_GROUP_OPTS_WITH_VALUES = frozenset(
+    opt
+    for param in cli.params
+    if isinstance(param, click.Option) and not param.is_flag
+    for opt in param.opts
+    if opt.startswith("--")
+)
 
 _ABX_USAGE = (
     "Usage: abx [OPTIONS] BINARY_NAME [BINARY_ARGS]...\n"
@@ -593,7 +884,7 @@ def abx_main() -> None:
     surface area — every option is still documented and parsed exactly
     once, by ``abx-pkg`` itself.
     """
-    argv = list(sys.argv[1:])
+    argv = _expand_bare_bool_flags(list(sys.argv[1:]))
     pre, rest = _split_abx_argv(argv)
 
     if not rest:
