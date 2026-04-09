@@ -13,12 +13,12 @@ from platformdirs import user_cache_path
 from pydantic import Field, TypeAdapter, computed_field, model_validator
 
 from .base_types import (
-    ABX_PKG_LIB_DIR,
     BinName,
     BinProviderName,
     HostBinPath,
     InstallArgs,
     PATHStr,
+    abx_pkg_install_root_default,
     bin_abspath,
 )
 from .binprovider import BinProvider, env_flag_is_true, remap_kwargs
@@ -61,9 +61,9 @@ class BunProvider(BinProvider):
         repr=False,
     )
 
-    bun_prefix: Path | None = (
-        (ABX_PKG_LIB_DIR / "bun") if ABX_PKG_LIB_DIR else None
-    )  # None = inherit BUN_INSTALL / ~/.bun
+    # None = inherit BUN_INSTALL / ~/.bun, otherwise a managed prefix.
+    # Default: ABX_PKG_BUN_ROOT > ABX_PKG_LIB_DIR/bun > None.
+    bun_prefix: Path | None = abx_pkg_install_root_default("bun")
 
     cache_dir: Path = USER_CACHE_PATH
     cache_arg: str = ""  # re-derived per-instance from cache_dir in detect_cache_arg

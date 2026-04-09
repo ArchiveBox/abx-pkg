@@ -14,13 +14,33 @@ from pydantic import TypeAdapter, AfterValidator, BeforeValidator, ValidationErr
 # Read once at import time. When set, every provider with an
 # ``INSTALL_ROOT_FIELD`` defaults its install root to
 # ``ABX_PKG_LIB_DIR / <provider name>`` (e.g. ``<lib>/npm``,
-# ``<lib>/pip``, ``<lib>/gem``). Users can still override per-provider
-# by passing ``install_root=...`` or the provider-specific alias
-# explicitly at construction time.
+# ``<lib>/pip``, ``<lib>/gem``). Per-provider ``ABX_PKG_<NAME>_ROOT``
+# env vars override this for their own provider; explicit constructor
+# kwargs override both.
 _lib_dir_env = os.environ.get("ABX_PKG_LIB_DIR", "").strip()
 ABX_PKG_LIB_DIR: Path | None = (
     Path(_lib_dir_env).expanduser().resolve() if _lib_dir_env else None
 )
+
+
+def abx_pkg_install_root_default(provider_name: str) -> Path | None:
+    """Resolve a provider's default install root from env vars.
+
+    Precedence (most specific wins):
+    1. ``ABX_PKG_<PROVIDER>_ROOT`` (e.g. ``ABX_PKG_NPM_ROOT``)
+    2. ``ABX_PKG_LIB_DIR / <provider_name>``
+    3. ``None`` — caller's built-in default applies.
+
+    Explicit constructor kwargs (``install_root=`` or the
+    provider-specific alias) always override whatever this function
+    returns.
+    """
+    specific = os.environ.get(f"ABX_PKG_{provider_name.upper()}_ROOT", "").strip()
+    if specific:
+        return Path(specific).expanduser().resolve()
+    if ABX_PKG_LIB_DIR is not None:
+        return ABX_PKG_LIB_DIR / provider_name
+    return None
 
 
 def validate_binprovider_name(name: str) -> str:

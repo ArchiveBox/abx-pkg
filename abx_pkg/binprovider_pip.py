@@ -17,12 +17,12 @@ from typing import ClassVar, Self
 from pydantic import Field, model_validator, TypeAdapter, computed_field
 
 from .base_types import (
-    ABX_PKG_LIB_DIR,
     BinProviderName,
     PATHStr,
     BinName,
     InstallArgs,
     HostBinPath,
+    abx_pkg_install_root_default,
     bin_abspath,
     bin_abspaths,
 )
@@ -67,9 +67,9 @@ class PipProvider(BinProvider):
         repr=False,
     )
 
-    pip_venv: Path | None = (
-        (ABX_PKG_LIB_DIR / "pip") if ABX_PKG_LIB_DIR else None
-    )  # None = system site-packages (user or global), otherwise it's a path e.g. DATA_DIR/lib/pip/venv
+    # None = system site-packages (user or global), otherwise a path.
+    # Default: ABX_PKG_PIP_ROOT > ABX_PKG_LIB_DIR/pip > None.
+    pip_venv: Path | None = abx_pkg_install_root_default("pip")
 
     cache_dir: Path = USER_CACHE_PATH
     cache_arg: str = f"--cache-dir={cache_dir}"

@@ -206,6 +206,90 @@ class TestAbxPkgLibDir:
         assert Path(payload["npm"]) == explicit_npm
         assert Path(payload["uv"]) == explicit_uv
 
+    def test_per_provider_root_env_var_overrides_abx_pkg_lib_dir(self, tmp_path):
+        """``ABX_PKG_<NAME>_ROOT`` beats ``ABX_PKG_LIB_DIR`` for that provider.
+
+        Asserts the precedence rule across every provider that ships
+        an install-root field — set both env vars and confirm the
+        per-provider one wins for the targeted provider while the
+        ``ABX_PKG_LIB_DIR`` default still applies to the rest.
+        """
+        lib_dir = tmp_path / "lib"
+        per_provider_dirs = {
+            name: tmp_path / f"custom-{name}"
+            for name, _ in _providers_with_install_root_field()
+        }
+        env_overrides = {
+            f"ABX_PKG_{name.upper()}_ROOT": str(path)
+            for name, path in per_provider_dirs.items()
+        }
+
+        script = textwrap.dedent(
+            """
+            import json
+            from abx_pkg import ALL_PROVIDERS
+            payload = {}
+            for cls in ALL_PROVIDERS:
+                field = cls.INSTALL_ROOT_FIELD
+                if not field:
+                    continue
+                instance = cls()
+                value = getattr(instance, field)
+                payload[instance.name] = str(value) if value is not None else None
+            print(json.dumps(payload))
+            """,
+        )
+        proc = _run_with_lib_dir(
+            str(lib_dir),
+            script,
+            extra_env=env_overrides,
+        )
+        assert proc.returncode == 0, proc.stderr
+        payload = json.loads(proc.stdout.strip().splitlines()[-1])
+
+        for name, expected in per_provider_dirs.items():
+            actual = payload.get(name)
+            assert actual is not None, (
+                f"{name}: INSTALL_ROOT_FIELD came back None even though "
+                f"ABX_PKG_{name.upper()}_ROOT={expected} was set"
+            )
+            assert Path(actual) == expected.resolve(), (
+                f"{name}: ABX_PKG_{name.upper()}_ROOT did not win over "
+                f"ABX_PKG_LIB_DIR; expected {expected.resolve()}, got {actual}"
+            )
+
+    def test_per_provider_root_alone_resolves_correctly(self, tmp_path):
+        """``ABX_PKG_<NAME>_ROOT`` works even with ``ABX_PKG_LIB_DIR`` unset.
+
+        And providers without a per-provider env var set still use
+        their built-in defaults (``None`` for the nullable ones).
+        """
+        explicit_npm = tmp_path / "npm-only"
+        script = textwrap.dedent(
+            """
+            import json
+            from abx_pkg import NpmProvider, PipProvider
+            print(json.dumps({
+                "npm": str(NpmProvider().npm_prefix),
+                "pip": str(PipProvider().pip_venv) if PipProvider().pip_venv else None,
+            }))
+            """,
+        )
+        env = os.environ.copy()
+        env.pop("ABX_PKG_LIB_DIR", None)
+        env["ABX_PKG_NPM_ROOT"] = str(explicit_npm)
+        env.pop("ABX_PKG_PIP_ROOT", None)
+        proc = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert proc.returncode == 0, proc.stderr
+        payload = json.loads(proc.stdout.strip().splitlines()[-1])
+        assert Path(payload["npm"]) == explicit_npm.resolve()
+        assert payload["pip"] is None
+
     def test_brew_prefix_respects_abx_pkg_lib_dir_even_with_brew_on_host(
         self,
         tmp_path,
@@ -215,9 +299,12 @@ class TestAbxPkgLibDir:
         ``BrewProvider.load_PATH`` historically auto-corrected
         ``brew_prefix`` to whatever brew location it detected on the
         host, which would silently override the ``ABX_PKG_LIB_DIR``
-        default. Drop a real (no-op) ``brew`` binary into PATH so the
-        validator sees an install, and assert that a pinned
-        ``ABX_PKG_LIB_DIR`` still wins.
+        default. Drop a real (no-op) ``brew`` binary into a tempdir
+        and pin ``BrewProvider.PATH`` to that dir (the provider's
+        ``PATH`` field is hardcoded to homebrew/linuxbrew locations
+        otherwise, so on real linuxbrew/macOS hosts it would find the
+        ambient brew regardless of what we put in os.environ['PATH']).
+        Then assert that the pinned ``ABX_PKG_LIB_DIR`` still wins.
         """
         fake_brew_dir = tmp_path / "fakebrew" / "bin"
         fake_brew_dir.mkdir(parents=True)
@@ -226,27 +313,25 @@ class TestAbxPkgLibDir:
         fake_brew.chmod(0o755)
 
         lib_dir = tmp_path / "abx-lib"
-        extra_path = f"{fake_brew_dir}:{os.environ.get('PATH', '')}"
+        # Pass ``PATH=<fake_brew_dir>`` straight to BrewProvider so its
+        # detection logic can only see the fake brew, regardless of
+        # whatever real brew is installed on the test host.
         script = textwrap.dedent(
-            """
+            f"""
             import json
             from abx_pkg import BrewProvider
-            p = BrewProvider()
-            print(json.dumps({
+            p = BrewProvider(PATH={str(fake_brew_dir)!r})
+            print(json.dumps({{
                 "brew_prefix": str(p.brew_prefix),
                 "installer_bin_abspath": (
                     str(p.INSTALLER_BIN_ABSPATH)
                     if p.INSTALLER_BIN_ABSPATH is not None
                     else None
                 ),
-            }))
+            }}))
             """,
         )
-        proc = _run_with_lib_dir(
-            str(lib_dir),
-            script,
-            extra_env={"PATH": extra_path},
-        )
+        proc = _run_with_lib_dir(str(lib_dir), script)
         assert proc.returncode == 0, proc.stderr
         payload = json.loads(proc.stdout.strip().splitlines()[-1])
 
@@ -263,7 +348,6 @@ class TestAbxPkgLibDir:
         # fake brew's prefix directory — i.e. we haven't broken the
         # original behavior.
         env = os.environ.copy()
-        env["PATH"] = extra_path
         env.pop("ABX_PKG_LIB_DIR", None)
         default_proc = subprocess.run(
             [sys.executable, "-c", script],

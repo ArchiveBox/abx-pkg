@@ -9,12 +9,12 @@ from pydantic import TypeAdapter, model_validator, computed_field
 from typing import ClassVar, Self
 
 from .base_types import (
-    ABX_PKG_LIB_DIR,
     BinProviderName,
     PATHStr,
     BinName,
     InstallArgs,
     HostBinPath,
+    abx_pkg_install_root_default,
 )
 from .semver import SemVer
 from .binprovider import BinProvider, DEFAULT_ENV_PATH, remap_kwargs
@@ -33,7 +33,8 @@ class GoGetProvider(BinProvider):
     PATH: PATHStr = DEFAULT_ENV_PATH
 
     gobin: Path | None = None
-    gopath: Path = (ABX_PKG_LIB_DIR / "goget") if ABX_PKG_LIB_DIR else DEFAULT_GOPATH
+    # Default: ABX_PKG_GOGET_ROOT > ABX_PKG_LIB_DIR/goget > $GOPATH > ~/go.
+    gopath: Path = abx_pkg_install_root_default("goget") or DEFAULT_GOPATH
     go_install_args: list[str] = []
 
     @computed_field

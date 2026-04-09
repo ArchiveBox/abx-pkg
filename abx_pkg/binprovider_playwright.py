@@ -12,12 +12,13 @@ from typing import ClassVar, Self
 from pydantic import Field, computed_field, model_validator
 
 from .base_types import (
-    ABX_PKG_LIB_DIR,
     BinName,
     BinProviderName,
     HostBinPath,
     InstallArgs,
     PATHStr,
+    abx_pkg_install_root_default,
+    bin_abspath,
 )
 from .binary import Binary
 from .binprovider import BinProvider, remap_kwargs
@@ -63,9 +64,8 @@ class PlaywrightProvider(BinProvider):
     # ``playwright_root`` is both the abx-pkg install root and the
     # ``PLAYWRIGHT_BROWSERS_PATH`` we export to the CLI. Leave unset to
     # let playwright use its own OS-default browsers path.
-    playwright_root: Path | None = (
-        (ABX_PKG_LIB_DIR / "playwright") if ABX_PKG_LIB_DIR else None
-    )
+    # Default: ABX_PKG_PLAYWRIGHT_ROOT > ABX_PKG_LIB_DIR/playwright > None.
+    playwright_root: Path | None = abx_pkg_install_root_default("playwright")
     browser_bin_dir: Path | None = None  # symlink dir for resolved browsers
 
     # Flags prepended to every ``playwright install`` call. Default
@@ -139,14 +139,36 @@ class PlaywrightProvider(BinProvider):
         quiet=False,
         **kwargs,
     ):
-        # When ``playwright_root`` is set, force-override
-        # ``PLAYWRIGHT_BROWSERS_PATH`` on every subprocess so an ambient
-        # host value can't hijack our managed install root. When it's
-        # not set we leave the env alone so playwright uses its own
-        # default (same as the host).
+        # ``euid=0`` routes every subprocess through the base class's
+        # ``sudo -n -- ...`` fallback on non-root hosts so
+        # ``--with-deps`` can apt-get install browser system libs.
+        # ``sudo`` strips most env vars by default (``env_reset`` in
+        # sudoers), so simply setting ``env["PLAYWRIGHT_BROWSERS_PATH"]``
+        # would be silently dropped before reaching the child. Wrap the
+        # whole command with ``/usr/bin/env KEY=VAL -- <cmd>`` instead:
+        # ``env`` is a trusted utility that sudo executes happily, and
+        # the assignments are CLI args (not env vars) so sudo's filter
+        # never sees them. ``env`` then sets the vars and execs the
+        # real command. Works identically when sudo isn't involved
+        # (root host or already-elevated). The first command token
+        # must be an absolute path because sudo's secure_path may not
+        # contain our managed bin dir.
         env = (kwargs.pop("env", None) or os.environ.copy()).copy()
+        env_assignments: list[str] = []
         if self.playwright_root is not None:
             env["PLAYWRIGHT_BROWSERS_PATH"] = str(self.playwright_root)
+            env_assignments.append(
+                f"PLAYWRIGHT_BROWSERS_PATH={self.playwright_root}",
+            )
+        if env_assignments:
+            resolved_bin = bin_name
+            if not os.path.isabs(str(bin_name)):
+                resolved_bin = bin_abspath(str(bin_name), PATH=self.PATH) or bin_name
+            # POSIX ``env``: first non-assignment positional arg is the
+            # utility to exec; no ``--`` separator (older coreutils
+            # don't support it).
+            cmd = [*env_assignments, str(resolved_bin), *cmd]
+            bin_name = "/usr/bin/env"
         cwd_candidates: list[Path | str | None] = [
             cwd,
             self.install_root,

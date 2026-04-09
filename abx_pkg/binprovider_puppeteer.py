@@ -14,12 +14,12 @@ from collections.abc import Iterable
 from pydantic import Field, computed_field, model_validator
 
 from .base_types import (
-    ABX_PKG_LIB_DIR,
     BinName,
     BinProviderName,
     HostBinPath,
     InstallArgs,
     PATHStr,
+    abx_pkg_install_root_default,
 )
 from .binary import Binary
 from .binprovider import BinProvider, EnvProvider, env_flag_is_true, remap_kwargs
@@ -34,9 +34,9 @@ CLAUDE_SANDBOX_NO_PROXY = (
     ".svc.cluster.local,.local"
 )
 
-DEFAULT_PUPPETEER_ROOT = Path(
-    os.environ.get("ABX_PKG_PUPPETEER_ROOT", "~/.cache/abx-pkg/puppeteer"),
-).expanduser()
+# Ultimate fallback when neither the constructor arg nor
+# ``ABX_PKG_PUPPETEER_ROOT`` nor ``ABX_PKG_LIB_DIR`` is set.
+DEFAULT_PUPPETEER_ROOT = Path("~/.cache/abx-pkg/puppeteer").expanduser()
 
 
 class PuppeteerProvider(BinProvider):
@@ -52,9 +52,8 @@ class PuppeteerProvider(BinProvider):
     )
     min_release_age: float | None = Field(default=None, repr=False)
 
-    puppeteer_root: Path | None = (
-        (ABX_PKG_LIB_DIR / "puppeteer") if ABX_PKG_LIB_DIR else None
-    )
+    # Default: ABX_PKG_PUPPETEER_ROOT > ABX_PKG_LIB_DIR/puppeteer > None.
+    puppeteer_root: Path | None = abx_pkg_install_root_default("puppeteer")
     browser_bin_dir: Path | None = None
     browser_cache_dir: Path | None = None
 

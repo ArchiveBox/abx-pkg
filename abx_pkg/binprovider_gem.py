@@ -8,7 +8,13 @@ from pathlib import Path
 from pydantic import model_validator, computed_field
 from typing import ClassVar, Self
 
-from .base_types import ABX_PKG_LIB_DIR, BinProviderName, PATHStr, BinName, InstallArgs
+from .base_types import (
+    BinProviderName,
+    PATHStr,
+    BinName,
+    InstallArgs,
+    abx_pkg_install_root_default,
+)
 from .semver import SemVer
 from .binprovider import BinProvider, DEFAULT_ENV_PATH, remap_kwargs
 from .logging import format_subprocess_output
@@ -25,7 +31,8 @@ class GemProvider(BinProvider):
 
     PATH: PATHStr = DEFAULT_ENV_PATH
 
-    gem_home: Path | None = (ABX_PKG_LIB_DIR / "gem") if ABX_PKG_LIB_DIR else None
+    # Default: ABX_PKG_GEM_ROOT > ABX_PKG_LIB_DIR/gem > None.
+    gem_home: Path | None = abx_pkg_install_root_default("gem")
     gem_bindir: Path | None = None
     gem_install_args: list[str] = ["--no-document"]
 

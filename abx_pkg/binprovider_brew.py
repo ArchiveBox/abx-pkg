@@ -11,12 +11,12 @@ from typing import ClassVar
 from pydantic import Field, model_validator, TypeAdapter, computed_field
 
 from .base_types import (
-    ABX_PKG_LIB_DIR,
     BinProviderName,
     PATHStr,
     BinName,
     InstallArgs,
     HostBinPath,
+    abx_pkg_install_root_default,
     bin_abspath,
 )
 from .semver import SemVer
@@ -48,9 +48,8 @@ class BrewProvider(BinProvider):
         repr=False,
     )
 
-    brew_prefix: Path = (
-        (ABX_PKG_LIB_DIR / "brew") if ABX_PKG_LIB_DIR else GUESSED_BREW_PREFIX
-    )
+    # Default: ABX_PKG_BREW_ROOT > ABX_PKG_LIB_DIR/brew > detected/guessed.
+    brew_prefix: Path = abx_pkg_install_root_default("brew") or GUESSED_BREW_PREFIX
 
     @computed_field
     @property

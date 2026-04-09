@@ -11,21 +11,21 @@ from pydantic import model_validator, TypeAdapter, computed_field
 from typing import Self
 
 from .base_types import (
-    ABX_PKG_LIB_DIR,
     BinProviderName,
     PATHStr,
     BinName,
     InstallArgs,
     HostBinPath,
+    abx_pkg_install_root_default,
 )
 from .semver import SemVer
 from .binprovider import BinProvider, remap_kwargs
 from .logging import format_subprocess_output
 
 
-DEFAULT_DOCKER_ROOT = Path(
-    os.environ.get("ABX_PKG_DOCKER_ROOT", "~/.cache/abx-pkg/docker"),
-).expanduser()
+# Ultimate fallback when neither the constructor arg nor
+# ``ABX_PKG_DOCKER_ROOT`` nor ``ABX_PKG_LIB_DIR`` is set.
+DEFAULT_DOCKER_ROOT = Path("~/.cache/abx-pkg/docker").expanduser()
 
 
 class DockerProvider(BinProvider):
@@ -36,7 +36,8 @@ class DockerProvider(BinProvider):
 
     PATH: PATHStr = ""
 
-    docker_root: Path | None = (ABX_PKG_LIB_DIR / "docker") if ABX_PKG_LIB_DIR else None
+    # Default: ABX_PKG_DOCKER_ROOT > ABX_PKG_LIB_DIR/docker > None.
+    docker_root: Path | None = abx_pkg_install_root_default("docker")
     docker_shim_dir: Path | None = None
     docker_run_args: list[str] = ["--rm", "-i"]
 

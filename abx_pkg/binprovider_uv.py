@@ -12,12 +12,12 @@ from platformdirs import user_cache_path
 from pydantic import Field, TypeAdapter, computed_field, model_validator
 
 from .base_types import (
-    ABX_PKG_LIB_DIR,
     BinName,
     BinProviderName,
     HostBinPath,
     InstallArgs,
     PATHStr,
+    abx_pkg_install_root_default,
     bin_abspath,
 )
 from .binprovider import BinProvider, env_flag_is_true, remap_kwargs
@@ -70,9 +70,9 @@ class UvProvider(BinProvider):
         repr=False,
     )
 
-    uv_venv: Path | None = (
-        (ABX_PKG_LIB_DIR / "uv") if ABX_PKG_LIB_DIR else None
-    )  # None = global ``uv tool`` mode
+    # None = global ``uv tool`` mode, otherwise a managed venv path.
+    # Default: ABX_PKG_UV_ROOT > ABX_PKG_LIB_DIR/uv > None.
+    uv_venv: Path | None = abx_pkg_install_root_default("uv")
     # Global-mode overrides (only used when uv_venv is None). Mirror
     # ``UV_TOOL_DIR`` / ``UV_TOOL_BIN_DIR`` respectively; default to uv's
     # own defaults (``~/.local/share/uv/tools`` / ``~/.local/bin``).
