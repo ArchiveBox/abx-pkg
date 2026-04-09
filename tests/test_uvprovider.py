@@ -1,4 +1,5 @@
 import logging
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -9,6 +10,63 @@ from abx_pkg.exceptions import BinaryInstallError, BinProviderInstallError
 
 
 class TestUvProvider:
+    def test_version_falls_back_to_uv_metadata_after_failed_console_script_probe(
+        self,
+        monkeypatch,
+    ):
+        provider = UvProvider(
+            uv_venv=Path("/tmp/fake-uv-venv"),
+            cache_dir=Path("/tmp/fake-uv-cache"),
+            postinstall_scripts=True,
+            min_release_age=0,
+        )
+        provider._INSTALLER_BIN_ABSPATH = Path("/tmp/fake-uv")
+        fake_abspath = Path("/tmp/fake-saws")
+        assert provider.uv_venv is not None
+        uv_python = provider.uv_venv / "bin" / "python"
+        version_args_seen: list[str] = []
+
+        def fake_exec(
+            self,
+            bin_name,
+            cmd: tuple[str, ...] = (),
+            cwd=".",
+            quiet=False,
+            **kwargs,
+        ):
+            first_cmd = cmd[0] if cmd else None
+            if first_cmd in {"--version", "-version", "-v"}:
+                version_args_seen.append(first_cmd)
+                return subprocess.CompletedProcess(
+                    args=[str(bin_name), *cmd],
+                    returncode=2,
+                    stdout="",
+                    stderr="error near build 726.2.0",
+                )
+            if list(cmd[:4]) == [
+                "pip",
+                "show",
+                "--python",
+                str(uv_python),
+            ] and cmd[4:] == ["saws"]:
+                return subprocess.CompletedProcess(
+                    args=[str(bin_name), *cmd],
+                    returncode=0,
+                    stdout="Name: saws\nVersion: 0.4.3\n",
+                    stderr="",
+                )
+            raise AssertionError(f"unexpected uv exec call: {cmd!r}")
+
+        monkeypatch.setattr(UvProvider, "exec", fake_exec)
+
+        assert provider.get_version(
+            "saws",
+            abspath=fake_abspath,
+            quiet=True,
+            nocache=True,
+        ) == SemVer("0.4.3")
+        assert version_args_seen == ["--version", "-version", "-v"]
+
     def test_install_args_win_for_exclude_newer_flag(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             venv_path = Path(temp_dir) / "venv"
