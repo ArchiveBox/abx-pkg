@@ -796,8 +796,17 @@ def _expand_bare_bool_flags(argv: list[str]) -> list[str]:
 
     out: list[str] = []
     past_run = False
+    skip_next = False
     for tok in argv:
         if past_run:
+            out.append(tok)
+        elif skip_next:
+            # This token is the value of the preceding option (e.g.
+            # `--lib run`), not the `run` subcommand itself.
+            skip_next = False
+            out.append(tok)
+        elif tok in _ABX_PKG_GROUP_OPTS_WITH_VALUES:
+            skip_next = True
             out.append(tok)
         elif tok == "run":
             past_run = True
