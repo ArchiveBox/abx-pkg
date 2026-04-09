@@ -3,6 +3,7 @@
 __package__ = "abx_pkg"
 
 import os
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -230,6 +231,29 @@ class UvProvider(BinProvider):
         if proc.returncode != 0:
             self._raise_proc_error("install", ["uv venv"], proc)
 
+    def _clear_site_packages_pycache(self) -> None:
+        """Wipe every ``__pycache__`` in the venv's site-packages.
+
+        Wheel builds ship files with reproducible mtimes, and ``uv`` preserves
+        those mtimes when installing. If we install package version A, import
+        it (populating ``__pycache__`` with timestamp-validated ``.pyc``
+        files), then uninstall A and install version B, Python can end up
+        loading the stale ``.pyc`` bytecode if B's fresh ``.py`` file happens
+        to land with the same (wheel-provided) mtime and size as A's. ``uv
+        pip uninstall`` doesn't clean up auto-generated ``__pycache__``
+        entries, so the stale ``.pyc`` survives the uninstall and shadows the
+        new source. Force-drop every ``__pycache__`` in site-packages before
+        re-installing so Python is guaranteed to recompile from source.
+        """
+        if not self.uv_venv:
+            return
+        lib_dir = self.uv_venv / "lib"
+        if not lib_dir.is_dir():
+            return
+        for site_packages in lib_dir.glob("python*/site-packages"):
+            for pycache in site_packages.rglob("__pycache__"):
+                shutil.rmtree(pycache, ignore_errors=True)
+
     @staticmethod
     def _release_age_cutoff(min_release_age: float | None) -> str | None:
         if min_release_age is None or min_release_age <= 0:
@@ -350,13 +374,13 @@ class UvProvider(BinProvider):
         )
 
         if self.uv_venv:
-            # ``uv pip install --upgrade`` (with or without ``--reinstall``)
-            # in uv 0.11+ leaves the previous version's compiled ``.so``
-            # files in place, so ``import pkg`` keeps loading the stale
-            # compiled module instead of the freshly-installed ``.py``
-            # sources. Avoid this by doing an explicit uninstall + install
-            # cycle, which fully drops the old package directory before
-            # laying down the new one.
+            # Do an explicit uninstall + ``__pycache__`` wipe + install
+            # cycle instead of ``uv pip install --upgrade --reinstall``:
+            # uv preserves wheel-provided mtimes on installed files and
+            # doesn't clean ``__pycache__`` entries on uninstall, so a
+            # version bump can leave Python importing stale ``.pyc``
+            # bytecode whose mtime coincidentally matches the new source.
+            # See ``_clear_site_packages_pycache`` for the full story.
             tool_names = [
                 arg.split("[", 1)[0].split("=", 1)[0].split(">", 1)[0].split("<", 1)[0]
                 for arg in install_args
@@ -378,6 +402,7 @@ class UvProvider(BinProvider):
                 uninstall_proc.stderr or ""
             ):
                 self._raise_proc_error("update", tool_names, uninstall_proc)
+            self._clear_site_packages_pycache()
             cmd = [
                 "pip",
                 "install",
