@@ -1,0 +1,25 @@
+tests/test_pipprovider.py
+  67a976da5825c26a 2,12-31,33,35-62
+tests/test_uvprovider.py
+  67a976da5825c26a 12,15-22,24-28,30-41,43,45-53,55-68,70-71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.6",
+  "base_commit_sha": "c66790946e7392910caa9813c1f64ee7a60962e9",
+  "prompts": {
+    "67a976da5825c26a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d717c-705b-75f1-8c2f-c652b4164be1",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 105,
+      "total_deletions": 87,
+      "accepted_lines": 105,
+      "overriden_lines": 2
+    }
+  }
+}
