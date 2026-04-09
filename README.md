@@ -38,8 +38,7 @@ npm.install("puppeteer")
 
 <br/>
 
-**Source Code**: [https://github.com/ArchiveBox/abx-pkg/](https://github.com/ArchiveBox/abx-pkg/)
-
+**Source Code**: [https://github.com/ArchiveBox/abx-pkg/](https://github.com/ArchiveBox/abx-pkg/)  
 **Documentation**: [https://github.com/ArchiveBox/abx-pkg/blob/main/README.md](https://github.com/ArchiveBox/abx-pkg/blob/main/README.md)
 
 <br/>
@@ -97,6 +96,8 @@ print(curl.abspath, curl.version, curl.binprovider, curl.is_valid)  # Path(...) 
 curl.exec(cmd=['--version'])                                        # curl 8.4.0 (x86_64-apple-darwin23.0) libcurl/8.4.0 ...
 ```
 
+---
+
 ## Usage
 
 ### Install
@@ -113,53 +114,44 @@ Installing `abx-pkg` also provides an `abx-pkg` CLI entrypoint:
 
 ```bash
 abx-pkg --version
-abx-pkg version
 
 abx-pkg install yt-dlp
 abx-pkg update yt-dlp
 abx-pkg uninstall yt-dlp
 abx-pkg load yt-dlp
-abx-pkg load_or_install yt-dlp
 abx-pkg load-or-install yt-dlp
 ```
 
-The CLI uses the same ordered failover behavior as `Binary(...)`: it tries the selected binproviders in order and stops after the first success.
+#### Select specific providers / re-order provider precedence
 
 ```bash
-env ABX_PKG_BINPROVIDERS=env,uv,apt,brew abx-pkg install yt-dlp
+abx-pkg install --binproviders=env,uv,pip,apt,brew prettier
+# or
+env ABX_PKG_BINPROVIDERS=env,uv,pip,apt,brew abx-pkg install yt-dlp
 ```
 
-By default, managed provider state is rooted under `~/.config/abx/lib`. You can override that with `ABX_PKG_LIB_DIR` or `--lib`.
+#### Customize where installed packages are located
 
 ```bash
-abx-pkg --lib=./relativelib install yt-dlp
-env ABX_PKG_LIB_DIR=/tmp/abxlib abx-pkg install yt-dlp
+abx-pkg --lib=~/.config/abx/lib install yt-dlp   # the default behavior
+abx-pkg --lib=./vendor install yt-dlp            # store all packages under $PWD/vendor
+abx-pkg --lib=/tmp/abxlib install yt-dlp         # store all packages under /tmp/abxlib
+
+# or
+env ABX_PKG_LIB_DIR=/any/dir/path abx-pkg install yt-dlp
 ```
 
-You can restrict or reorder providers with `ABX_PKG_BINPROVIDERS` or `--binproviders`.
+#### Run in "dry mode" to see what commands will do before executing
 
 ```bash
-env ABX_PKG_BINPROVIDERS=env,uv,apt,brew,pnpm,gem,cargo,goget abx-pkg install yt-dlp
-abx-pkg install --binproviders=pnpm prettier
-```
-
-`--dry-run` and `ABX_PKG_DRY_RUN=1` show the package-manager commands that would run without mutating the host.
-
-```bash
+abx-pkg install --dry-run some-dangerous-package      # outputs comamnds that would be run without executing them
+# or
 env ABX_PKG_DRY_RUN=1 abx-pkg install some-dangerous-package
-abx-pkg install --dry-run --binproviders=pnpm prettier
-```
-
-`abx-pkg --version` prints the package semver on the first line, then one line per available provider installer binary:
-
-```text
-1.9.28
-env which /usr/bin/which 999.999.999
-uv uv /path/to/uv 0.11.4
-pnpm pnpm /path/to/pnpm 10.12.1
 ```
 
 CLI result lines are written to `stdout`. Progress and debug logging are written to `stderr`, and interactive TTY sessions default to `DEBUG` logging.
+
+<br/>
 
 ### Python Library
 
@@ -244,7 +236,7 @@ assert ytdlp.abspath is None and ytdlp.version is None
 </details>
 
 <details>
-<summary><h4>Pick a binary dynamically (e.g. podman-or-docker) via overrides</h4></summary>
+<summary><h4>Custom binary resolution at runtime (e.g. auto podman-or-docker) via overrides</h4></summary>
 
 ```python
 import os
@@ -338,7 +330,51 @@ print(rg.version)        # SemVer(...)
 </details>
 
 <details>
-<summary><h4>Django integration: store <code>BinProvider</code> / <code>Binary</code> in model fields and render them in the Admin</h4></summary>
+<summary><h4>Configure python `logging` for `abx-pkg`</h4></summary>
+
+`abx-pkg` uses the standard Python `logging` module. By default it stays quiet unless your application configures logging explicitly.
+
+```python
+import logging
+from abx_pkg import Binary, env, configure_logging
+
+configure_logging(logging.INFO)
+
+python = Binary(name='python', binproviders=[env]).load()
+```
+
+To enable Rich logging:
+
+```bash
+pip install "abx-pkg[rich]"
+```
+
+```python
+import logging
+from abx_pkg import Binary, EnvProvider, configure_rich_logging
+
+configure_rich_logging(logging.DEBUG)
+
+python = Binary(name='python', binproviders=[EnvProvider()]).load()
+```
+
+Debug logging is hardened so logging itself does not become the failure. If a provider/model object has a broken or overly-expensive `repr()`, `abx-pkg` falls back to a short `ClassName(...)` summary instead of raising while formatting log output.
+
+`configure_rich_logging(...)` uses `rich.logging.RichHandler` under the hood, so log levels, paths, arguments, and command lines render with terminal colors when supported.
+
+You can also manage it with standard logging primitives:
+
+```python
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logging.getLogger("abx_pkg").setLevel(logging.DEBUG)
+```
+
+</details>
+
+<details>
+<summary><h4>Django integration: store <code>BinProvider</code> / <code>Binary</code> in DB models and render them in the Admin</h4></summary>
 
 With a few more packages, you get type-checked Django fields & forms that support `BinProvider` and `Binary`.
 
@@ -431,6 +467,8 @@ register_admin_views(custom_admin)
 
 </details>
 
+---
+
 ### Configuration
 
 All abx-pkg env vars are read once at import time and only apply when set. Explicit constructor kwargs always override these defaults.
@@ -473,7 +511,12 @@ Each provider also honors a `<NAME>_BINARY=/abs/path/to/<name>` env var to pin t
 
 Precedence is always: explicit action kwarg > `Binary(...)` field > `BinProvider(...)` field > env var > built-in default.
 
+<br/>
+
 ---
+---
+
+<br/>
 
 ## API Reference
 
@@ -543,7 +586,9 @@ Providers with isolated install locations also expose a shared constructor surfa
 - Providers that do not have an isolated install location reject `install_root` / `bin_dir` at construction time instead of silently ignoring them.
 - When an explicit install root or bin dir is configured, that provider-specific bin location wins during binary discovery and subprocess execution instead of being left behind ambient host `PATH` entries.
 
-**Supported Providers:**
+<br/>
+
+### Supported `BinProvider`s
 
 <details>
 <summary><h4>🌍 <code>EnvProvider</code> (<code>env</code>)</h4></summary>
@@ -1071,8 +1116,11 @@ str(SemVer(1, 9, 0))                                                # '1.9.0'
 `abx-pkg` uses `uv` for local development, dependency sync, linting, and tests.
 
 ```bash
-# create/update the local env with dev deps
-uv sync --all-extras --all-groups
+git clone https://github.com/ArchiveBox/abx-pkg && cd abx-pkg
+
+# setup the venv and install packages
+uv sync --all-extras
+source .venv/bin/activate
 
 # run formatting/lint/type checks
 uv run prek run --all-files
@@ -1081,65 +1129,17 @@ uv run prek run --all-files
 uv run pytest -sx tests/
 
 # build distributions
-uv build
+uv build && uv publish --username=__token__
 ```
 
-- Tests now live under [`tests/`](./tests/).
+- Tests live under [`tests/`](./tests/).
 - Use `uv run pytest -sx tests/test_npmprovider.py` or a specific node like `uv run pytest -sx tests/test_npmprovider.py::TestNpmProvider::test_provider_dry_run_does_not_install_zx` when iterating on one provider.
 
 <br/>
 <br/>
 
 
-## Logging
-
-`abx-pkg` uses the standard Python `logging` module. By default it stays quiet unless your application configures logging explicitly.
-
-```python
-import logging
-from abx_pkg import Binary, env, configure_logging
-
-configure_logging(logging.INFO)
-
-python = Binary(name='python', binproviders=[env]).load()
-```
-
-To enable Rich logging:
-
-```bash
-pip install "abx-pkg[rich]"
-```
-
-```python
-import logging
-from abx_pkg import Binary, EnvProvider, configure_rich_logging
-
-configure_rich_logging(logging.DEBUG)
-
-python = Binary(name='python', binproviders=[EnvProvider()]).load()
-```
-
-Debug logging is hardened so logging itself does not become the failure. If a provider/model object has a broken or overly-expensive `repr()`, `abx-pkg` falls back to a short `ClassName(...)` summary instead of raising while formatting log output.
-
-`configure_rich_logging(...)` uses `rich.logging.RichHandler` under the hood, so log levels, paths, arguments, and command lines render with terminal colors when supported.
-
-You can also manage it with standard logging primitives:
-
-```python
-import logging
-
-logging.basicConfig(level=logging.INFO)
-logging.getLogger("abx_pkg").setLevel(logging.DEBUG)
-```
-
 *Note:* this package used to be called `pydantic-pkgr`, it was renamed to `abx-pkg` on 2024-11-12.
-
-## TODO
-
-- [x] Implement initial basic support for `apt`, `brew`, and `pip`
-- [x] Provide editability and actions via Django Admin UI using [`django-pydantic-field`](https://github.com/surenkov/django-pydantic-field) and [`django-jsonform`](https://django-jsonform.readthedocs.io/en/latest/)
-- [ ] Add `preinstall` and `postinstall` hooks for things like adding `apt` sources and running cleanup scripts
-- [ ] Implement more package managers (`apk`, `ppm`, `pkg`, etc.)
 
 
 ## Other Packages We Like
