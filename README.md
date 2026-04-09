@@ -177,7 +177,7 @@ Use `min_version=None` to explicitly disable version floor checks.
 
 ### [`BinProvider`](https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/binprovider.py#:~:text=class%20BinProvider)
 
-**Built-in implementations:** `EnvProvider`, `AptProvider`, `BrewProvider`, `PipProvider`, `UvProvider`, `NpmProvider`, `PnpmProvider`, `YarnProvider`, `BunProvider`, `DenoProvider`, `CargoProvider`, `GemProvider`, `GoGetProvider`, `NixProvider`, `DockerProvider`, `PyinfraProvider`, `AnsibleProvider`, `BashProvider`, `ChromeWebstoreProvider`, `PuppeteerProvider`
+**Built-in implementations:** `EnvProvider`, `AptProvider`, `BrewProvider`, `PipProvider`, `UvProvider`, `NpmProvider`, `PnpmProvider`, `YarnProvider`, `BunProvider`, `DenoProvider`, `CargoProvider`, `GemProvider`, `GoGetProvider`, `NixProvider`, `DockerProvider`, `PyinfraProvider`, `AnsibleProvider`, `BashProvider`, `ChromeWebstoreProvider`, `PuppeteerProvider`, `PlaywrightProvider`
 
 This type represents a provider of binaries, e.g. a package manager like `apt` / `pip` / `npm`, or `env` (which only resolves binaries already present in `$PATH`).
 
@@ -579,6 +579,27 @@ browser_cache_dir = <puppeteer_root>/cache
 - Security: `min_release_age` is unsupported for browser installs and is ignored with a warning if explicitly requested. `postinstall_scripts=False` is supported for the underlying npm bootstrap path, and `ABX_PKG_POSTINSTALL_SCRIPTS` hydrates the provider default here.
 - Overrides: `install_args` are passed through to `@puppeteer/browsers install ...`, with the provider appending its managed `--path=<cache_dir>`.
 - Notes: installed-browser resolution uses semantic version ordering, not lexicographic string sorting.
+
+#### 🎬 [`PlaywrightProvider`](./abx_pkg/binprovider_playwright.py) (`playwright`)
+
+Source: [`abx_pkg/binprovider_playwright.py`](./abx_pkg/binprovider_playwright.py) • Tests: [`tests/test_playwrightprovider.py`](./tests/test_playwrightprovider.py)
+
+```python
+INSTALLER_BIN = "playwright"
+PATH = ""
+playwright_root = $ABX_PKG_PLAYWRIGHT_ROOT or ~/.cache/abx-pkg/playwright
+browser_bin_dir = <playwright_root>/bin
+browser_cache_dir = <playwright_root>/cache   # exported as PLAYWRIGHT_BROWSERS_PATH
+playwright_install_args = ["--with-deps"]
+```
+
+- Install root: set `playwright_root` / `install_root` for the managed root, `browser_bin_dir` / `bin_dir` for symlinked executables, and `browser_cache_dir` for the downloaded browser tree (exported to the `playwright` CLI as `PLAYWRIGHT_BROWSERS_PATH`).
+- Auto-switching: bootstraps the `playwright` npm package through `NpmProvider`, then runs `playwright install --with-deps <install_args>` against it. Resolves each installed browser's real executable via the `playwright-core` Node.js API (`chromium.executablePath()` etc.) and writes a symlink into `bin_dir`.
+- `dry_run`: shared behavior — the install handler short-circuits to a placeholder without touching the host.
+- Privilege handling: `--with-deps` installs system packages and requires root on Linux. Follows the shared sudo pattern — try `sudo -E playwright install --with-deps ...` first on non-root hosts, fall back to running without `sudo` if the sudo attempt fails, and merge both stderr payloads into the final error if both attempts fail.
+- Security: `min_release_age` and `postinstall_scripts=False` are unsupported for browser installs and are ignored with a warning if explicitly requested.
+- Overrides: `install_args` are appended onto `playwright install` after `playwright_install_args` (defaults to `["--with-deps"]`). Supported browser names: `chromium`, `chromium-headless-shell`, `firefox`, `webkit`, and branded `chromium` channels like `chrome`, `chrome-beta`, `msedge`, etc.
+- Notes: `update()` re-runs `playwright install --force <install_args>` to refresh the managed browser tree; `uninstall()` removes the relevant `<browser>-<version>/` directories from `browser_cache_dir` alongside the bin-dir symlink, since `playwright uninstall` only drops *unused* browsers.
 
 #### 🛠️ [`PyinfraProvider`](./abx_pkg/binprovider_pyinfra.py) (`pyinfra`)
 
