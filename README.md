@@ -587,19 +587,19 @@ Source: [`abx_pkg/binprovider_playwright.py`](./abx_pkg/binprovider_playwright.p
 ```python
 INSTALLER_BIN = "playwright"
 PATH = ""
-playwright_root = $ABX_PKG_PLAYWRIGHT_ROOT or ~/.cache/abx-pkg/playwright
-browser_bin_dir = <playwright_root>/bin
-browser_cache_dir = <playwright_root>/cache   # exported as PLAYWRIGHT_BROWSERS_PATH
+playwright_root = None           # when set, doubles as PLAYWRIGHT_BROWSERS_PATH
+browser_bin_dir = <playwright_root>/bin  # symlink dir for resolved browsers
 playwright_install_args = ["--with-deps"]
+euid = 0                         # routes exec() through sudo-first-then-fallback
 ```
 
-- Install root: set `playwright_root` / `install_root` for the managed root, `browser_bin_dir` / `bin_dir` for symlinked executables, and `browser_cache_dir` for the downloaded browser tree (exported to the `playwright` CLI as `PLAYWRIGHT_BROWSERS_PATH`).
+- Install root: set `playwright_root` / `install_root` to pin both the abx-pkg managed root AND `PLAYWRIGHT_BROWSERS_PATH` to the same directory. Leave it unset to let playwright use its own OS-default browsers path (`~/.cache/ms-playwright` on Linux etc.); only `browser_bin_dir` (and the internal npm prefix) fall back to `~/.cache/abx-pkg/playwright/` in that case. `browser_bin_dir` / `bin_dir` overrides the symlink directory.
 - Auto-switching: bootstraps the `playwright` npm package through `NpmProvider`, then runs `playwright install --with-deps <install_args>` against it. Resolves each installed browser's real executable via the `playwright-core` Node.js API (`chromium.executablePath()` etc.) and writes a symlink into `bin_dir`.
 - `dry_run`: shared behavior — the install handler short-circuits to a placeholder without touching the host.
-- Privilege handling: `--with-deps` installs system packages and requires root on Linux. Follows the shared sudo pattern — try `sudo -E playwright install --with-deps ...` first on non-root hosts, fall back to running without `sudo` if the sudo attempt fails, and merge both stderr payloads into the final error if both attempts fail.
+- Privilege handling: `--with-deps` installs system packages and requires root on Linux. ``euid`` defaults to ``0``, which routes every ``exec()`` call through the base ``BinProvider.exec`` sudo-first-then-fallback path — it tries ``sudo -n -- playwright install --with-deps ...`` first on non-root hosts, falls back to running the command directly if sudo fails or isn't available, and merges both stderr outputs into the final error if both attempts fail.
 - Security: `min_release_age` and `postinstall_scripts=False` are unsupported for browser installs and are ignored with a warning if explicitly requested.
-- Overrides: `install_args` are appended onto `playwright install` after `playwright_install_args` (defaults to `["--with-deps"]`). Supported browser names: `chromium`, `chromium-headless-shell`, `firefox`, `webkit`, and branded `chromium` channels like `chrome`, `chrome-beta`, `msedge`, etc.
-- Notes: `update()` re-runs `playwright install --force <install_args>` to refresh the managed browser tree; `uninstall()` removes the relevant `<browser>-<version>/` directories from `browser_cache_dir` alongside the bin-dir symlink, since `playwright uninstall` only drops *unused* browsers.
+- Overrides: `install_args` are appended onto `playwright install` after `playwright_install_args` (defaults to `["--with-deps"]`) and passed through verbatim — use whatever browser names / flags the `playwright install` CLI accepts (`chromium`, `firefox`, `webkit`, `--no-shell`, `--only-shell`, `--force`, etc.).
+- Notes: `update()` re-runs `playwright install --force <install_args>` to refresh in place; `uninstall()` removes the relevant `<bin_name>-*/` directories from `playwright_root` alongside the bin-dir symlink, since `playwright uninstall` only drops *unused* browsers on its own. `uninstall()` leaves playwright's OS-default cache untouched when `playwright_root` is unset.
 
 #### 🛠️ [`PyinfraProvider`](./abx_pkg/binprovider_pyinfra.py) (`pyinfra`)
 

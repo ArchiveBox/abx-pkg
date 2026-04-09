@@ -14,10 +14,7 @@ class TestPlaywrightProvider:
 
         with tempfile.TemporaryDirectory() as temp_dir:
             playwright_root = Path(temp_dir) / "playwright-root"
-            provider = PlaywrightProvider(
-                playwright_root=playwright_root,
-                browser_bin_dir=playwright_root / "bin",
-            )
+            provider = PlaywrightProvider(playwright_root=playwright_root)
 
             installed = provider.install("chromium", nocache=True)
             assert installed is not None
@@ -30,13 +27,14 @@ class TestPlaywrightProvider:
             assert installed.loaded_abspath.exists()
             assert installed.loaded_abspath.parent == provider.bin_dir
             assert installed.loaded_abspath == provider.bin_dir / "chromium"
-            # The symlink resolves into the browser_cache_dir tree.
+            # The symlink resolves into playwright_root (which is also
+            # PLAYWRIGHT_BROWSERS_PATH for this provider).
             real_target = installed.loaded_abspath.resolve()
-            assert provider.cache_dir in real_target.parents
+            assert playwright_root.resolve() in real_target.parents
             # Playwright lays out chromium builds as chromium-<build>/.
             assert any(
                 child.name.startswith("chromium-")
-                for child in provider.cache_dir.iterdir()
+                for child in playwright_root.iterdir()
                 if child.is_dir()
             )
 
@@ -87,10 +85,13 @@ class TestPlaywrightProvider:
             assert provider.bin_dir == install_root / "bin"
             assert installed.loaded_abspath is not None
             assert installed.loaded_abspath.parent == provider.bin_dir
-            # browser_cache_dir falls back to <install_root>/cache unless
-            # explicitly overridden.
-            assert provider.cache_dir == install_root / "cache"
-            assert provider.cache_dir.exists()
+            # Chromium build landed directly under install_root (which is
+            # the effective PLAYWRIGHT_BROWSERS_PATH for this provider).
+            assert any(
+                child.name.startswith("chromium-")
+                for child in install_root.iterdir()
+                if child.is_dir()
+            )
 
     def test_install_root_and_bin_dir_aliases_install_into_the_requested_paths(
         self,
@@ -102,12 +103,10 @@ class TestPlaywrightProvider:
         with tempfile.TemporaryDirectory() as temp_dir:
             install_root = Path(temp_dir) / "pw-root"
             bin_dir = Path(temp_dir) / "custom-bin"
-            cache_dir = Path(temp_dir) / "custom-cache"
             provider = PlaywrightProvider.model_validate(
                 {
                     "install_root": install_root,
                     "bin_dir": bin_dir,
-                    "browser_cache_dir": cache_dir,
                 },
             )
 
@@ -120,13 +119,13 @@ class TestPlaywrightProvider:
             assert installed is not None
             assert provider.install_root == install_root
             assert provider.bin_dir == bin_dir
-            assert provider.cache_dir == cache_dir
             assert installed.loaded_abspath is not None
             assert installed.loaded_abspath.parent == bin_dir
-            # browser tree landed in the explicit cache dir, not install_root/cache.
-            assert cache_dir.is_dir()
+            # Browser tree still landed in install_root, not bin_dir.
             assert any(
-                child.name.startswith("chromium-") for child in cache_dir.iterdir()
+                child.name.startswith("chromium-")
+                for child in install_root.iterdir()
+                if child.is_dir()
             )
 
     def test_explicit_browser_bin_dir_takes_precedence_over_existing_PATH_entries(
@@ -163,13 +162,8 @@ class TestPlaywrightProvider:
             assert provider.bin_dir == temp_dir_path / "custom-bin"
             assert installed.loaded_abspath is not None
             assert installed.loaded_abspath.parent == provider.bin_dir
-            # The two providers resolve to different on-disk symlinks even
-            # though the ambient provider's bin_dir is on PATH.
-            assert (
-                installed.loaded_abspath.resolve()
-                != ambient_installed.loaded_abspath.resolve()
-                or installed.loaded_abspath != ambient_installed.loaded_abspath
-            )
+            # The two providers resolve to different on-disk symlinks.
+            assert installed.loaded_abspath != ambient_installed.loaded_abspath
 
     def test_provider_install_args_are_passed_through_to_playwright_install(
         self,
@@ -185,7 +179,6 @@ class TestPlaywrightProvider:
             # that ``chromium_headless_shell-*`` does NOT end up on disk.
             provider = PlaywrightProvider(
                 playwright_root=playwright_root,
-                browser_bin_dir=playwright_root / "bin",
             ).get_provider_with_overrides(
                 overrides={"chromium": {"install_args": ["chromium", "--no-shell"]}},
             )
@@ -199,10 +192,9 @@ class TestPlaywrightProvider:
             assert installed is not None
             assert installed.loaded_abspath is not None
             assert installed.loaded_abspath.exists()
-            # The browser itself downloaded.
             chromium_dirs = [
                 child
-                for child in provider.cache_dir.iterdir()
+                for child in playwright_root.iterdir()
                 if child.is_dir()
                 and child.name.startswith("chromium-")
                 and not child.name.startswith("chromium_headless_shell")
@@ -211,7 +203,7 @@ class TestPlaywrightProvider:
             # ``--no-shell`` should have skipped the headless shell download.
             headless_shell_dirs = [
                 child
-                for child in provider.cache_dir.iterdir()
+                for child in playwright_root.iterdir()
                 if child.is_dir() and child.name.startswith("chromium_headless_shell")
             ]
             assert not headless_shell_dirs, (
@@ -226,7 +218,6 @@ class TestPlaywrightProvider:
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = PlaywrightProvider(
                 playwright_root=Path(temp_dir) / "playwright-root",
-                browser_bin_dir=Path(temp_dir) / "playwright-root/bin",
             )
 
             test_machine.exercise_provider_lifecycle(
@@ -245,7 +236,6 @@ class TestPlaywrightProvider:
                 binproviders=[
                     PlaywrightProvider(
                         playwright_root=Path(temp_dir) / "playwright-root",
-                        browser_bin_dir=Path(temp_dir) / "playwright-root/bin",
                     ),
                 ],
             )
@@ -260,19 +250,22 @@ class TestPlaywrightProvider:
         test_machine.require_tool("npm")
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            provider = PlaywrightProvider(
-                playwright_root=Path(temp_dir) / "playwright-root",
-                browser_bin_dir=Path(temp_dir) / "playwright-root/bin",
-            )
+            playwright_root = Path(temp_dir) / "playwright-root"
+            provider = PlaywrightProvider(playwright_root=playwright_root)
 
             test_machine.exercise_provider_dry_run(provider, bin_name="chromium")
-            # dry_run must not have actually downloaded anything.
-            chromium_dirs = (
-                [p for p in provider.cache_dir.iterdir() if p.is_dir()]
-                if provider.cache_dir.is_dir()
+            # dry_run must not have actually downloaded any browsers.
+            browser_dirs = (
+                [
+                    p
+                    for p in playwright_root.iterdir()
+                    if p.is_dir()
+                    and p.name.startswith(("chromium-", "firefox-", "webkit-"))
+                ]
+                if playwright_root.is_dir()
                 else []
             )
-            assert not chromium_dirs, (
+            assert not browser_dirs, (
                 f"dry_run should not have created any browser dirs, got: "
-                f"{[p.name for p in chromium_dirs]}"
+                f"{[p.name for p in browser_dirs]}"
             )
