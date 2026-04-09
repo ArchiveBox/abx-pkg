@@ -459,6 +459,20 @@ Install-root precedence (most specific wins): explicit `install_root=` / provide
 
 Each provider also honors a `<NAME>_BINARY=/abs/path/to/<name>` env var to pin the exact executable it shells out to — `PIP_BINARY`, `UV_BINARY`, `NPM_BINARY`, `PNPM_BINARY`, `YARN_BINARY`, `BUN_BINARY`, `DENO_BINARY`, etc.
 
+**Per-`Binary` / per-`BinProvider` fields** (constructor kwargs, most-specific wins):
+
+- `min_version` can be set on any individual `Binary`.
+- `min_release_age` can be set on `Binary` or `BinProvider`, or via `ABX_PKG_MIN_RELEASE_AGE` (days).
+- `postinstall_scripts` can be set on `Binary` or `BinProvider`, or via `ABX_PKG_POSTINSTALL_SCRIPTS`.
+- `install_root` / `bin_dir` can be set on any `BinProvider` with an isolated install location, or default to `ABX_PKG_<NAME>_ROOT` / `ABX_PKG_LIB_DIR/<provider name>`.
+- `dry_run` can be set on `BinProvider` or passed per-call to `install()` / `update()` / `uninstall()` / `load_or_install()`, or via `ABX_PKG_DRY_RUN` / `DRY_RUN`.
+- `install_timeout` can be set on `BinProvider` or via `ABX_PKG_INSTALL_TIMEOUT` (seconds).
+- `version_timeout` can be set on `BinProvider` or via `ABX_PKG_VERSION_TIMEOUT` (seconds).
+- `euid` can be set on `BinProvider` to pin the UID used to `sudo`/drop into when running provider subprocesses; otherwise it's auto-detected from `install_root` ownership.
+- `overrides` is a `dict[BinProviderName, HandlerDict]` (on `Binary`) or `dict[BinName, HandlerDict]` (on `BinProvider`) mapping to per-binary / per-provider handler replacements (`install_args`, `abspath`, `version`, `install`, `update`, `uninstall`). See [Advanced Usage](#define-a-reusable-binary-subclass-with-per-provider-overrides) for examples.
+
+Precedence is always: explicit action kwarg > `Binary(...)` field > `BinProvider(...)` field > env var > built-in default.
+
 ---
 
 ## API Reference
