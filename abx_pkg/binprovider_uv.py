@@ -3,6 +3,7 @@
 __package__ = "abx_pkg"
 
 import os
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -390,6 +391,19 @@ class UvProvider(BinProvider):
                 uninstall_proc.stderr or ""
             ):
                 self._raise_proc_error("update", tool_names, uninstall_proc)
+
+            # Belt-and-suspenders: ``--compile-bytecode`` below makes uv
+            # rewrite ``.pyc`` files at install time, but on older uv
+            # releases (and on some wheel layouts where the source mtime
+            # is preserved across versions) the rewrite can be skipped if
+            # uv decides the ``.pyc`` is "already up to date" against the
+            # newly-written source. Wipe every ``__pycache__`` under the
+            # venv's site-packages between the uninstall and the install
+            # so Python is forced to recompile from the freshly-written
+            # source. Targeted, not the whole venv.
+            for site_packages in (self.uv_venv / "lib").glob("python*/site-packages"):
+                for pycache_dir in site_packages.rglob("__pycache__"):
+                    shutil.rmtree(pycache_dir, ignore_errors=True)
             cmd = [
                 "pip",
                 "install",

@@ -338,6 +338,29 @@ class PlaywrightProvider(BinProvider):
         if proc.returncode != 0:
             self._raise_proc_error("install", bin_name, proc)
 
+        # When ``playwright install --with-deps`` runs through the
+        # base ``BinProvider.exec`` sudo path on a non-root host, the
+        # downloaded browser tree ends up owned by root. Hand it back
+        # to the calling user so subsequent file operations (notably
+        # ``tempfile.TemporaryDirectory`` cleanup in tests) don't hit
+        # ``PermissionError``. The chown itself routes through the
+        # same euid=0 → sudo path, so it gets root permission for
+        # free. No-op when we're already root or no managed root.
+        if (
+            self.playwright_root is not None
+            and self.playwright_root.is_dir()
+            and os.geteuid() != 0
+        ):
+            self.exec(
+                bin_name="chown",
+                cmd=[
+                    "-R",
+                    f"{os.getuid()}:{os.getgid()}",
+                    str(self.playwright_root),
+                ],
+                quiet=True,
+            )
+
         resolved = self._playwright_executable_path(bin_name)
         if not resolved or not resolved.exists():
             raise FileNotFoundError(
