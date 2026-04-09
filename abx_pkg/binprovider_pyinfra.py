@@ -2,6 +2,7 @@
 __package__ = "abx_pkg"
 
 import os
+import pwd
 import sys
 import shutil
 import importlib
@@ -40,22 +41,30 @@ def pyinfra_package_install(
     else:
         pkg_names = list(pkg_names)
 
-    _sudo_user = None
+    _sudo_user: str | None = None
     if installer_module == "auto":
         is_macos = OPERATING_SYSTEM == "darwin"
         if is_macos:
             installer_module = "operations.brew.packages"
-            try:
-                brew_abspath = shutil.which("brew")
-                if brew_abspath:
-                    _sudo_user = Path(brew_abspath).stat().st_uid
-            except Exception:
-                pass
         else:
             installer_module = "operations.server.packages"
     else:
         # TODO: non-stock pyinfra modules from other libraries?
         assert installer_module.startswith("operations.")
+
+    # Homebrew refuses to run as root, so when we're invoked as root we have
+    # to drop privileges to the user that owns ``brew``. Previously this was
+    # only wired up for the macOS auto-detect branch, which left live Linux
+    # (``linuxbrew``) installs broken whenever the caller happened to be root.
+    if installer_module == "operations.brew.packages" and os.geteuid() == 0:
+        try:
+            brew_abspath = shutil.which("brew")
+            if brew_abspath:
+                brew_owner_uid = Path(brew_abspath).resolve().stat().st_uid
+                if brew_owner_uid != 0:
+                    _sudo_user = pwd.getpwuid(brew_owner_uid).pw_name
+        except Exception:
+            pass
 
     try:
         module_name, operation_name = installer_module.rsplit(".", 1)
@@ -77,9 +86,9 @@ def pyinfra_package_install(
             inspect.Parameter.KEYWORD_ONLY,
         )
     }
-    operation_kwargs = {
+    operation_kwargs: dict[str, Any] = {
         operation_arg_name: pkg_names,
-        **({"_sudo_user": _sudo_user} if _sudo_user is not None else {}),
+        **({"_sudo": True, "_sudo_user": _sudo_user} if _sudo_user is not None else {}),
         **{
             key: value
             for key, value in (installer_extra_kwargs or {}).items()
@@ -88,6 +97,18 @@ def pyinfra_package_install(
     }
 
     temp_dir = Path(tempfile.mkdtemp(dir=SYSTEM_TEMP_DIR))
+    if _sudo_user is not None:
+        # pyinfra's brew operations drop privileges to the brew-owner user
+        # (via ``_sudo_user``), and brew refuses to start if the CWD is not
+        # readable by the effective user. ``mkdtemp`` defaults to mode 0700,
+        # so relax it on this one path so the dropped-privileges user can
+        # chdir into it. We deliberately do NOT relax it on the default
+        # (no-drop) path to avoid widening permissions on the generated
+        # deploy script for unrelated installs.
+        try:
+            os.chmod(temp_dir, 0o755)
+        except OSError:
+            pass
     sudo_bin = None
     try:
         deploy_path = temp_dir / "deploy.py"

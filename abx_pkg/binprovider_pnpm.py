@@ -190,7 +190,18 @@ class PnpmProvider(BinProvider):
         min_version: SemVer | None = None,
     ) -> None:
         if not self._ensure_writable_cache_dir(self.cache_dir):
-            self.cache_arg = "--no-cache"
+            # pnpm 10.x has no ``--no-cache`` flag — passing one would be
+            # parsed as ``cache=false`` and silently create a literal
+            # ``./false/`` directory inside the caller's cwd. Fall back to a
+            # process-private temp dir as the store-dir instead so the cache
+            # is just relocated to a writable location with no host-visible
+            # side effects.
+            fallback_store = Path(
+                tempfile.mkdtemp(prefix="abx-pkg-pnpm-store-"),
+            )
+            self.cache_dir = fallback_store
+            self.cache_arg = f"--store-dir={fallback_store}"
+            self._ensure_writable_cache_dir(fallback_store)
         if self.pnpm_prefix:
             (self.pnpm_prefix / "node_modules" / ".bin").mkdir(
                 parents=True,

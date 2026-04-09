@@ -23,6 +23,66 @@ ANSIBLE_INSTALLED = shutil.which("ansible-playbook") is not None
 SYSTEM_TEMP_DIR = tempfile.gettempdir()
 
 
+# Installer modules that require the ``apt_pkg`` Python extension on the
+# target interpreter (see ansible.builtin.apt and the Debian/Ubuntu catchall
+# auto-detect behavior of ansible.builtin.package).
+_APT_INSTALLER_MODULES = frozenset(
+    {
+        "ansible.builtin.apt",
+        "apt",
+    },
+)
+
+
+def _interpreter_has_module(interpreter: str, module: str) -> bool:
+    try:
+        return (
+            subprocess.run(
+                [interpreter, "-c", f"import {module}"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            ).returncode
+            == 0
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def _pick_ansible_python_interpreter(installer_module: str) -> str:
+    """Return a Python interpreter suitable for running ``installer_module``.
+
+    ``sys.executable`` is preferred so ansible runs inside the active venv,
+    but some modules (notably ``ansible.builtin.apt``) require a native C
+    extension (``apt_pkg``) that ships with the Debian/Ubuntu system Python
+    via the ``python3-apt`` package and cannot be ``pip install``ed into an
+    arbitrary venv. When that is the case we fall back to the first system
+    Python on ``PATH`` that can ``import apt_pkg``.
+    """
+
+    needs_apt_pkg = installer_module in _APT_INSTALLER_MODULES or (
+        installer_module == "ansible.builtin.package" and shutil.which("apt-get")
+    )
+    if not needs_apt_pkg:
+        return sys.executable
+    if _interpreter_has_module(sys.executable, "apt_pkg"):
+        return sys.executable
+    candidates: list[str] = []
+    system_python = shutil.which("python3")
+    if system_python:
+        candidates.append(system_python)
+    for minor in (13, 12, 11, 10):
+        candidate = shutil.which(f"python3.{minor}")
+        if candidate and candidate not in candidates:
+            candidates.append(candidate)
+    for candidate in candidates:
+        if candidate == sys.executable:
+            continue
+        if _interpreter_has_module(candidate, "apt_pkg"):
+            return candidate
+    return sys.executable
+
+
 ANSIBLE_INSTALL_PLAYBOOK_TEMPLATE = """
 ---
 - name: Install system packages
@@ -88,28 +148,19 @@ def ansible_package_install(
     if installer_module == "auto":
         if OPERATING_SYSTEM == "darwin":
             # macOS: Use homebrew
-            playbook = playbook_template.format(
-                pkg_names=pkg_names,
-                state=state,
-                installer_module="community.general.homebrew",
-                module_extra_yaml=module_extra_yaml,
-            )
+            resolved_installer_module = "community.general.homebrew"
         else:
             # Linux: Use Ansible catchall that autodetects apt/yum/pkg/nix/etc.
-            playbook = playbook_template.format(
-                pkg_names=pkg_names,
-                state=state,
-                installer_module="ansible.builtin.package",
-                module_extra_yaml=module_extra_yaml,
-            )
+            resolved_installer_module = "ansible.builtin.package"
     else:
-        # Custom installer module
-        playbook = playbook_template.format(
-            pkg_names=pkg_names,
-            state=state,
-            installer_module=installer_module,
-            module_extra_yaml=module_extra_yaml,
-        )
+        resolved_installer_module = installer_module
+
+    playbook = playbook_template.format(
+        pkg_names=pkg_names,
+        state=state,
+        installer_module=resolved_installer_module,
+        module_extra_yaml=module_extra_yaml,
+    )
 
     temp_dir = Path(tempfile.mkdtemp(dir=SYSTEM_TEMP_DIR))
     sudo_bin = None
@@ -124,7 +175,9 @@ def ansible_package_install(
         env["ANSIBLE_INVENTORY_UNPARSED_WARNING"] = "False"
         env["ANSIBLE_LOCALHOST_WARNING"] = "False"
         env["ANSIBLE_HOME"] = str(ansible_home)
-        env["ANSIBLE_PYTHON_INTERPRETER"] = sys.executable
+        env["ANSIBLE_PYTHON_INTERPRETER"] = _pick_ansible_python_interpreter(
+            resolved_installer_module,
+        )
         env["TMPDIR"] = SYSTEM_TEMP_DIR
         env["PATH"] = ":".join(
             [str(Path(sys.executable).parent), env.get("PATH", "")],

@@ -99,7 +99,11 @@ dev = [
 ]
 
 [tool.uv]
-exclude-newer = "5 days"
+# Pin lockfile resolution to a recent upstream cutoff so CI/test runs stay
+# reproducible. ``uv`` (as of 0.8.x) requires a literal RFC 3339 date/time
+# here, not a relative duration like ``"5 days"`` — passing an invalid value
+# silently disables the cutoff and regenerates the lockfile on every invoke.
+exclude-newer = "2026-04-04T00:00:00Z"
 
 [tool.mypy]
 mypy_path = "abx_pkg"
