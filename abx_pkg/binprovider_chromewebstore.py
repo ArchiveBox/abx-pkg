@@ -198,6 +198,11 @@ class ChromeWebstoreProvider(BinProvider):
             env={
                 **os.environ,
                 "CHROME_EXTENSIONS_DIR": str(self.bin_dir),
+                # Make node 22+ honor HTTP(S)_PROXY env vars when fetching
+                # extensions; ``undici``'s ``fetch`` does not consult them
+                # without this flag, which silently breaks downloads on any
+                # host that runs behind an outbound HTTP proxy.
+                "NODE_USE_ENV_PROXY": "1",
             },
         )
         if proc.returncode != 0:

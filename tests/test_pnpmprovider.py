@@ -117,7 +117,7 @@ class TestPnpmProvider:
             assert ambient_installed.loaded_version is not None
             assert installed.loaded_version > ambient_installed.loaded_version
 
-    def test_setup_falls_back_to_no_cache_when_cache_dir_is_not_a_directory(
+    def test_setup_falls_back_to_temp_store_when_cache_dir_is_not_a_directory(
         self,
         test_machine,
     ):
@@ -134,7 +134,13 @@ class TestPnpmProvider:
             )
 
             installed = provider.install("zx")
-            assert provider.cache_arg == "--no-cache"
+            # pnpm has no ``--no-cache`` flag (it would be parsed as
+            # ``cache=false`` and create a literal ``./false/`` directory),
+            # so the provider falls back to a private temp store-dir.
+            assert provider.cache_arg.startswith("--store-dir=")
+            fallback_dir = Path(provider.cache_arg.split("=", 1)[1])
+            assert fallback_dir.is_dir()
+            assert fallback_dir != cache_file
             test_machine.assert_shallow_binary_loaded(installed)
             assert (tmp_path / "pnpm" / "node_modules" / "zx" / "package.json").exists()
 
