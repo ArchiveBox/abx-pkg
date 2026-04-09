@@ -230,13 +230,17 @@ def test_run_executes_preinstalled_binary_via_env_provider():
 
 
 def test_run_passes_flag_args_through_without_requiring_dash_dash():
-    """Flags after `run BINARY_NAME` must reach the binary, not click."""
+    """Flags after `run BINARY_NAME` must reach the binary, not click.
 
-    proc = _run_abx_pkg_cli("--binproviders=env", "run", "ls", "--help")
+    Uses ``python3 --version`` instead of ``ls --help`` because macOS ships
+    BSD ``ls``, which does not understand ``--help`` and exits non-zero.
+    """
+
+    proc = _run_abx_pkg_cli("--binproviders=env", "run", "python3", "--version")
 
     assert proc.returncode == 0, proc.stderr
-    assert "Usage:" in proc.stdout
-    assert "list" in proc.stdout.lower()
+    assert proc.stdout.strip().startswith("Python "), proc.stdout
+    assert proc.stderr == ""
 
 
 def test_run_propagates_nonzero_exit_code_from_underlying_binary():
@@ -490,12 +494,47 @@ def test_run_forwards_variadic_positional_args_to_binary(extra_args, expected_ex
         ),
         (["--version"], ["--version"], []),
         ([], [], []),
+        # POSIX `--` option terminator: the `--` itself is consumed and
+        # everything after it is treated as the binary name + its args,
+        # regardless of whether the first token looks like an option.
+        (["--", "yt-dlp", "--help"], [], ["yt-dlp", "--help"]),
+        (
+            ["--update", "--", "--weird-binary-name", "--help"],
+            ["--update"],
+            ["--weird-binary-name", "--help"],
+        ),
+        (
+            ["--binproviders=env", "--", "python3", "--version"],
+            ["--binproviders=env"],
+            ["python3", "--version"],
+        ),
+        # `--` *after* the binary name is part of the binary's argv and
+        # must be forwarded verbatim (not consumed by the splitter).
+        (
+            ["yt-dlp", "--", "-x"],
+            [],
+            ["yt-dlp", "--", "-x"],
+        ),
     ],
 )
 def test_split_abx_argv_splits_options_from_binary(argv, expected_pre, expected_rest):
     pre, rest = cli_module._split_abx_argv(argv)
     assert pre == expected_pre
     assert rest == expected_rest
+
+
+def test_abx_accepts_dash_dash_option_terminator_before_binary():
+    """`abx --binproviders=env -- python3 --version` must still work."""
+
+    proc = _run_abx_cli(
+        "--binproviders=env",
+        "--",
+        "python3",
+        "--version",
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.strip().startswith("Python "), proc.stdout
 
 
 def test_abx_auto_installs_and_runs_preinstalled_env_binary():
@@ -508,12 +547,17 @@ def test_abx_auto_installs_and_runs_preinstalled_env_binary():
 
 
 def test_abx_passes_flag_args_through_to_underlying_binary():
-    """Flags after the binary name must reach the binary, not abx-pkg."""
+    """Flags after the binary name must reach the binary, not abx-pkg.
 
-    proc = _run_abx_cli("--binproviders=env", "ls", "--help")
+    Uses ``python3 --version`` because macOS ships BSD ``ls`` which does
+    not recognise ``--help``.
+    """
+
+    proc = _run_abx_cli("--binproviders=env", "python3", "--version")
 
     assert proc.returncode == 0, proc.stderr
-    assert "Usage:" in proc.stdout
+    assert proc.stdout.strip().startswith("Python "), proc.stdout
+    assert proc.stderr == ""
 
 
 def test_abx_propagates_underlying_exit_code():

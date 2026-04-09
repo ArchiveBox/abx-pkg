@@ -556,6 +556,13 @@ def _split_abx_argv(argv: list[str]) -> tuple[list[str], list[str]]:
     i = 0
     while i < len(argv):
         tok = argv[i]
+        if tok == "--":
+            # POSIX option terminator: everything after `--` is the binary
+            # name and its arguments, never abx-pkg options. Consume the
+            # `--` so we don't end up injecting `--install run` *after* a
+            # stray `--` that would otherwise force click to treat every
+            # following token as a positional group argument.
+            return pre, argv[i + 1 :]
         if tok.startswith("--") and "=" in tok:
             pre.append(tok)
             i += 1
