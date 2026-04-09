@@ -350,12 +350,20 @@ class UvProvider(BinProvider):
         )
 
         if self.uv_venv:
+            # ``--reinstall`` (in addition to ``--upgrade``) forces uv to
+            # fully replace the old package's on-disk files instead of
+            # just overwriting matching filenames. Without it, stale
+            # compiled ``.so`` / ``.pyc`` files from the previous version
+            # can shadow the newly-installed ``.py`` files (manifested as
+            # ``black --version`` still reporting the old version after a
+            # successful upgrade).
             cmd = [
                 "pip",
                 "install",
                 "--python",
                 str(self.uv_venv / "bin" / "python"),
                 "--upgrade",
+                "--reinstall",
                 self.cache_arg,
                 *flags,
                 *self.uv_install_args,
@@ -366,6 +374,7 @@ class UvProvider(BinProvider):
                 "tool",
                 "install",
                 "--force",
+                "--reinstall",
                 self.cache_arg,
                 *flags,
                 *self.uv_install_args,

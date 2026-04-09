@@ -121,9 +121,14 @@ jobs:
         sudo rm -f /usr/local/bin/yarn /usr/local/bin/yarnpkg /usr/bin/yarn /usr/bin/yarnpkg
         corepack enable
         corepack prepare yarn@4.13.0 --activate
+        # Pre-download pnpm via corepack so the very first ``pnpm --version``
+        # doesn't pollute logs with "Corepack is about to download ..."
+        # progress output.
+        corepack prepare pnpm@10.17.1 --activate || true
         which yarn
         yarn --version
         yarn --version | grep -q '^4\.' || { echo "ERROR: yarn is not 4.x"; exit 1; }
+        pnpm --version || true
 
     - name: Setup Bun
       uses: oven-sh/setup-bun@v2
@@ -167,12 +172,20 @@ jobs:
         echo "=== PATH ==="; echo "$PATH" | tr ':' '\n'
         for bin in python pip uv node npm pnpm yarn bun deno go gem cargo rustc brew apt-get dpkg docker nix nix-env ansible ansible-playbook pyinfra sh bash; do
           path=$(command -v "$bin" 2>/dev/null || true)
-          if [ -n "$path" ]; then
-            ver=$("$bin" --version 2>&1 | head -1 || true)
-            echo "=== $bin === $path :: $ver"
-          else
+          if [ -z "$path" ]; then
             echo "=== $bin === (not installed)"
+            continue
           fi
+          case "$bin" in
+            # go uses the ``version`` subcommand, not a ``--version`` flag
+            go)       ver=$("$bin" version 2>/dev/null | head -1 || true) ;;
+            # some tools print corepack/network noise to stderr during the
+            # first version probe; capture stdout only.
+            pnpm|yarn|bun|deno|brew)
+                      ver=$("$bin" --version 2>/dev/null | head -1 || true) ;;
+            *)        ver=$("$bin" --version 2>&1 | head -1 || true) ;;
+          esac
+          echo "=== $bin === $path :: $ver"
         done
 
     - name: Run standard test file
@@ -271,9 +284,14 @@ jobs:
         sudo rm -f /usr/local/bin/yarn /usr/local/bin/yarnpkg /usr/bin/yarn /usr/bin/yarnpkg
         corepack enable
         corepack prepare yarn@4.13.0 --activate
+        # Pre-download pnpm via corepack so the very first ``pnpm --version``
+        # doesn't pollute logs with "Corepack is about to download ..."
+        # progress output.
+        corepack prepare pnpm@10.17.1 --activate || true
         which yarn
         yarn --version
         yarn --version | grep -q '^4\.' || { echo "ERROR: yarn is not 4.x"; exit 1; }
+        pnpm --version || true
 
     - name: Setup Bun
       uses: oven-sh/setup-bun@v2
