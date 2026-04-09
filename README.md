@@ -332,7 +332,8 @@ Providers with isolated install locations also expose a shared constructor surfa
 - Providers that do not have an isolated install location reject `install_root` / `bin_dir` at construction time instead of silently ignoring them.
 - When an explicit install root or bin dir is configured, that provider-specific bin location wins during binary discovery and subprocess execution instead of being left behind ambient host `PATH` entries.
 
-#### 🌍 [`EnvProvider`](./abx_pkg/binprovider.py) (`env`)
+<details>
+<summary><h4>🌍 <code>EnvProvider</code> (<code>env</code>)</h4></summary>
 
 Source: [`abx_pkg/binprovider.py`](./abx_pkg/binprovider.py) • Tests: [`tests/test_envprovider.py`](./tests/test_envprovider.py)
 
@@ -347,7 +348,10 @@ PATH = DEFAULT_ENV_PATH              # current PATH + current Python bin dir
 - Overrides: `abspath` / `version` are the useful ones here. `python` has a built-in override to the current `sys.executable` and interpreter version.
 - Notes: `install()` / `update()` return explanatory no-op messages, and `uninstall()` returns `False`.
 
-#### 🐧 [`AptProvider`](./abx_pkg/binprovider_apt.py) (`apt`)
+</details>
+
+<details>
+<summary><h4>🐧 <code>AptProvider</code> (<code>apt</code>)</h4></summary>
 
 Source: [`abx_pkg/binprovider_apt.py`](./abx_pkg/binprovider_apt.py) • Tests: [`tests/test_aptprovider.py`](./tests/test_aptprovider.py)
 
@@ -364,7 +368,10 @@ euid = 0                             # always runs as root
 - Overrides: in the direct shell fallback, `install_args` becomes `apt-get install -y -qq --no-install-recommends ...`; `update()` uses `apt-get install --only-upgrade ...`.
 - Notes: direct mode runs `apt-get update -qq` at most once per day and requests privilege escalation when needed.
 
-#### 🍺 [`BrewProvider`](./abx_pkg/binprovider_brew.py) (`brew`)
+</details>
+
+<details>
+<summary><h4>🍺 <code>BrewProvider</code> (<code>brew</code>)</h4></summary>
 
 Source: [`abx_pkg/binprovider_brew.py`](./abx_pkg/binprovider_brew.py) • Tests: [`tests/test_brewprovider.py`](./tests/test_brewprovider.py)
 
@@ -381,7 +388,10 @@ brew_prefix = guessed host prefix    # /opt/homebrew, /usr/local, or linuxbrew
 - Overrides: in the direct shell fallback, `install_args` maps to formula / cask args passed to `brew install`, `brew upgrade`, and `brew uninstall`.
 - Notes: direct mode runs `brew update` at most once per day. Explicit `--skip-post-install` args in `install_args` win over derived defaults.
 
-#### 🐍 [`PipProvider`](./abx_pkg/binprovider_pip.py) (`pip`)
+</details>
+
+<details>
+<summary><h4>🐍 <code>PipProvider</code> (<code>pip</code>)</h4></summary>
 
 Source: [`abx_pkg/binprovider_pip.py`](./abx_pkg/binprovider_pip.py) • Tests: [`tests/test_pipprovider.py`](./tests/test_pipprovider.py), [`tests/test_security_controls.py`](./tests/test_security_controls.py)
 
@@ -401,7 +411,10 @@ pip_bootstrap_packages = ["pip", "setuptools", "uv"]
 - Overrides: `install_args` is passed as pip requirement specs; unpinned specs get a `>=min_version` floor when `min_version` is supplied.
 - Notes: `ABX_PKG_POSTINSTALL_SCRIPTS` and `ABX_PKG_MIN_RELEASE_AGE` apply here by default. `postinstall_scripts=False` uses `uv pip --no-build` or plain `pip --only-binary :all:`. `min_release_age` is enforced with `uv --exclude-newer=<cutoff>` or plain `pip --uploaded-prior-to=<cutoff>` when the host pip is new enough. Explicit conflicting flags already present in `install_args` win over the derived defaults.
 
-#### 🚀 [`UvProvider`](./abx_pkg/binprovider_uv.py) (`uv`)
+</details>
+
+<details>
+<summary><h4>🚀 <code>UvProvider</code> (<code>uv</code>)</h4></summary>
 
 Source: [`abx_pkg/binprovider_uv.py`](./abx_pkg/binprovider_uv.py) • Tests: [`tests/test_uvprovider.py`](./tests/test_uvprovider.py)
 
@@ -424,7 +437,10 @@ uv_install_args = []
 - Overrides: `install_args` is passed as requirement specs; unpinned specs get a `>=min_version` floor when `min_version` is supplied.
 - Notes: update in venv mode is `uv pip install --upgrade`; update in global mode is `uv tool install --force` (re-installs the tool's venv). Uninstall in venv mode uses `uv pip uninstall --python <venv>/bin/python`; in global mode it uses `uv tool uninstall <name>`.
 
-#### 📦 [`NpmProvider`](./abx_pkg/binprovider_npm.py) (`npm`)
+</details>
+
+<details>
+<summary><h4>📦 <code>NpmProvider</code> (<code>npm</code>)</h4></summary>
 
 Source: [`abx_pkg/binprovider_npm.py`](./abx_pkg/binprovider_npm.py) • Tests: [`tests/test_npmprovider.py`](./tests/test_npmprovider.py), [`tests/test_security_controls.py`](./tests/test_security_controls.py)
 
@@ -443,7 +459,10 @@ npm_install_args = ["--force", "--no-audit", "--no-fund", "--loglevel=error"]
 - Overrides: `install_args` is passed as npm package specs; unpinned specs get rewritten to `pkg@>=<min_version>` when `min_version` is supplied.
 - Notes: `ABX_PKG_POSTINSTALL_SCRIPTS` and `ABX_PKG_MIN_RELEASE_AGE` apply here by default. Direct npm mode uses `--ignore-scripts` and `--min-release-age=<days>` when the host npm supports it. pnpm mode writes `pnpm-workspace.yaml` with `minimumReleaseAge`; that is how release-age enforcement is configured there. Explicit conflicting flags already present in `install_args` win over the derived defaults.
 
-#### 📦 [`PnpmProvider`](./abx_pkg/binprovider_pnpm.py) (`pnpm`)
+</details>
+
+<details>
+<summary><h4>📦 <code>PnpmProvider</code> (<code>pnpm</code>)</h4></summary>
 
 Source: [`abx_pkg/binprovider_pnpm.py`](./abx_pkg/binprovider_pnpm.py) • Tests: [`tests/test_pnpmprovider.py`](./tests/test_pnpmprovider.py)
 
@@ -462,7 +481,10 @@ pnpm_install_args = ["--loglevel=error"]
 - Overrides: `install_args` is passed as pnpm package specs; unpinned specs get rewritten to `pkg@>=<min_version>` when `min_version` is supplied.
 - Notes: pnpm has no `--min-release-age` CLI flag; this provider passes `--config.minimumReleaseAge=<minutes>` (the camelCase / kebab-case form pnpm exposes via its `--config.<key>=<value>` override). `PNPM_HOME` is auto-populated so `pnpm add -g` works without polluting the user's shell config.
 
-#### 🧶 [`YarnProvider`](./abx_pkg/binprovider_yarn.py) (`yarn`)
+</details>
+
+<details>
+<summary><h4>🧶 <code>YarnProvider</code> (<code>yarn</code>)</h4></summary>
 
 Source: [`abx_pkg/binprovider_yarn.py`](./abx_pkg/binprovider_yarn.py) • Tests: [`tests/test_yarnprovider.py`](./tests/test_yarnprovider.py)
 
@@ -481,7 +503,10 @@ yarn_install_args = []
 - Overrides: `install_args` is passed as Yarn package specs; unpinned specs get rewritten to `pkg@>=<min_version>` when `min_version` is supplied.
 - Notes: Yarn has no `--ignore-scripts` / `--minimum-release-age` CLI flags; the provider writes `npmMinimalAgeGate: 7d` (or whatever days value is configured) and `enableScripts: false` into `<yarn_prefix>/.yarnrc.yml` and additionally passes `--mode skip-build` to `yarn add` / `yarn up` when `postinstall_scripts=False`. Updates use `yarn up <pkg>` (Berry) or `yarn upgrade <pkg>` (classic). `YARN_GLOBAL_FOLDER` and `YARN_CACHE_FOLDER` are pointed at `cache_dir` so installs share a single cache across workspaces.
 
-#### 🥖 [`BunProvider`](./abx_pkg/binprovider_bun.py) (`bun`)
+</details>
+
+<details>
+<summary><h4>🥖 <code>BunProvider</code> (<code>bun</code>)</h4></summary>
 
 Source: [`abx_pkg/binprovider_bun.py`](./abx_pkg/binprovider_bun.py) • Tests: [`tests/test_bunprovider.py`](./tests/test_bunprovider.py)
 
@@ -500,7 +525,10 @@ bun_install_args = []
 - Overrides: `install_args` is passed as Bun package specs; unpinned specs get rewritten to `pkg@>=<min_version>` when `min_version` is supplied.
 - Notes: install/update use `bun add -g` (with `--force` as the update fallback). The provider passes `--ignore-scripts` for `postinstall_scripts=False` and `--minimum-release-age=<seconds>` (Bun's unit is seconds; this provider converts from days). Explicit conflicting flags already present in `install_args` win over the derived defaults.
 
-#### 🦕 [`DenoProvider`](./abx_pkg/binprovider_deno.py) (`deno`)
+</details>
+
+<details>
+<summary><h4>🦕 <code>DenoProvider</code> (<code>deno</code>)</h4></summary>
 
 Source: [`abx_pkg/binprovider_deno.py`](./abx_pkg/binprovider_deno.py) • Tests: [`tests/test_denoprovider.py`](./tests/test_denoprovider.py)
 
@@ -521,7 +549,10 @@ deno_default_scheme = "npm"          # 'npm' or 'jsr'
 - Overrides: `install_args` is passed as `deno install` package specs and is auto-prefixed with `npm:` (or `jsr:` if `deno_default_scheme="jsr"`) when an unqualified bare name is supplied. Already-qualified specs (`npm:`, `jsr:`, `https://...`) are passed through verbatim. Unpinned specs get rewritten to `pkg@>=<min_version>` when `min_version` is supplied.
 - Notes: install / update both run `deno install -g --force --allow-all -n <bin_name> <pkg>` because Deno's idiomatic update path is just a fresh global install. Deno's npm lifecycle scripts are *opt-in* (the opposite of npm), so the provider only adds `--allow-scripts` when `postinstall_scripts=True`. `min_release_age` is passed as `--minimum-dependency-age=<minutes>` (Deno's preferred unit; this provider converts from days). `DENO_TLS_CA_STORE=system` is set so installs work on hosts with corporate / sandboxed CA bundles.
 
-#### 🧪 [`BashProvider`](./abx_pkg/binprovider_bash.py) (`bash`)
+</details>
+
+<details>
+<summary><h4>🧪 <code>BashProvider</code> (<code>bash</code>)</h4></summary>
 
 Source: [`abx_pkg/binprovider_bash.py`](./abx_pkg/binprovider_bash.py) • Tests: [`tests/test_bashprovider.py`](./tests/test_bashprovider.py)
 
@@ -539,7 +570,10 @@ bash_bin_dir = <bash_root>/bin
 - Overrides: this provider is driven by literal per-binary shell overrides for `install`, `update`, and `uninstall`.
 - Notes: the provider exports `INSTALL_ROOT`, `BIN_DIR`, `BASH_INSTALL_ROOT`, and `BASH_BIN_DIR` into the shell environment for those commands.
 
-#### 🦀 [`CargoProvider`](./abx_pkg/binprovider_cargo.py) (`cargo`)
+</details>
+
+<details>
+<summary><h4>🦀 <code>CargoProvider</code> (<code>cargo</code>)</h4></summary>
 
 Source: [`abx_pkg/binprovider_cargo.py`](./abx_pkg/binprovider_cargo.py) • Tests: [`tests/test_cargoprovider.py`](./tests/test_cargoprovider.py)
 
@@ -558,7 +592,10 @@ cargo_install_args = ["--locked"]
 - Overrides: `install_args` is passed to `cargo install`; `min_version` becomes `cargo install --version >=...`.
 - Notes: the provider also sets `CARGO_HOME`, `CARGO_TARGET_DIR`, and `CARGO_INSTALL_ROOT` when applicable.
 
-#### 💎 [`GemProvider`](./abx_pkg/binprovider_gem.py) (`gem`)
+</details>
+
+<details>
+<summary><h4>💎 <code>GemProvider</code> (<code>gem</code>)</h4></summary>
 
 Source: [`abx_pkg/binprovider_gem.py`](./abx_pkg/binprovider_gem.py) • Tests: [`tests/test_gemprovider.py`](./tests/test_gemprovider.py)
 
@@ -577,7 +614,10 @@ gem_install_args = ["--no-document"]
 - Overrides: `install_args` maps to `gem install ...`, `gem update ...`, and `gem uninstall ...`; `min_version` becomes `--version >=...`.
 - Notes: generated wrapper scripts are patched so they activate the configured `GEM_HOME` instead of the host default.
 
-#### 🐹 [`GoGetProvider`](./abx_pkg/binprovider_goget.py) (`goget`)
+</details>
+
+<details>
+<summary><h4>🐹 <code>GoGetProvider</code> (<code>goget</code>)</h4></summary>
 
 Source: [`abx_pkg/binprovider_goget.py`](./abx_pkg/binprovider_goget.py) • Tests: [`tests/test_gogetprovider.py`](./tests/test_gogetprovider.py)
 
@@ -596,7 +636,10 @@ go_install_args = []
 - Overrides: `install_args` is passed to `go install ...`; the default is `["<bin_name>@latest"]`.
 - Notes: `update()` is just `install()` again. Version detection prefers `go version -m <binary>` and falls back to the generic version probe. The provider name is `goget`, not `go_get`.
 
-#### ❄️ [`NixProvider`](./abx_pkg/binprovider_nix.py) (`nix`)
+</details>
+
+<details>
+<summary><h4>❄️ <code>NixProvider</code> (<code>nix</code>)</h4></summary>
 
 Source: [`abx_pkg/binprovider_nix.py`](./abx_pkg/binprovider_nix.py) • Tests: [`tests/test_nixprovider.py`](./tests/test_nixprovider.py)
 
@@ -618,7 +661,10 @@ nix_install_args = [
 - Overrides: `install_args` is passed to `nix profile install ...`; default is `["nixpkgs#<bin_name>"]`.
 - Notes: update/uninstall operate on the resolved profile element name rather than reusing the full flake ref.
 
-#### 🐳 [`DockerProvider`](./abx_pkg/binprovider_docker.py) (`docker`)
+</details>
+
+<details>
+<summary><h4>🐳 <code>DockerProvider</code> (<code>docker</code>)</h4></summary>
 
 Source: [`abx_pkg/binprovider_docker.py`](./abx_pkg/binprovider_docker.py) • Tests: [`tests/test_dockerprovider.py`](./tests/test_dockerprovider.py)
 
@@ -636,7 +682,10 @@ docker_run_args = ["--rm", "-i"]
 - Overrides: `install_args` is a list of Docker image refs. The first item is treated as the main image and becomes the generated shim target.
 - Notes: default install args are `["<bin_name>:latest"]`. `install()` / `update()` run `docker pull`, write metadata JSON, and create an executable wrapper that runs `docker run ...`.
 
-#### 🧩 [`ChromeWebstoreProvider`](./abx_pkg/binprovider_chromewebstore.py) (`chromewebstore`)
+</details>
+
+<details>
+<summary><h4>🧩 <code>ChromeWebstoreProvider</code> (<code>chromewebstore</code>)</h4></summary>
 
 Source: [`abx_pkg/binprovider_chromewebstore.py`](./abx_pkg/binprovider_chromewebstore.py) • Tests: [`tests/test_chromewebstoreprovider.py`](./tests/test_chromewebstoreprovider.py)
 
@@ -654,7 +703,10 @@ extensions_dir = <extensions_root>/extensions
 - Overrides: `install_args` are `[webstore_id, "--name=<extension_name>"]`.
 - Notes: the packaged JS runtime under `abx_pkg/js/chrome/` is used to download, unpack, and cache the extension, and the resolved binary path is the unpacked `manifest.json`.
 
-#### 🎭 [`PuppeteerProvider`](./abx_pkg/binprovider_puppeteer.py) (`puppeteer`)
+</details>
+
+<details>
+<summary><h4>🎭 <code>PuppeteerProvider</code> (<code>puppeteer</code>)</h4></summary>
 
 Source: [`abx_pkg/binprovider_puppeteer.py`](./abx_pkg/binprovider_puppeteer.py) • Tests: [`tests/test_puppeteerprovider.py`](./tests/test_puppeteerprovider.py)
 
@@ -673,7 +725,10 @@ browser_cache_dir = <puppeteer_root>/cache
 - Overrides: `install_args` are passed through to `@puppeteer/browsers install ...`, with the provider appending its managed `--path=<cache_dir>`.
 - Notes: installed-browser resolution uses semantic version ordering, not lexicographic string sorting.
 
-#### 🎬 [`PlaywrightProvider`](./abx_pkg/binprovider_playwright.py) (`playwright`)
+</details>
+
+<details>
+<summary><h4>🎬 <code>PlaywrightProvider</code> (<code>playwright</code>)</h4></summary>
 
 Source: [`abx_pkg/binprovider_playwright.py`](./abx_pkg/binprovider_playwright.py) • Tests: [`tests/test_playwrightprovider.py`](./tests/test_playwrightprovider.py)
 
@@ -694,7 +749,10 @@ euid = 0                         # routes exec() through sudo-first-then-fallbac
 - Overrides: `install_args` are appended onto `playwright install` after `playwright_install_args` (defaults to `["--with-deps"]`) and passed through verbatim — use whatever browser names / flags the `playwright install` CLI accepts (`chromium`, `firefox`, `webkit`, `--no-shell`, `--only-shell`, `--force`, etc.).
 - Notes: `update()` bumps the managed `playwright` npm package first (via `NpmProvider.update`) so its pinned browser versions refresh, then re-runs `playwright install --force <install_args>` to pull any new browser builds. `uninstall()` removes the relevant `<bin_name>-*/` directories from `playwright_root` alongside the bin-dir symlink, since `playwright uninstall` only drops *unused* browsers on its own. Both `update()` and `uninstall()` leave playwright's OS-default cache untouched when `playwright_root` is unset.
 
-#### 🛠️ [`PyinfraProvider`](./abx_pkg/binprovider_pyinfra.py) (`pyinfra`)
+</details>
+
+<details>
+<summary><h4>🛠️ <code>PyinfraProvider</code> (<code>pyinfra</code>)</h4></summary>
 
 Source: [`abx_pkg/binprovider_pyinfra.py`](./abx_pkg/binprovider_pyinfra.py) • Tests: [`tests/test_pyinfraprovider.py`](./tests/test_pyinfraprovider.py)
 
@@ -712,7 +770,10 @@ pyinfra_installer_kwargs = {}
 - Overrides: `install_args` is the package list passed to the selected pyinfra operation.
 - Notes: privilege requirements depend on the underlying package manager and selected module. When pyinfra tries a privileged sudo path and then falls back, both error outputs are preserved if the final attempt also fails.
 
-#### 📘 [`AnsibleProvider`](./abx_pkg/binprovider_ansible.py) (`ansible`)
+</details>
+
+<details>
+<summary><h4>📘 <code>AnsibleProvider</code> (<code>ansible</code>)</h4></summary>
 
 Source: [`abx_pkg/binprovider_ansible.py`](./abx_pkg/binprovider_ansible.py) • Tests: [`tests/test_ansibleprovider.py`](./tests/test_ansibleprovider.py)
 
@@ -729,6 +790,8 @@ ansible_playbook_template = ANSIBLE_INSTALL_PLAYBOOK_TEMPLATE
 - Security: `min_release_age` and `postinstall_scripts=False` are unsupported and are ignored with a warning if explicitly requested.
 - Overrides: `install_args` becomes the playbook loop input for the chosen Ansible module.
 - Notes: when using the Homebrew module, the provider auto-injects the detected brew search path into module kwargs. Privilege requirements still come from the underlying package manager, and failed sudo attempts are included in the final error if the fallback attempt also fails.
+
+</details>
 
 ### [`Binary`](https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/binary.py#:~:text=class%20Binary)
 
