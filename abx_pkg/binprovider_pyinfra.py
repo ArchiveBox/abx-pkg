@@ -97,14 +97,18 @@ def pyinfra_package_install(
     }
 
     temp_dir = Path(tempfile.mkdtemp(dir=SYSTEM_TEMP_DIR))
-    # pyinfra's brew operations drop privileges to the brew-owner user (via
-    # ``_sudo_user``), and brew refuses to start if the CWD is not readable
-    # by the effective user. ``mkdtemp`` defaults to mode 0700, so relax it
-    # so the dropped-privileges user can chdir into it.
-    try:
-        os.chmod(temp_dir, 0o755)
-    except OSError:
-        pass
+    if _sudo_user is not None:
+        # pyinfra's brew operations drop privileges to the brew-owner user
+        # (via ``_sudo_user``), and brew refuses to start if the CWD is not
+        # readable by the effective user. ``mkdtemp`` defaults to mode 0700,
+        # so relax it on this one path so the dropped-privileges user can
+        # chdir into it. We deliberately do NOT relax it on the default
+        # (no-drop) path to avoid widening permissions on the generated
+        # deploy script for unrelated installs.
+        try:
+            os.chmod(temp_dir, 0o755)
+        except OSError:
+            pass
     sudo_bin = None
     try:
         deploy_path = temp_dir / "deploy.py"
