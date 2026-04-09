@@ -281,23 +281,7 @@ All abx-pkg env vars are read once at import time and only apply when set. Expli
 | Variable | Applies to | Effect |
 | --- | --- | --- |
 | `ABX_PKG_LIB_DIR` | **every** provider with an `INSTALL_ROOT_FIELD` | Centralized install root. When set, each provider defaults its install root to `$ABX_PKG_LIB_DIR/<provider name>` (e.g. `<lib>/npm`, `<lib>/pip`, `<lib>/gem`, `<lib>/playwright`). Accepts relative (`./lib`), tilde (`~/.config/abx/lib`), and absolute (`/tmp/abxlib`) paths. |
-| `ABX_PKG_BASH_ROOT` | `BashProvider` (`bash_root`) | Per-provider override; beats `ABX_PKG_LIB_DIR/bash`. |
-| `ABX_PKG_BREW_ROOT` | `BrewProvider` (`brew_prefix`) | Per-provider override; beats `ABX_PKG_LIB_DIR/brew`. |
-| `ABX_PKG_BUN_ROOT` | `BunProvider` (`bun_prefix`) | Per-provider override; beats `ABX_PKG_LIB_DIR/bun`. |
-| `ABX_PKG_CARGO_ROOT` | `CargoProvider` (`cargo_root`) | Per-provider override; beats `ABX_PKG_LIB_DIR/cargo`. |
-| `ABX_PKG_CHROMEWEBSTORE_ROOT` | `ChromeWebstoreProvider` (`extensions_root`) | Per-provider override; beats `ABX_PKG_LIB_DIR/chromewebstore`. |
-| `ABX_PKG_DENO_ROOT` | `DenoProvider` (`deno_root`) | Per-provider override; beats `ABX_PKG_LIB_DIR/deno`. |
-| `ABX_PKG_DOCKER_ROOT` | `DockerProvider` (`docker_root`) | Per-provider override; beats `ABX_PKG_LIB_DIR/docker`. |
-| `ABX_PKG_GEM_ROOT` | `GemProvider` (`gem_home`) | Per-provider override; beats `ABX_PKG_LIB_DIR/gem`. |
-| `ABX_PKG_GOGET_ROOT` | `GoGetProvider` (`gopath`) | Per-provider override; beats `ABX_PKG_LIB_DIR/goget`. |
-| `ABX_PKG_NIX_ROOT` | `NixProvider` (`nix_profile`) | Per-provider override; beats `ABX_PKG_LIB_DIR/nix`. |
-| `ABX_PKG_NPM_ROOT` | `NpmProvider` (`npm_prefix`) | Per-provider override; beats `ABX_PKG_LIB_DIR/npm`. |
-| `ABX_PKG_PIP_ROOT` | `PipProvider` (`pip_venv`) | Per-provider override; beats `ABX_PKG_LIB_DIR/pip`. |
-| `ABX_PKG_PLAYWRIGHT_ROOT` | `PlaywrightProvider` (`playwright_root`) | Per-provider override; beats `ABX_PKG_LIB_DIR/playwright`. |
-| `ABX_PKG_PNPM_ROOT` | `PnpmProvider` (`pnpm_prefix`) | Per-provider override; beats `ABX_PKG_LIB_DIR/pnpm`. |
-| `ABX_PKG_PUPPETEER_ROOT` | `PuppeteerProvider` (`puppeteer_root`) | Per-provider override; beats `ABX_PKG_LIB_DIR/puppeteer`. |
-| `ABX_PKG_UV_ROOT` | `UvProvider` (`uv_venv`) | Per-provider override; beats `ABX_PKG_LIB_DIR/uv`. |
-| `ABX_PKG_YARN_ROOT` | `YarnProvider` (`yarn_prefix`) | Per-provider override; beats `ABX_PKG_LIB_DIR/yarn`. |
+| `ABX_PKG_<BINPROVIDER>_ROOT` | the matching provider-specific install-root field | Generic per-provider override; beats `ABX_PKG_LIB_DIR/<provider name>`. Examples: `ABX_PKG_PIP_ROOT -> PipProvider(pip_venv=...)`, `ABX_PKG_UV_ROOT -> UvProvider(uv_venv=...)`, `ABX_PKG_NPM_ROOT -> NpmProvider(npm_prefix=...)`, `ABX_PKG_GOGET_ROOT -> GoGetProvider(gopath=...)`, `ABX_PKG_CHROMEWEBSTORE_ROOT -> ChromeWebstoreProvider(extensions_root=...)`. The `<BINPROVIDER>` token is the provider name uppercased (`pip`, `uv`, `npm`, `pnpm`, `yarn`, `bun`, `cargo`, `gem`, `goget`, `nix`, `docker`, `bash`, `playwright`, `puppeteer`, `chromewebstore`, etc.). |
 
 Install-root precedence (most specific wins): explicit `install_root=` / provider-specific kwarg (e.g. `npm_prefix=`, `pip_venv=`) > `ABX_PKG_<NAME>_ROOT` > `ABX_PKG_LIB_DIR/<name>` > built-in default.
 
