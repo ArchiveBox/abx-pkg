@@ -487,24 +487,6 @@
         transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
       }
 
-      .plugin-card--snapshot {
-        --card-tint: rgba(73, 154, 84, 0.08);
-        --card-border: rgba(73, 154, 84, 0.3);
-        --card-accent: #4ade80;
-      }
-
-      .plugin-card--crawl-only {
-        --card-tint: rgba(96, 165, 250, 0.08);
-        --card-border: rgba(96, 165, 250, 0.3);
-        --card-accent: #60a5fa;
-      }
-
-      .plugin-card--binary-only {
-        --card-tint: rgba(161, 161, 170, 0.08);
-        --card-border: rgba(161, 161, 170, 0.3);
-        --card-accent: #a1a1aa;
-      }
-
       .plugin-card[hidden] {
         display: none;
       }
@@ -1538,3 +1520,723 @@
       }
     </style>
   </head>
+  <body>
+    <div class="page-shell">
+      <section class="hero">
+        <div class="hero-top">
+          <div>
+            <div class="eyebrow">An ORM for your package managers.</div>
+            <h1><code>abx-pkg</code></h1>
+            <p class="hero-copy">
+              A Python library for installing &amp; managing packages locally with a variety of
+              package managers. Great for when <code>requirements.txt</code> isn't enough and
+              you need to detect or install dependencies at runtime — across
+              <code>apt</code>, <code>brew</code>, <code>pip</code>, <code>uv</code>,
+              <code>npm</code>, <code>pnpm</code>, <code>yarn</code>, <code>bun</code>,
+              <code>deno</code>, <code>cargo</code>, <code>gem</code>, <code>go</code>,
+              <code>nix</code>, <code>docker</code>, <code>bash</code>,
+              <code>playwright</code>, <code>puppeteer</code>, and more.
+            </p>
+            <div class="hero-support-strip">
+              <code>apt</code><code>brew</code><code>pip</code><code>uv</code><code>npm</code><code>pnpm</code><code>yarn</code><code>bun</code><code>deno</code><code>cargo</code><code>gem</code><code>goget</code><code>nix</code><code>docker</code><code>bash</code><code>chromewebstore</code><code>puppeteer</code><code>playwright</code><code>pyinfra</code><code>ansible</code><code>env</code>
+            </div>
+          </div>
+          <div class="hero-actions">
+            <a
+              class="stat stat-link stat-link--cta button-link--hero"
+              href="https://pypi.org/project/abx-pkg/"
+              target="_blank"
+              rel="noreferrer"
+            >
+              <strong><span class="cta-plus">↓</span> Install</strong>
+              <center><span>pip install abx-pkg</span></center>
+            </a>
+          </div>
+          <div class="hero-meta">
+            <div class="stat">
+              <strong>{{ site.provider_count }}</strong>
+              <span>BinProviders</span>
+            </div>
+            <div class="stat">
+              <strong>{{ site.field_count }}</strong>
+              <span>Config fields</span>
+            </div>
+            <div class="stat">
+              <strong>{{ site.env_var_count }}</strong>
+              <span>Env vars</span>
+            </div>
+          </div>
+        </div>
+
+        <section class="hero-example" aria-labelledby="quickstart-heading">
+          <div class="hero-example-header">
+            <div>
+              <h2 class="hero-example-title" id="quickstart-heading">Quick Start</h2>
+              <p class="hero-example-copy">
+                Pick a provider below to auto-fill an example command, or use
+                <code>abx-pkg</code> directly from the CLI.
+              </p>
+            </div>
+            <div class="hero-runner-links">
+              <span>Docs:</span>
+              <a class="runner-link" href="https://github.com/ArchiveBox/abx-pkg#readme" target="_blank" rel="noreferrer">README</a>
+              <a class="runner-link" href="https://pypi.org/project/abx-pkg/" target="_blank" rel="noreferrer">PyPI</a>
+              <a class="runner-link" href="https://github.com/ArchiveBox/abx-pkg" target="_blank" rel="noreferrer">GitHub</a>
+            </div>
+          </div>
+
+          <div class="hero-code-block">
+            <div class="hero-code-toolbar">
+              <div class="hero-code-meta">
+                <span class="hero-code-kicker">Selected provider</span>
+                <code id="selected-plugin-name">abx-pkg</code>
+              </div>
+              <button type="button" class="copy-button" id="copy-example-button">Copy</button>
+            </div>
+            <pre><code id="hero-command-example" aria-live="polite"></code></pre>
+          </div>
+
+          <details class="install-details">
+            <summary>Expand to see install + library usage</summary>
+            <pre><code data-highlight-shell>pip install abx-pkg
+# or
+uv tool add abx-pkg
+
+# CLI
+abx-pkg --version
+abx-pkg install yt-dlp
+abx-pkg update yt-dlp
+abx-pkg uninstall yt-dlp
+abx-pkg load yt-dlp
+abx-pkg load-or-install yt-dlp
+
+# Select specific providers / re-order provider precedence
+abx-pkg install --binproviders=env,uv,pip,apt,brew prettier
+env ABX_PKG_BINPROVIDERS=env,uv,pip,apt,brew abx-pkg install yt-dlp
+
+# Customize install location
+abx-pkg --lib=~/.config/abx/lib install yt-dlp
+env ABX_PKG_LIB_DIR=/tmp/abxlib abx-pkg install yt-dlp
+
+# Dry-run mode
+abx-pkg install --dry-run some-package
+env ABX_PKG_DRY_RUN=1 abx-pkg install some-package</code></pre>
+          </details>
+        </section>
+      </section>
+
+      <div class="toolbar">
+        <label class="searchbox" for="plugin-search">
+          <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8">
+            <circle cx="11" cy="11" r="7"></circle>
+            <path d="M20 20l-3.5-3.5"></path>
+          </svg>
+          <input
+            id="plugin-search"
+            type="search"
+            placeholder="Filter by provider name, category, field, or env var"
+            autocomplete="off"
+            spellcheck="false"
+          >
+        </label>
+        <div class="result-count"><span id="visible-count">{{ site.provider_count }}</span> / {{ site.provider_count }} visible</div>
+      </div>
+
+      <main id="plugin-gallery">
+      {% for category in site.categories %}
+        <div class="category-header">
+          <h2>{{ category.label }}</h2>
+          <span>{{ category.providers|length }} provider(s)</span>
+        </div>
+        <div class="gallery">
+        {% for provider in category.providers %}
+          <details
+            id="{{ provider.short_name }}"
+            class="plugin-card plugin-card--{{ provider.category }}"
+            data-search="{{ provider.search_text }}"
+            data-hero-plugin="{{ provider.short_name }}"
+            data-hero-cli-command="abx-pkg --binproviders={{ provider.short_name }} install {{ provider.example_binary }}"
+            data-hero-python-command="from abx_pkg import Binary, {{ provider.short_name }}&#10;bin = Binary(name={{ provider.example_binary|tojson }}, binproviders=[{{ provider.short_name }}]).load_or_install()"
+          >
+            <summary>
+              <div class="plugin-main">
+                <div class="plugin-title-row">
+                  <h2><span class="provider-hero-emoji">{{ provider.emoji }}</span>{{ provider.display_title }}</h2>
+                </div>
+                <div class="plugin-slug"><code>{{ provider.short_name }}</code> &middot; <code>from abx_pkg import {{ provider.short_name }}</code></div>
+                {% if provider.summary %}
+                <p class="plugin-summary-description">{{ provider.summary }}</p>
+                {% endif %}
+                <div class="plugin-subline">
+                  <span class="chip">{{ provider.category_label }}</span>
+                  {% for tag in provider.tags %}
+                  <span class="chip">{{ tag }}</span>
+                  {% endfor %}
+                  <span class="chip">{{ provider.field_count }} fields</span>
+                  <span class="chip">{{ provider.env_var_count + 0 }} env vars</span>
+                </div>
+              </div>
+              <div class="plugin-corner-icon" aria-hidden="true">
+                <div class="plugin-icon">{{ provider.emoji }}</div>
+              </div>
+            </summary>
+
+            <div class="plugin-body">
+              {% if provider.summary %}
+              <p class="plugin-modal-description">{{ provider.summary }}</p>
+              {% endif %}
+
+              <div class="actions">
+                <a class="button-link" href="{{ provider.source_url }}" target="_blank" rel="noreferrer">Source on GitHub</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg#readme" target="_blank" rel="noreferrer">README</a>
+              </div>
+
+              <div class="provider-meta-grid">
+                <article>
+                  <span>Provider name</span>
+                  <code>{{ provider.short_name }}</code>
+                </article>
+                <article>
+                  <span>Python class</span>
+                  <code>{{ provider.class_name }}</code>
+                </article>
+                <article>
+                  <span>Installer binary</span>
+                  <code>{{ provider.installer_bin }}</code>
+                </article>
+                <article>
+                  <span>Source file</span>
+                  <code>{{ provider.source_file }}</code>
+                </article>
+              </div>
+
+              <h3 class="section-title">Example Usage</h3>
+              <div class="run-tabs" data-run-tabs>
+                <div class="run-tabs-bar">
+                  <button type="button" class="run-tab active" data-run-tab="cli">CLI</button>
+                  <button type="button" class="run-tab" data-run-tab="env">CLI (env var)</button>
+                  <button type="button" class="run-tab" data-run-tab="python">Python</button>
+                </div>
+                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>{{ provider.commands.cli_quick }}</code></pre>
+                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>{{ provider.commands.cli_env }}</code></pre>
+                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>{{ provider.commands.python }}</code></pre>
+              </div>
+
+              <h3 class="section-title">Constructor Fields &amp; Defaults</h3>
+              {% if provider.fields %}
+              <div class="config-table-wrap">
+                <table class="field-table">
+                  <colgroup>
+                    <col class="col-key">
+                    <col class="col-type">
+                    <col class="col-default">
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th>Field</th>
+                      <th>Type</th>
+                      <th>Default</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for field in provider.fields %}
+                    <tr>
+                      <td>
+                        <code>{{ field.key }}</code>
+                        {% if field.description %}<span class="config-key-desc">{{ field.description }}</span>{% endif %}
+                      </td>
+                      <td><code>{{ field.type }}</code></td>
+                      <td class="cfg-default">{{ field.default }}</td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+              {% else %}
+              <div class="empty-state">This provider has no extra fields beyond the shared <code>BinProvider</code> base.</div>
+              {% endif %}
+
+              <h3 class="section-title">Provider-specific Env Vars</h3>
+              {% if provider.env_vars %}
+              <div class="config-table-wrap">
+                <table class="env-table">
+                  <colgroup>
+                    <col class="col-env-key">
+                    <col class="col-env-default">
+                    <col class="col-env-desc">
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th>Variable</th>
+                      <th>Default</th>
+                      <th>Effect</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for envvar in provider.env_vars %}
+                    <tr>
+                      <td><code>{{ envvar.name }}</code></td>
+                      <td><code>{{ envvar.default or 'unset' }}</code></td>
+                      <td><small>{{ envvar.description }}</small></td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+              {% else %}
+              <div class="empty-state">No provider-specific env vars — uses only the shared globals below.</div>
+              {% endif %}
+            </div>
+          </details>
+        {% endfor %}
+        </div>
+      {% endfor %}
+      </main>
+
+      <div class="empty-state" id="empty-state" hidden>No providers match the current filter.</div>
+
+      <section class="global-env-wrap" id="global-env">
+        <h2>Global Environment Variables</h2>
+        <p>
+          These env vars are read once at import time and apply across every provider
+          (or to the <code>abx-pkg</code> CLI itself). Explicit constructor kwargs
+          always override these defaults.
+        </p>
+        <div class="config-table-wrap">
+          <table class="env-table">
+            <colgroup>
+              <col class="col-env-key">
+              <col class="col-env-default">
+              <col class="col-env-desc">
+            </colgroup>
+            <thead>
+              <tr>
+                <th>Variable</th>
+                <th>Default</th>
+                <th>Effect</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for envvar in site.global_env_vars %}
+              <tr>
+                <td><code>{{ envvar.name }}</code></td>
+                <td><code>{{ envvar.default }}</code></td>
+                <td><small>{{ envvar.description }}</small></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <footer class="page-footer">
+        <div class="footer-intro">
+          <h2>An ORM for your package managers</h2>
+          <p>
+            <code>abx-pkg</code> provides consistent interfaces for runtime
+            dependency resolution &amp; installation across many package managers
+            and OSs, built with <a href="https://pydantic-docs.helpmanual.io/" target="_blank" rel="noreferrer">pydantic</a>
+            v2 for strong static typing and easy conversion to/from JSON. It's
+            usable with <a href="https://docs.djangoproject.com/" target="_blank" rel="noreferrer">Django</a>,
+            <a href="https://django-ninja.dev/" target="_blank" rel="noreferrer">django-ninja</a>,
+            and OpenAPI tools, and its driver layer can be
+            <a href="https://github.com/pyinfra-dev/pyinfra" target="_blank" rel="noreferrer">pyinfra</a>,
+            <a href="https://github.com/ansible/ansible" target="_blank" rel="noreferrer">ansible</a>,
+            or the built-in <code>abx-pkg</code> engine.
+          </p>
+          <p>
+            Originally built by <a href="https://github.com/ArchiveBox" target="_blank" rel="noreferrer">ArchiveBox</a>
+            to install &amp; auto-update extractor dependencies at runtime
+            (<code>chrome</code>, <code>wget</code>, <code>curl</code>, etc.) on macOS / Linux / Docker.
+          </p>
+        </div>
+
+        <div class="footer-grid">
+          <section class="footer-card">
+            <h3>Install &amp; Use</h3>
+            <p class="footer-card-subtitle">Get started</p>
+            <div class="footer-link-list">
+              <a class="footer-link-item" href="https://pypi.org/project/abx-pkg/" target="_blank" rel="noreferrer">
+                <span class="footer-link-icon">📦</span>
+                <span class="footer-link-copy">
+                  <strong>abx-pkg on PyPI</strong>
+                  <span>Install the package: <code>pip install abx-pkg</code> or <code>uv tool add abx-pkg</code>.</span>
+                </span>
+              </a>
+              <a class="footer-link-item" href="https://github.com/ArchiveBox/abx-pkg#readme" target="_blank" rel="noreferrer">
+                <span class="footer-link-icon">📘</span>
+                <span class="footer-link-copy">
+                  <strong>README</strong>
+                  <span>Full documentation, advanced usage, overrides, and Django integration.</span>
+                </span>
+              </a>
+              <a class="footer-link-item" href="https://github.com/ArchiveBox/abx-pkg/tree/main/django_example_project" target="_blank" rel="noreferrer">
+                <span class="footer-link-icon">🧪</span>
+                <span class="footer-link-copy">
+                  <strong>Django example project</strong>
+                  <span>Minimal project showing model fields, admin views, and JSON forms.</span>
+                </span>
+              </a>
+              <a class="footer-link-item" href="https://github.com/ArchiveBox/abx-pkg/tree/main/tests" target="_blank" rel="noreferrer">
+                <span class="footer-link-icon">✅</span>
+                <span class="footer-link-copy">
+                  <strong>Tests</strong>
+                  <span>Per-provider tests showing each binprovider's expected behavior.</span>
+                </span>
+              </a>
+            </div>
+          </section>
+
+          <section class="footer-card">
+            <h3>Source &amp; issues</h3>
+            <p class="footer-card-subtitle">Contribute</p>
+            <div class="footer-link-list">
+              <a class="footer-link-item" href="https://github.com/ArchiveBox/abx-pkg" target="_blank" rel="noreferrer">
+                <span class="footer-link-icon">🐙</span>
+                <span class="footer-link-copy">
+                  <strong>GitHub repository</strong>
+                  <span>Main source tree for <code>abx-pkg</code>.</span>
+                </span>
+              </a>
+              <a class="footer-link-item" href="https://github.com/ArchiveBox/abx-pkg/issues" target="_blank" rel="noreferrer">
+                <span class="footer-link-icon">🐛</span>
+                <span class="footer-link-copy">
+                  <strong>Issues</strong>
+                  <span>Report bugs, request new providers, or propose improvements.</span>
+                </span>
+              </a>
+              <a class="footer-link-item" href="https://github.com/ArchiveBox/abx-pkg/pulls" target="_blank" rel="noreferrer">
+                <span class="footer-link-icon">🔀</span>
+                <span class="footer-link-copy">
+                  <strong>Pull requests</strong>
+                  <span>Open or review PRs adding new providers or features.</span>
+                </span>
+              </a>
+              <a class="footer-link-item" href="https://github.com/ArchiveBox/abx-pkg/releases" target="_blank" rel="noreferrer">
+                <span class="footer-link-icon">🏷️</span>
+                <span class="footer-link-copy">
+                  <strong>Releases</strong>
+                  <span>Changelog and version history.</span>
+                </span>
+              </a>
+            </div>
+          </section>
+
+          <section class="footer-card">
+            <h3>Related projects</h3>
+            <p class="footer-card-subtitle">From the ArchiveBox ecosystem</p>
+            <div class="footer-link-list">
+              <a class="footer-link-item" href="https://github.com/ArchiveBox/ArchiveBox" target="_blank" rel="noreferrer">
+                <span class="footer-link-icon">🗄️</span>
+                <span class="footer-link-copy">
+                  <strong>ArchiveBox</strong>
+                  <span>Self-hosted web archiving — the original consumer of <code>abx-pkg</code>.</span>
+                </span>
+              </a>
+              <a class="footer-link-item" href="https://github.com/ArchiveBox/abx-plugins" target="_blank" rel="noreferrer">
+                <span class="footer-link-icon">🧩</span>
+                <span class="footer-link-copy">
+                  <strong>abx-plugins</strong>
+                  <span>Shared plugin package used by ArchiveBox.</span>
+                </span>
+              </a>
+              <a class="footer-link-item" href="https://github.com/pyinfra-dev/pyinfra" target="_blank" rel="noreferrer">
+                <span class="footer-link-icon">🛠️</span>
+                <span class="footer-link-copy">
+                  <strong>pyinfra</strong>
+                  <span>Agentless infrastructure automation — one of the supported driver layers.</span>
+                </span>
+              </a>
+              <a class="footer-link-item" href="https://github.com/ansible/ansible" target="_blank" rel="noreferrer">
+                <span class="footer-link-icon">📘</span>
+                <span class="footer-link-copy">
+                  <strong>ansible</strong>
+                  <span>IT automation — the other supported driver layer.</span>
+                </span>
+              </a>
+            </div>
+          </section>
+        </div>
+
+        <div class="footer-meta">
+          <span>Generated from <a href="{{ site.github_repo }}" target="_blank" rel="noreferrer">ArchiveBox/abx-pkg</a> at ref <code>{{ site.github_ref }}</code>{% if site.package_version %} · v{{ site.package_version }}{% endif %}.</span>
+          <span>Updated {{ site.generated_at }}</span>
+        </div>
+      </footer>
+    </div>
+
+    <dialog class="plugin-modal" id="plugin-modal">
+      <div class="plugin-modal-header">
+        <div class="plugin-modal-header-left">
+          <div class="plugin-icon" id="plugin-modal-icon"></div>
+          <h2 id="plugin-modal-title"></h2>
+        </div>
+        <button type="button" class="plugin-modal-close" id="plugin-modal-close" aria-label="Close">&times;</button>
+      </div>
+      <div class="plugin-body" id="plugin-modal-body"></div>
+    </dialog>
+
+    <script>
+      const searchInput = document.getElementById("plugin-search");
+      const cards = Array.from(document.querySelectorAll(".plugin-card"));
+      const visibleCount = document.getElementById("visible-count");
+      const emptyState = document.getElementById("empty-state");
+      const selectedPluginName = document.getElementById("selected-plugin-name");
+      const heroCommandExample = document.getElementById("hero-command-example");
+      const copyExampleButton = document.getElementById("copy-example-button");
+      let selectedCard = null;
+      let copyFeedbackTimer = null;
+
+      const escapeHtml = (value) =>
+        value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+      const highlightShell = (line) => {
+        const tokenPattern = /('[^']*'|"[^"]*"|--[\w-]+(?:=[^\s'"]+)?|\b(?:uvx|abx-pkg|env|pip|uv|python3?|from|import)\b|\b[A-Z][A-Z0-9_]+(?==)|\b(?:True|False|None|true|false)\b)/g;
+        let html = "";
+        let lastIndex = 0;
+
+        for (const match of line.matchAll(tokenPattern)) {
+          const token = match[0];
+          const index = match.index ?? 0;
+          html += escapeHtml(line.slice(lastIndex, index));
+
+          let className = "code-value";
+          if (token.startsWith("'") || token.startsWith('"')) {
+            className = "code-string";
+          } else if (token.startsWith("--")) {
+            className = "code-option";
+          } else if (token === "abx-pkg" || token === "uvx" || token === "pip" || token === "uv" || token === "env" || token === "python" || token === "python3") {
+            className = "code-command";
+          } else if (token === "from" || token === "import") {
+            className = "code-command";
+          } else if (token === "true" || token === "false" || token === "True" || token === "False" || token === "None") {
+            className = "code-boolean";
+          } else if (/^[A-Z][A-Z0-9_]+$/.test(token)) {
+            className = "code-env";
+          }
+
+          html += `<span class="${className}">${escapeHtml(token)}</span>`;
+          lastIndex = index + token.length;
+        }
+
+        html += escapeHtml(line.slice(lastIndex));
+        return html;
+      };
+
+      const defaultHeroExample = {
+        plugin: "abx-pkg",
+        cli: "abx-pkg install yt-dlp",
+        env: "env ABX_PKG_BINPROVIDERS=env,uv,pip,apt,brew abx-pkg install yt-dlp",
+      };
+
+      const getHeroExample = (card) => {
+        if (!card) return defaultHeroExample;
+        return {
+          plugin: card.dataset.heroPlugin || card.id || "abx-pkg",
+          cli: card.dataset.heroCliCommand || defaultHeroExample.cli,
+          env: (card.dataset.heroPythonCommand || "").replace(/&#10;/g, "\n"),
+        };
+      };
+
+      const renderHeroExample = (example) => {
+        const lines = [
+          '<span class="code-comment"># CLI usage</span>',
+          highlightShell(example.cli),
+          "",
+          '<span class="code-comment"># Python API</span>',
+          ...example.env.split("\n").map(highlightShell),
+        ];
+        return lines.join("\n");
+      };
+
+      const heroExampleText = (example) =>
+        ["# CLI", example.cli, "", "# Python", example.env].join("\n");
+
+      const setHeroExample = (card) => {
+        const example = getHeroExample(card);
+        selectedCard = card;
+        selectedPluginName.textContent = example.plugin;
+        heroCommandExample.innerHTML = renderHeroExample(example);
+        copyExampleButton.dataset.copyText = heroExampleText(example);
+      };
+
+      const syncHeroExample = () => {
+        if (selectedCard) {
+          setHeroExample(selectedCard);
+          return;
+        }
+        selectedPluginName.textContent = defaultHeroExample.plugin;
+        heroCommandExample.innerHTML = [
+          '<span class="code-comment"># CLI usage</span>',
+          highlightShell(defaultHeroExample.cli),
+          "",
+          '<span class="code-comment"># Or pick providers explicitly</span>',
+          highlightShell(defaultHeroExample.env),
+        ].join("\n");
+        copyExampleButton.dataset.copyText = [
+          "# CLI",
+          defaultHeroExample.cli,
+          "",
+          "# With provider order",
+          defaultHeroExample.env,
+        ].join("\n");
+      };
+
+      const applyFilter = () => {
+        const query = searchInput.value.trim().toLowerCase();
+        let count = 0;
+
+        for (const card of cards) {
+          const matches = !query || card.dataset.search.includes(query);
+          card.hidden = !matches;
+          if (matches) count += 1;
+        }
+
+        visibleCount.textContent = String(count);
+        emptyState.hidden = count !== 0;
+      };
+
+      const setHash = (value) => {
+        const clean = value.replace(/^#/, "").trim();
+        if (clean) {
+          history.replaceState(null, "", "#" + clean);
+        } else {
+          history.replaceState(null, "", location.pathname + location.search);
+        }
+      };
+
+      const navigateToHash = () => {
+        const hash = decodeURIComponent(location.hash.replace(/^#/, "")).trim();
+        if (!hash) return;
+
+        const target = document.getElementById(hash);
+        if (target && target.classList.contains("plugin-card")) {
+          searchInput.value = "";
+          applyFilter();
+          openModal(target);
+          target.scrollIntoView({ behavior: "smooth", block: "start" });
+        } else {
+          searchInput.value = hash;
+          applyFilter();
+          searchInput.focus();
+        }
+      };
+
+      const setCopyButtonLabel = (label) => {
+        copyExampleButton.textContent = label;
+        if (copyFeedbackTimer) {
+          clearTimeout(copyFeedbackTimer);
+        }
+        copyFeedbackTimer = window.setTimeout(() => {
+          copyExampleButton.textContent = "Copy";
+        }, 1600);
+      };
+
+      const copyText = async (text) => {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(text);
+          return;
+        }
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "absolute";
+        textarea.style.left = "-9999px";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        textarea.remove();
+      };
+
+      searchInput.addEventListener("input", () => {
+        applyFilter();
+        setHash(searchInput.value.trim());
+      });
+
+      copyExampleButton.addEventListener("click", async () => {
+        try {
+          await copyText(copyExampleButton.dataset.copyText || "");
+          setCopyButtonLabel("Copied");
+        } catch (error) {
+          setCopyButtonLabel("Copy failed");
+        }
+      });
+
+      const modalEl = document.getElementById("plugin-modal");
+      const modalTitle = document.getElementById("plugin-modal-title");
+      const modalBody = document.getElementById("plugin-modal-body");
+      const modalClose = document.getElementById("plugin-modal-close");
+      const modalIcon = document.getElementById("plugin-modal-icon");
+      let activeModalCard = null;
+
+      const initRunTabs = (container) => {
+        const tabs = container.querySelectorAll("[data-run-tab]");
+        const panels = container.querySelectorAll("[data-run-panel]");
+        tabs.forEach((tab) => {
+          tab.addEventListener("click", () => {
+            const target = tab.dataset.runTab;
+            tabs.forEach((t) => t.classList.toggle("active", t.dataset.runTab === target));
+            panels.forEach((p) => p.classList.toggle("active", p.dataset.runPanel === target));
+          });
+        });
+      };
+
+      const highlightAllShell = (root) => {
+        root.querySelectorAll("[data-highlight-shell]").forEach((el) => {
+          el.innerHTML = el.textContent.split("\n").map((line) => highlightShell(line)).join("\n");
+        });
+      };
+
+      const openModal = (card) => {
+        const body = card.querySelector(".plugin-body");
+        const title = card.querySelector("h2");
+        const icon = card.querySelector(".plugin-icon");
+        if (!body) return;
+
+        if (activeModalCard) activeModalCard.classList.remove("modal-active");
+        activeModalCard = card;
+        card.classList.add("modal-active");
+
+        modalTitle.textContent = title ? title.textContent : card.id;
+        modalIcon.innerHTML = icon ? icon.innerHTML : "";
+        modalBody.innerHTML = body.innerHTML;
+        modalBody.querySelectorAll("[data-run-tabs]").forEach(initRunTabs);
+        highlightAllShell(modalBody);
+        modalEl.showModal();
+
+        setHash(card.id);
+        setHeroExample(card);
+      };
+
+      const closeModal = () => {
+        modalEl.close();
+        if (activeModalCard) {
+          activeModalCard.classList.remove("modal-active");
+          activeModalCard = null;
+        }
+      };
+
+      modalClose.addEventListener("click", closeModal);
+      modalEl.addEventListener("click", (event) => {
+        if (event.target === modalEl) closeModal();
+      });
+
+      for (const card of cards) {
+        const summary = card.querySelector("summary");
+        if (summary) {
+          summary.addEventListener("click", (event) => {
+            event.preventDefault();
+            if (event.target.closest("a, button, input, textarea, select")) return;
+            openModal(card);
+          });
+        }
+      }
+
+      highlightAllShell(document);
+      applyFilter();
+      navigateToHash();
+      syncHeroExample();
+      window.addEventListener("hashchange", navigateToHash);
+    </script>
+  </body>
+</html>
