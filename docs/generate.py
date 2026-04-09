@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Build the abx-pkg landing page (GitHub Pages)."""
+
 from __future__ import annotations
 
 import argparse
 import inspect
-import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -356,8 +356,7 @@ GLOBAL_ENV_VARS: list[dict[str, str]] = [
         "name": "ABX_PKG_INSTALL_TIMEOUT",
         "default": "120",
         "description": (
-            "Seconds to wait for install()/update()/uninstall() handler "
-            "subprocesses."
+            "Seconds to wait for install()/update()/uninstall() handler subprocesses."
         ),
     },
     {
@@ -452,10 +451,16 @@ PROVIDER_ENV_VARS: dict[str, list[dict[str, str]]] = {
         {"name": "ABX_PKG_NIX_PROFILE", "description": "Legacy alias for nix_profile."},
     ],
     "docker": [
-        {"name": "ABX_PKG_DOCKER_ROOT", "description": "Overrides docker_shim_dir parent."},
+        {
+            "name": "ABX_PKG_DOCKER_ROOT",
+            "description": "Overrides docker_shim_dir parent.",
+        },
     ],
     "brew": [
-        {"name": "ABX_PKG_BREW_ROOT", "description": "Overrides brew_prefix (discovery only)."},
+        {
+            "name": "ABX_PKG_BREW_ROOT",
+            "description": "Overrides brew_prefix (discovery only).",
+        },
     ],
     "bash": [
         {"name": "ABX_PKG_BASH_ROOT", "description": "Overrides bash_root state dir."},
@@ -467,7 +472,10 @@ PROVIDER_ENV_VARS: dict[str, list[dict[str, str]]] = {
         },
     ],
     "puppeteer": [
-        {"name": "ABX_PKG_PUPPETEER_ROOT", "description": "Overrides puppeteer_root path."},
+        {
+            "name": "ABX_PKG_PUPPETEER_ROOT",
+            "description": "Overrides puppeteer_root path.",
+        },
     ],
     "playwright": [
         {
@@ -582,7 +590,11 @@ def build_provider(cls: type[BinProvider]) -> dict[str, Any]:
     fields = collect_provider_fields(cls)
     env_vars = PROVIDER_ENV_VARS.get(short_name, [])
     source_file = meta.get("source_file") or inspect.getfile(cls).split("abx_pkg/")[-1]
-    source_file = f"abx_pkg/{source_file}" if not source_file.startswith("abx_pkg/") else source_file
+    source_file = (
+        f"abx_pkg/{source_file}"
+        if not source_file.startswith("abx_pkg/")
+        else source_file
+    )
     category = meta.get("category", CATEGORY_LANGUAGE)
 
     installer_bin = cls.model_fields.get("INSTALLER_BIN").default
@@ -594,8 +606,7 @@ def build_provider(cls: type[BinProvider]) -> dict[str, Any]:
     commands = {
         "cli_quick": f"abx-pkg --binproviders={short_name} install {example_binary}",
         "cli_env": (
-            f"env ABX_PKG_BINPROVIDERS={short_name} "
-            f"abx-pkg install {example_binary}"
+            f"env ABX_PKG_BINPROVIDERS={short_name} abx-pkg install {example_binary}"
         ),
         "python": (
             f"from abx_pkg import Binary, {short_name}\n\n"

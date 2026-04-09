@@ -1656,7 +1656,7 @@ env ABX_PKG_DRY_RUN=1 abx-pkg install some-package</code></pre>
             data-search="{{ provider.search_text }}"
             data-hero-plugin="{{ provider.short_name }}"
             data-hero-cli-command="abx-pkg --binproviders={{ provider.short_name }} install {{ provider.example_binary }}"
-            data-hero-python-command="from abx_pkg import Binary, {{ provider.short_name }}&#10;bin = Binary(name={{ provider.example_binary|tojson }}, binproviders=[{{ provider.short_name }}]).load_or_install()"
+            data-hero-python-command="from abx_pkg import Binary, {{ provider.short_name }}&#10;bin = Binary(name={{ provider.example_binary|tojson|forceescape }}, binproviders=[{{ provider.short_name }}]).load_or_install()"
           >
             <summary>
               <div class="plugin-main">
@@ -2106,7 +2106,12 @@ env ABX_PKG_DRY_RUN=1 abx-pkg install some-package</code></pre>
       };
 
       const navigateToHash = () => {
-        const hash = decodeURIComponent(location.hash.replace(/^#/, "")).trim();
+        let hash;
+        try {
+          hash = decodeURIComponent(location.hash.replace(/^#/, "")).trim();
+        } catch (e) {
+          hash = location.hash.replace(/^#/, "").trim();
+        }
         if (!hash) return;
 
         const target = document.getElementById(hash);
@@ -2219,6 +2224,12 @@ env ABX_PKG_DRY_RUN=1 abx-pkg install some-package</code></pre>
       modalClose.addEventListener("click", closeModal);
       modalEl.addEventListener("click", (event) => {
         if (event.target === modalEl) closeModal();
+      });
+      modalEl.addEventListener("close", () => {
+        if (activeModalCard) {
+          activeModalCard.classList.remove("modal-active");
+          activeModalCard = null;
+        }
       });
 
       for (const card of cards) {
