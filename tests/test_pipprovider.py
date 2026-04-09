@@ -1,5 +1,5 @@
-import tempfile
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -23,9 +23,11 @@ class TestPipProvider:
             assert installed is not None
             assert installed.loaded_abspath is not None
             assert installed.loaded_version is not None
+            assert provider.INSTALLER_BIN_ABSPATH is not None
 
-            metadata_proc = provider._pip(
-                ["show", "--no-input", "saws"],
+            metadata_proc = provider.exec(
+                bin_name=provider.INSTALLER_BIN_ABSPATH,
+                cmd=["show", "--no-input", "saws"],
                 quiet=True,
                 timeout=provider.version_timeout,
             )
@@ -59,43 +61,6 @@ class TestPipProvider:
                 )
                 == metadata_version
             )
-
-    def test_explicit_exclude_newer_flag_overrides_strict_provider_default(
-        self,
-        test_machine,
-    ):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            venv_path = Path(tmpdir) / "venv"
-            bootstrap_provider = PipProvider(
-                pip_venv=venv_path,
-                postinstall_scripts=True,
-                min_release_age=0,
-            )
-            bootstrap_provider.setup(
-                postinstall_scripts=True,
-                min_release_age=0,
-                min_version=None,
-            )
-
-            provider = PipProvider(
-                pip_venv=venv_path,
-                postinstall_scripts=True,
-                min_release_age=36500,
-            ).get_provider_with_overrides(
-                overrides={
-                    "black": {
-                        "install_args": [
-                            "black",
-                            "--exclude-newer=2100-01-01T00:00:00Z",
-                        ],
-                    },
-                },
-            )
-
-            installed = provider.install("black")
-
-            test_machine.assert_shallow_binary_loaded(installed)
-            assert bootstrap_provider.uninstall("black")
 
     def test_install_root_alias_installs_into_the_requested_venv(self, test_machine):
         with tempfile.TemporaryDirectory() as temp_dir:

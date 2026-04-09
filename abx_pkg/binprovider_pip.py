@@ -6,10 +6,8 @@ import os
 import sys
 import site
 import re
-import shlex
 import shutil
 import sysconfig
-import subprocess
 import tempfile
 from platformdirs import user_cache_path
 
@@ -53,6 +51,10 @@ except Exception:
     pass
 
 
+# pip >= 26.0 is required for ``--uploaded-prior-to`` (see pypa/pip#13625).
+_PIP_MIN_RELEASE_AGE_VERSION = SemVer((26, 0, 0))
+
+
 class PipProvider(BinProvider):
     name: BinProviderName = "pip"
     INSTALLER_BIN: BinName = "pip"
@@ -83,7 +85,6 @@ class PipProvider(BinProvider):
     pip_bootstrap_packages: list[str] = [
         "pip",
         "setuptools",
-        "uv",
     ]  # packages installed into newly created pip_venv environments
 
     _INSTALLER_BIN_ABSPATH: HostBinPath | None = (
@@ -91,7 +92,21 @@ class PipProvider(BinProvider):
     )
 
     def supports_min_release_age(self, action) -> bool:
-        return action in ("install", "update")
+        if action not in ("install", "update"):
+            return False
+        # When ``pip_venv`` is set, ``setup()`` bootstraps the venv with the
+        # latest pip from PyPI (via ``pip install --upgrade pip``), so we can
+        # assume ``--uploaded-prior-to`` support regardless of what the host
+        # system pip looks like right now. This check runs before ``setup()``
+        # on the first install, so inspecting ``INSTALLER_BINARY`` here would
+        # otherwise see ``None``.
+        if self.pip_venv and "pip" in self.pip_bootstrap_packages:
+            return True
+        installer = self.INSTALLER_BINARY
+        version = installer.loaded_version if installer else None
+        if version is None:
+            return False
+        return version >= _PIP_MIN_RELEASE_AGE_VERSION  # pyright: ignore[reportOperatorIssue]
 
     def supports_postinstall_disable(self, action) -> bool:
         return action in ("install", "update")
@@ -132,7 +147,7 @@ class PipProvider(BinProvider):
     @computed_field
     @property
     def INSTALLER_BIN_ABSPATH(self) -> HostBinPath | None:
-        """Actual absolute path of the underlying package manager (e.g. /usr/local/bin/npm)"""
+        """Actual absolute path of the underlying package manager (e.g. /usr/local/bin/pip)"""
         if self._INSTALLER_BIN_ABSPATH:
             # return cached value if we have one
             return self._INSTALLER_BIN_ABSPATH
@@ -242,36 +257,15 @@ class PipProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
-    ):
+    ) -> None:
         """create pip venv dir if needed"""
-        postinstall_scripts = (
-            self.postinstall_scripts
-            if postinstall_scripts is None
-            else postinstall_scripts
-        )
-        min_release_age = (
-            self.min_release_age if min_release_age is None else min_release_age
-        )
-        postinstall_scripts = (
-            False if postinstall_scripts is None else postinstall_scripts
-        )
-        min_release_age = 0 if min_release_age is None else min_release_age
         if not self._ensure_writable_cache_dir(self.cache_dir):
             self.cache_arg = "--no-cache-dir"
 
         if self.pip_venv:
-            self._pip_setup_venv(
-                self.pip_venv,
-                postinstall_scripts=postinstall_scripts,
-                min_release_age=min_release_age,
-            )
+            self._setup_venv(self.pip_venv)
 
-    def _pip_setup_venv(
-        self,
-        pip_venv: Path,
-        postinstall_scripts: bool = False,
-        min_release_age: float = 7.0,
-    ):
+    def _setup_venv(self, pip_venv: Path) -> None:
         pip_venv.parent.mkdir(parents=True, exist_ok=True)
 
         # create new venv in pip_venv if it doesn't exist
@@ -280,154 +274,92 @@ class PipProvider(BinProvider):
             venv_pip_path,
             os.X_OK,
         )
-        if not venv_pip_binary_exists:
-            import venv
+        if venv_pip_binary_exists:
+            return
 
-            venv.create(
-                str(pip_venv),
-                system_site_packages=False,
-                clear=True,
-                symlinks=True,
-                with_pip=True,
-                upgrade_deps=True,
-            )
-            assert os.path.isfile(venv_pip_path) and os.access(
-                venv_pip_path,
-                os.X_OK,
-            ), f"could not find pip inside venv after creating it: {pip_venv}"
-            proc = self._pip(
-                [
-                    "install",
-                    self.cache_arg,
-                    "--upgrade",
-                    *self.pip_bootstrap_packages,
-                ],
-                quiet=True,
-                postinstall_scripts=postinstall_scripts,
-                min_release_age=min_release_age,
-            )  # setuptools is not installed by default after python >= 3.12, and uv is needed for fast pip-compatible installs
-            if proc.returncode != 0:
-                self._raise_proc_error("install", self.pip_bootstrap_packages, proc)
+        import venv
 
-    def _uv_pip_target_args(self) -> list[str]:
-        if self.pip_venv:
-            return ["--python", str(self.pip_venv / "bin" / "python")]
-        pip_abspath = self.INSTALLER_BIN_ABSPATH
-        if pip_abspath:
-            try:
-                shebang = Path(pip_abspath).read_text(errors="ignore").splitlines()[0]
-                if shebang.startswith("#!"):
-                    command = shlex.split(shebang[2:].strip())
-                    python = (
-                        command[1] if Path(command[0]).name == "env" else command[0]
-                    )
-                    if Path(command[0]).name == "env":
-                        python = shutil.which(python, path=DEFAULT_ENV_PATH) or python
-                    return ["--python", python]
-            except Exception:
-                pass
-        return ["--system"]
-
-    def _pip(
-        self,
-        pip_cmd: list[str],
-        quiet: bool = False,
-        timeout: int | None = None,
-        postinstall_scripts: bool = False,
-        min_release_age: float = 7.0,
-    ) -> subprocess.CompletedProcess:
-        pip_abspath = self._require_installer_bin()
-
-        uv_abspath = bin_abspath("uv", PATH=DEFAULT_ENV_PATH) or shutil.which("uv")
-        pip_binary = os.getenv("PIP_BINARY")
-        if pip_binary and Path(pip_binary).expanduser().is_absolute():
-            uv_abspath = None
-        subcommand, *pip_args = pip_cmd
-        is_install = subcommand == "install"
-        has_release_age_flag = self._install_args_have_option(
-            pip_args,
-            "--exclude-newer",
-            "--uploaded-prior-to",
+        venv.create(
+            str(pip_venv),
+            system_site_packages=False,
+            clear=True,
+            symlinks=True,
+            with_pip=True,
+            upgrade_deps=True,
         )
-        has_no_build_flag = self._install_args_have_option(pip_args, "--no-build")
+        assert os.path.isfile(venv_pip_path) and os.access(
+            venv_pip_path,
+            os.X_OK,
+        ), f"could not find pip inside venv after creating it: {pip_venv}"
+
+        # Bootstrap pip + setuptools into the newly created venv. We skip
+        # security flags here because the venv was just created by Python's
+        # own ``venv`` module and we're upgrading its baseline tooling.
+        pip_abspath = self._require_installer_bin()
+        proc = self.exec(
+            bin_name=pip_abspath,
+            cmd=[
+                "install",
+                self.cache_arg,
+                "--no-input",
+                "--disable-pip-version-check",
+                "--quiet",
+                "--upgrade",
+                *self.pip_bootstrap_packages,
+            ],
+            quiet=True,
+        )
+        if proc.returncode != 0:
+            self._raise_proc_error("install", self.pip_bootstrap_packages, proc)
+
+    def _security_flags(
+        self,
+        install_args: InstallArgs,
+        *,
+        postinstall_scripts: bool,
+        min_release_age: float,
+    ) -> list[str]:
+        """Build pip ``install`` security flags based on provider config.
+
+        - ``--only-binary :all:`` when ``postinstall_scripts`` is disabled
+          (wheels only, no sdist builds — pip's equivalent of ``--no-build``).
+        - ``--uploaded-prior-to=<ISO8601>`` when ``min_release_age`` is set
+          and pip is new enough to support the flag (pip >= 26.0, see
+          pypa/pip#13625). Older pip versions silently skip the flag.
+        """
+        flags: list[str] = []
+
         has_only_binary_flag = self._install_args_have_option(
-            pip_args,
+            install_args,
             "--only-binary",
         )
+        if not postinstall_scripts and not has_only_binary_flag:
+            flags.extend(["--only-binary", ":all:"])
 
-        # supply-chain security: compute ISO-8601 cutoff once, used by both uv and pip
-        if is_install and min_release_age > 0:
-            from datetime import datetime, timedelta, timezone
+        if min_release_age <= 0:
+            return flags
 
-            cutoff = (
-                datetime.now(timezone.utc) - timedelta(days=min_release_age)
-            ).strftime("%Y-%m-%dT%H:%M:%SZ")
-        else:
-            cutoff = ""
-
-        uv_cmd = [
-            "pip",
-            subcommand,
-            *(
-                ["--quiet"]
-                if subcommand != "show" and (quiet or "--quiet" in pip_args)
-                else []
-            ),
-            *(
-                self._uv_pip_target_args()
-                if subcommand in ("install", "show", "uninstall")
-                else []
-            ),
-            # supply-chain security: --no-build prevents arbitrary code execution,
-            # --exclude-newer rejects packages published too recently
-            *(
-                ["--no-build"]
-                if is_install and not postinstall_scripts and not has_no_build_flag
-                else []
-            ),
-            *(
-                [f"--exclude-newer={cutoff}"]
-                if is_install and cutoff and not has_release_age_flag
-                else []
-            ),
-            *(
-                arg
-                for arg in pip_args
-                if arg
-                not in ("--no-input", "--disable-pip-version-check", "--quiet", "--yes")
-            ),
-        ]
-        # supply-chain security for plain pip (no uv): --only-binary :all:
-        # prevents sdist builds, --uploaded-prior-to enforces min release age
-        # (pip >= 26.0 only, see pypa/pip#13625)
-        if is_install and not uv_abspath:
-            installer = self.INSTALLER_BINARY
-            pip_ver = installer.loaded_version if installer else None
-            if pip_ver and pip_ver == SemVer((999, 999, 999)):
-                pip_ver = None
-            pip_cmd = [
-                subcommand,
-                *(
-                    ["--only-binary", ":all:"]
-                    if not postinstall_scripts and not has_only_binary_flag
-                    else []
-                ),
-                *(
-                    [f"--uploaded-prior-to={cutoff}"]
-                    if cutoff
-                    and pip_ver is not None
-                    and pip_ver >= SemVer((26, 0, 0))  # pyright: ignore[reportOperatorIssue]
-                    and not has_release_age_flag
-                    else []
-                ),
-                *pip_args,
-            ]
-        return self.exec(
-            bin_name=uv_abspath or pip_abspath,
-            cmd=uv_cmd if uv_abspath else pip_cmd,
-            quiet=quiet,
-            timeout=timeout,
+        has_release_age_flag = self._install_args_have_option(
+            install_args,
+            "--uploaded-prior-to",
         )
+        if has_release_age_flag:
+            return flags
+
+        installer = self.INSTALLER_BINARY
+        pip_ver = installer.loaded_version if installer else None
+        if pip_ver is None or pip_ver == SemVer((999, 999, 999)):
+            return flags
+        if pip_ver < _PIP_MIN_RELEASE_AGE_VERSION:  # pyright: ignore[reportOperatorIssue]
+            return flags
+
+        from datetime import datetime, timedelta, timezone
+
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(days=min_release_age)
+        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+        flags.append(f"--uploaded-prior-to={cutoff}")
+        return flags
 
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(
@@ -440,12 +372,9 @@ class PipProvider(BinProvider):
         timeout: int | None = None,
     ) -> str:
         if self.pip_venv:
-            self.setup(
-                postinstall_scripts=postinstall_scripts,
-                min_release_age=min_release_age,
-                min_version=min_version,
-            )
+            self.setup()
 
+        pip_abspath = self._require_installer_bin()
         install_args = install_args or self.get_install_args(bin_name)
         if min_version:
             install_args = [
@@ -460,26 +389,23 @@ class PipProvider(BinProvider):
             False if postinstall_scripts is None else postinstall_scripts
         )
         min_release_age = 7.0 if min_release_age is None else min_release_age
-        if self._install_args_have_option(install_args, "--no-build", "--only-binary"):
-            postinstall_scripts = False
-        if self._install_args_have_option(
-            install_args,
-            "--exclude-newer",
-            "--uploaded-prior-to",
-        ):
-            min_release_age = 0
 
-        proc = self._pip(
-            [
+        security_flags = self._security_flags(
+            install_args,
+            postinstall_scripts=postinstall_scripts,
+            min_release_age=min_release_age,
+        )
+
+        proc = self.exec(
+            bin_name=pip_abspath,
+            cmd=[
                 "install",
-                "--no-input",
                 self.cache_arg,
                 *self.pip_install_args,
+                *security_flags,
                 *install_args,
             ],
             timeout=timeout,
-            postinstall_scripts=postinstall_scripts,
-            min_release_age=min_release_age,
         )
 
         if proc.returncode != 0:
@@ -497,12 +423,9 @@ class PipProvider(BinProvider):
         timeout: int | None = None,
     ) -> str:
         if self.pip_venv:
-            self.setup(
-                postinstall_scripts=postinstall_scripts,
-                min_release_age=min_release_age,
-                min_version=min_version,
-            )
+            self.setup()
 
+        pip_abspath = self._require_installer_bin()
         install_args = install_args or self.get_install_args(bin_name)
         if min_version:
             install_args = [
@@ -517,27 +440,24 @@ class PipProvider(BinProvider):
             False if postinstall_scripts is None else postinstall_scripts
         )
         min_release_age = 7.0 if min_release_age is None else min_release_age
-        if self._install_args_have_option(install_args, "--no-build", "--only-binary"):
-            postinstall_scripts = False
-        if self._install_args_have_option(
-            install_args,
-            "--exclude-newer",
-            "--uploaded-prior-to",
-        ):
-            min_release_age = 0
 
-        proc = self._pip(
-            [
+        security_flags = self._security_flags(
+            install_args,
+            postinstall_scripts=postinstall_scripts,
+            min_release_age=min_release_age,
+        )
+
+        proc = self.exec(
+            bin_name=pip_abspath,
+            cmd=[
                 "install",
-                "--no-input",
                 self.cache_arg,
                 *self.pip_install_args,
                 "--upgrade",
+                *security_flags,
                 *install_args,
             ],
             timeout=timeout,
-            postinstall_scripts=postinstall_scripts,
-            min_release_age=min_release_age,
         )
 
         if proc.returncode != 0:
@@ -554,10 +474,12 @@ class PipProvider(BinProvider):
         min_version: SemVer | None = None,
         timeout: int | None = None,
     ) -> bool:
+        pip_abspath = self._require_installer_bin()
         install_args = install_args or self.get_install_args(bin_name)
 
-        proc = self._pip(
-            [
+        proc = self.exec(
+            bin_name=pip_abspath,
+            cmd=[
                 "uninstall",
                 "--yes",
                 *install_args,
@@ -584,10 +506,15 @@ class PipProvider(BinProvider):
         except ValueError:
             pass
 
+        pip_abspath = self.INSTALLER_BIN_ABSPATH
+        if not pip_abspath:
+            return None
+
         # fallback to using pip show to get the site-packages bin path
         output_lines = (
-            self._pip(
-                ["show", "--no-input", str(bin_name)],
+            self.exec(
+                bin_name=pip_abspath,
+                cmd=["show", "--no-input", str(bin_name)],
                 quiet=False,
                 timeout=self.version_timeout,
             )
@@ -631,28 +558,6 @@ class PipProvider(BinProvider):
                 return package_name
         return None
 
-    def _version_from_pip_show(
-        self,
-        package_name: str,
-        timeout: int | None = None,
-    ) -> SemVer | None:
-        output_lines = (
-            self._pip(
-                ["show", "--no-input", package_name],
-                quiet=False,
-                timeout=timeout,
-            )
-            .stdout.strip()
-            .split("\n")
-        )
-        try:
-            version_str = [
-                line for line in output_lines if line.startswith("Version: ")
-            ][0].split("Version: ", 1)[-1]
-            return SemVer.parse(version_str)
-        except Exception:
-            return None
-
     def default_version_handler(
         self,
         bin_name: BinName,
@@ -671,12 +576,29 @@ class PipProvider(BinProvider):
         except ValueError:
             pass
 
+        pip_abspath = self.INSTALLER_BIN_ABSPATH
+        if not pip_abspath:
+            return None
+
         # fallback to using pip show to get the version (slower)
-        package_name = self._package_name_for_bin(bin_name)
-        return self._version_from_pip_show(
-            package_name or str(bin_name),
-            timeout=timeout,
+        package_name = self._package_name_for_bin(bin_name) or str(bin_name)
+        output_lines = (
+            self.exec(
+                bin_name=pip_abspath,
+                cmd=["show", "--no-input", package_name],
+                quiet=False,
+                timeout=timeout,
+            )
+            .stdout.strip()
+            .split("\n")
         )
+        try:
+            version_str = [
+                line for line in output_lines if line.startswith("Version: ")
+            ][0].split("Version: ", 1)[-1]
+            return SemVer.parse(version_str)
+        except Exception:
+            return None
 
 
 if __name__ == "__main__":

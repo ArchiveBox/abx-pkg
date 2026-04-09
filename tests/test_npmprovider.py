@@ -32,14 +32,6 @@ class TestNpmProvider:
             proc = installed.exec(cmd=("--version",), quiet=True)
             assert proc.returncode != 0
 
-            if (
-                provider.INSTALLER_BIN_ABSPATH
-                and provider.INSTALLER_BIN_ABSPATH.name == "pnpm"
-            ):
-                workspace_config = npm_prefix / "pnpm-workspace.yaml"
-                if workspace_config.exists():
-                    assert "minimumReleaseAge" not in workspace_config.read_text()
-
     def test_install_root_alias_installs_into_the_requested_prefix(self, test_machine):
         with tempfile.TemporaryDirectory() as temp_dir:
             install_root = Path(temp_dir) / "npm-root"

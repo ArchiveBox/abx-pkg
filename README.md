@@ -126,9 +126,9 @@ curl.exec(cmd=['--version'])                                        # curl 8.4.0
 
 `DockerProvider` expects image refs as install args, typically via overrides on a `Binary`. It writes a local wrapper script for the binary and executes it via `docker run ...`; the binary version is parsed from the image tag, so semver-like tags work best.
 
-`NpmProvider` prefers a real `npm` executable when both `npm` and `pnpm` are installed. If `npm` is unavailable, it can still drive installs and metadata lookups through `pnpm` using the same provider API.
+`NpmProvider` shells out to `npm` directly and expects it to be installed on the host.
 
-`PnpmProvider`, `YarnProvider`, `BunProvider`, and `DenoProvider` are dedicated wrappers around their respective package managers — pick one explicitly when you don't want `NpmProvider`'s auto-switching behavior, or when you want the security defaults of a specific tool. All four hydrate `min_release_age` from the latest supply-chain hardening flags shipped by their upstream CLIs.
+`PnpmProvider`, `YarnProvider`, `BunProvider`, and `DenoProvider` are dedicated wrappers around their respective package managers — pick one explicitly when you want the security defaults of a specific tool. All four hydrate `min_release_age` from the latest supply-chain hardening flags shipped by their upstream CLIs.
 
 ---
 
@@ -385,15 +385,14 @@ PATH = ""                            # auto-built from global/user Python bin di
 pip_venv = None                      # set this for hermetic installs
 cache_dir = user_cache_path("pip", "abx-pkg") or <system temp>/pip-cache
 pip_install_args = ["--no-input", "--disable-pip-version-check", "--quiet"]
-pip_bootstrap_packages = ["pip", "setuptools", "uv"]
+pip_bootstrap_packages = ["pip", "setuptools"]
 ```
 
 - Install root: `pip_venv=None` uses the system/user Python environment. Set `pip_venv=Path(...)` or `install_root=Path(...)` for a hermetic venv rooted at `<pip_venv>/bin`, and that venv bin dir becomes the provider's active executable search path.
-- Auto-switching: the provider executable is still `pip`, but install / update / show / uninstall calls use `uv pip ...` when `uv` is available and `PIP_BINARY` is not forcing a specific pip path.
 - `dry_run`: shared behavior.
-- Security: supports both `min_release_age` and `postinstall_scripts=False`, and hydrates their provider defaults from `ABX_PKG_MIN_RELEASE_AGE` and `ABX_PKG_POSTINSTALL_SCRIPTS`.
+- Security: supports `postinstall_scripts=False` and (on pip >= 26.0) `min_release_age`, hydrated from `ABX_PKG_POSTINSTALL_SCRIPTS` and `ABX_PKG_MIN_RELEASE_AGE`. For stricter enforcement on older hosts, use `UvProvider` instead.
 - Overrides: `install_args` is passed as pip requirement specs; unpinned specs get a `>=min_version` floor when `min_version` is supplied.
-- Notes: `ABX_PKG_POSTINSTALL_SCRIPTS` and `ABX_PKG_MIN_RELEASE_AGE` apply here by default. `postinstall_scripts=False` uses `uv pip --no-build` or plain `pip --only-binary :all:`. `min_release_age` is enforced with `uv --exclude-newer=<cutoff>` or plain `pip --uploaded-prior-to=<cutoff>` when the host pip is new enough. Explicit conflicting flags already present in `install_args` win over the derived defaults.
+- Notes: `postinstall_scripts=False` adds `pip --only-binary :all:` (wheels only). `min_release_age` is enforced with `pip --uploaded-prior-to=<cutoff>` on pip >= 26.0 (see pypa/pip#13625). Explicit conflicting flags already present in `install_args` win over the derived defaults.
 
 </details>
 
@@ -430,18 +429,18 @@ Source: [`abx_pkg/binprovider_npm.py`](./abx_pkg/binprovider_npm.py) • Tests: 
 
 ```python
 INSTALLER_BIN = "npm"
-PATH = ""                            # auto-built from npm/pnpm local + global bin dirs
+PATH = ""                            # auto-built from npm local + global bin dirs
 npm_prefix = None                    # None = global install, Path(...) = hermetic-ish prefix
 cache_dir = user_cache_path("npm", "abx-pkg") or <system temp>/npm-cache
 npm_install_args = ["--force", "--no-audit", "--no-fund", "--loglevel=error"]
 ```
 
 - Install root: `npm_prefix=None` installs globally. Set `npm_prefix=Path(...)` or `install_root=Path(...)` to install under `<prefix>/node_modules/.bin`; that prefix bin dir becomes the provider's active executable search path.
-- Auto-switching: prefers a real `npm` binary, falls back to `pnpm` if `npm` is unavailable, and honors `NPM_BINARY=/abs/path/to/npm-or-pnpm`.
+- Honors `NPM_BINARY=/abs/path/to/npm` to pin a specific `npm` executable. For pnpm, use `PnpmProvider` directly.
 - `dry_run`: shared behavior.
 - Security: supports both `min_release_age` and `postinstall_scripts=False`, and hydrates their provider defaults from `ABX_PKG_MIN_RELEASE_AGE` and `ABX_PKG_POSTINSTALL_SCRIPTS`.
 - Overrides: `install_args` is passed as npm package specs; unpinned specs get rewritten to `pkg@>=<min_version>` when `min_version` is supplied.
-- Notes: `ABX_PKG_POSTINSTALL_SCRIPTS` and `ABX_PKG_MIN_RELEASE_AGE` apply here by default. Direct npm mode uses `--ignore-scripts` and `--min-release-age=<days>` when the host npm supports it. pnpm mode writes `pnpm-workspace.yaml` with `minimumReleaseAge`; that is how release-age enforcement is configured there. Explicit conflicting flags already present in `install_args` win over the derived defaults.
+- Notes: `ABX_PKG_POSTINSTALL_SCRIPTS` and `ABX_PKG_MIN_RELEASE_AGE` apply here by default. `postinstall_scripts=False` adds `--ignore-scripts`; `min_release_age` adds `--min-release-age=<days>` when the host npm supports it (detected by probing `npm install --help`). Explicit conflicting flags already present in `install_args` win over the derived defaults.
 
 </details>
 
@@ -459,7 +458,7 @@ pnpm_install_args = ["--loglevel=error"]
 ```
 
 - Install root: `pnpm_prefix=None` installs globally. Set `pnpm_prefix=Path(...)` or `install_root=Path(...)` to install under `<prefix>/node_modules/.bin`; that prefix bin dir becomes the provider's active executable search path.
-- Auto-switching: none. This provider always shells out to `pnpm` directly. Use `NpmProvider` for the auto-switching `npm`-or-`pnpm` behavior. Honors `PNPM_BINARY=/abs/path/to/pnpm`.
+- Shells out to `pnpm` directly. Honors `PNPM_BINARY=/abs/path/to/pnpm`. Use `NpmProvider` for `npm`.
 - `dry_run`: shared behavior.
 - Security: supports both `min_release_age` and `postinstall_scripts=False`, and hydrates their provider defaults from `ABX_PKG_MIN_RELEASE_AGE` and `ABX_PKG_POSTINSTALL_SCRIPTS`. `min_release_age` requires pnpm 10.16+, and `supports_min_release_age()` returns `False` on older hosts (then it logs a warning and continues).
 - Overrides: `install_args` is passed as pnpm package specs; unpinned specs get rewritten to `pkg@>=<min_version>` when `min_version` is supplied.
