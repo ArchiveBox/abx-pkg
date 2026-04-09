@@ -139,6 +139,60 @@ curl.exec(cmd=['--version'])                                        # curl 8.4.0
 pip install abx-pkg
 ```
 
+### CLI
+
+Installing `abx-pkg` also provides an `abx-pkg` CLI entrypoint:
+
+```bash
+abx-pkg --version
+abx-pkg version
+
+abx-pkg install yt-dlp
+abx-pkg update yt-dlp
+abx-pkg uninstall yt-dlp
+abx-pkg load yt-dlp
+abx-pkg load_or_install yt-dlp
+abx-pkg load-or-install yt-dlp
+```
+
+The CLI uses the same ordered failover behavior as `Binary(...)`: it tries the selected binproviders in order and stops after the first success.
+
+```bash
+env ABX_PKG_BINPROVIDERS=env,uv,apt,brew abx-pkg install yt-dlp
+```
+
+By default, managed provider state is rooted under `~/.config/abx/lib`. You can override that with `ABX_PKG_LIB_DIR` or `--lib`.
+
+```bash
+abx-pkg --lib=./relativelib install yt-dlp
+env ABX_PKG_LIB_DIR=/tmp/abxlib abx-pkg install yt-dlp
+```
+
+You can restrict or reorder providers with `ABX_PKG_BINPROVIDERS` or `--binproviders`.
+
+```bash
+env ABX_PKG_BINPROVIDERS=env,uv,apt,brew,pnpm,gem,cargo,goget abx-pkg install yt-dlp
+abx-pkg install --binproviders=pnpm prettier
+```
+
+`--dry-run` and `ABX_PKG_DRY_RUN=1` show the package-manager commands that would run without mutating the host.
+
+```bash
+env ABX_PKG_DRY_RUN=1 abx-pkg install some-dangerous-package
+abx-pkg install --dry-run --binproviders=pnpm prettier
+```
+
+`abx-pkg --version` prints the package semver on the first line, then one line per available provider installer binary:
+
+```text
+1.9.27
+env which /usr/bin/which 999.999.999
+uv uv /path/to/uv 0.11.4
+pnpm pnpm /path/to/pnpm 10.12.1
+```
+
+CLI result lines are written to `stdout`. Progress and debug logging are written to `stderr`, and interactive TTY sessions default to `DEBUG` logging.
+
 ### Lazy Provider Singletons
 
 All built-in providers are available as lazy singletons — just import them by name:
@@ -832,7 +886,8 @@ uv build
 <br/>
 
 
-## Django Usage
+<details>
+<summary><strong>Django Usage</strong></summary>
 
 With a few more packages, you get type-checked Django fields & forms that support `BinProvider` and `Binary`.
 
@@ -840,10 +895,8 @@ With a few more packages, you get type-checked Django fields & forms that suppor
 > For the full Django experience, we recommend installing these 3 excellent packages:
 > - [`django-admin-data-views`](https://github.com/MrThearMan/django-admin-data-views)
 > - [`django-pydantic-field`](https://github.com/surenkov/django-pydantic-field)
-> - [`django-jsonform`](https://django-jsonform.readthedocs.io/)  
+> - [`django-jsonform`](https://django-jsonform.readthedocs.io/)
 > `pip install abx-pkg django-admin-data-views django-pydantic-field django-jsonform`
-
-<br/>
 
 ### Django Model Usage: Store `BinProvider` and `Binary` entries in your model fields
 
@@ -893,8 +946,6 @@ obj.binaries[0].exec(cmd=['--version'])               #   curl 7.81.0 (x86_64-ap
 ```
 *For a full example see our provided [`django_example_project/`](https://github.com/ArchiveBox/abx-pkg/tree/main/django_example_project)...*
 
-<br/>
-
 ### Django Admin Usage: Display `Binary` objects nicely in the Admin UI
 
 <img height="220" alt="Django Admin binaries list view" src="https://github.com/ArchiveBox/abx-pkg/assets/511499/a9980217-f39e-434e-b266-20cd6feb17c3" align="top"><img height="220" alt="Django Admin binaries detail view" src="https://github.com/ArchiveBox/abx-pkg/assets/511499/d4d9086e-c8f4-4b6e-8ee8-8c8a864715b0" align="top">
@@ -936,34 +987,26 @@ ADMIN_DATA_VIEWS = {
 ```
 *For a full example see our provided [`django_example_project/`](https://github.com/ArchiveBox/abx-pkg/tree/main/django_example_project)...*
 
-<details>
-<summary><i>Note: If you override the default site admin, you must register the views manually...</i></summary>
-<br/><br/>
-<b><code>admin.py</code>:</b>
-<br/>
-<pre><code>
+If you override the default site admin, you must register the views manually:
+
+```python
 class YourSiteAdmin(admin.AdminSite):
     """Your customized version of admin.AdminSite"""
     ...
-<br/>
+
 custom_admin = YourSiteAdmin()
 custom_admin.register(get_user_model())
 ...
 from abx_pkg.admin import register_admin_views
 register_admin_views(custom_admin)
-</code></pre>
-</details>
-
-<br/>
+```
 
 ### ~~Django Admin Usage: JSONFormWidget for editing `BinProvider` and `Binary` data~~
-
-<details><summary>Expand to see more...</summary>
 
 <img src="https://github.com/ArchiveBox/abx-pkg/assets/511499/63705a57-4f62-4dbe-9f3a-0515323d8b5e" width="600px"/>
 
 > [!IMPORTANT]
-> This feature is coming soon but is blocked on a few issues being fixed first:  
+> This feature is coming soon but is blocked on a few issues being fixed first:
 > - https://github.com/surenkov/django-pydantic-field/issues/64
 > - https://github.com/surenkov/django-pydantic-field/issues/65
 > - https://github.com/surenkov/django-pydantic-field/issues/66
@@ -986,9 +1029,9 @@ class MyModelAdmin(admin.ModelAdmin):
 admin.site.register(MyModel, MyModelAdmin)
 ```
 
-</details>
-
 *For a full example see our provided [`django_example_project/`](https://github.com/ArchiveBox/abx-pkg/tree/main/django_example_project)...*
+
+</details>
 
 <br/>
 
