@@ -185,7 +185,7 @@ abx-pkg install --dry-run --binproviders=pnpm prettier
 `abx-pkg --version` prints the package semver on the first line, then one line per available provider installer binary:
 
 ```text
-1.9.27
+1.9.28
 env which /usr/bin/which 999.999.999
 uv uv /path/to/uv 0.11.4
 pnpm pnpm /path/to/pnpm 10.12.1
