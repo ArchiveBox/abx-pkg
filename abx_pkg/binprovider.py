@@ -286,10 +286,10 @@ class ShallowBinary(BaseModel):
         )
         cmd = [str(bin_name), *(str(arg) for arg in cmd)]
         logger.debug("Executing binary command: %s", format_command(cmd))
+        kwargs.setdefault("capture_output", True)
+        kwargs.setdefault("text", True)
         return subprocess.run(
             cmd,
-            capture_output=True,
-            text=True,
             cwd=str(cwd),
             **kwargs,
         )
@@ -992,6 +992,9 @@ class BinProvider(BaseModel):
         if self.dry_run:
             return subprocess.CompletedProcess(cmd, 0, "", "skipped (dry run)")
 
+        kwargs.setdefault("capture_output", True)
+        kwargs.setdefault("text", True)
+
         sudo_failure_output = None
         if current_euid != 0 and run_as_uid != current_euid:
             sudo_abspath = shutil.which("sudo", path=env["PATH"]) or shutil.which(
@@ -1004,8 +1007,6 @@ class BinProvider(BaseModel):
                 sudo_cmd.extend(["--", *cmd])
                 sudo_proc = subprocess.run(
                     sudo_cmd,
-                    capture_output=True,
-                    text=True,
                     cwd=str(cwd_path),
                     env=env,
                     **kwargs,
@@ -1026,8 +1027,6 @@ class BinProvider(BaseModel):
 
         proc = subprocess.run(
             cmd,
-            capture_output=True,
-            text=True,
             cwd=str(cwd_path),
             env=env,
             preexec_fn=drop_privileges,

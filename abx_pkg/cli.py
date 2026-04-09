@@ -256,6 +256,20 @@ def run_binary_command(
 @click.pass_context
 @shared_options
 @click.option(
+    "--install",
+    "install_before_run",
+    is_flag=True,
+    default=False,
+    help="Only used by `run`: load_or_install the binary before executing it.",
+)
+@click.option(
+    "--update",
+    "update_before_run",
+    is_flag=True,
+    default=False,
+    help="Only used by `run`: load_or_install and update the binary before executing it.",
+)
+@click.option(
     "--version",
     "show_version",
     is_flag=True,
@@ -267,6 +281,8 @@ def cli(
     lib_dir: str | None,
     binproviders: str | None,
     dry_run: bool | None,
+    install_before_run: bool,
+    update_before_run: bool,
     show_version: bool,
 ) -> None:
     """Manage binaries via abx-pkg binproviders."""
@@ -278,6 +294,8 @@ def cli(
     )
     ctx.ensure_object(dict)
     ctx.obj["group_options"] = options
+    ctx.obj["install_before_run"] = install_before_run
+    ctx.obj["update_before_run"] = update_before_run
 
     if show_version:
         click.echo(version_report(options))
@@ -426,6 +444,76 @@ def load_or_install_command(
 
 
 cli.add_command(load_or_install_command, "load-or-install")
+
+
+@cli.command(
+    "run",
+    context_settings={
+        "ignore_unknown_options": True,
+        "allow_extra_args": True,
+        "help_option_names": [],
+    },
+)
+@click.argument("binary_name")
+@click.argument("binary_args", nargs=-1, type=click.UNPROCESSED)
+@click.pass_context
+def run_command(
+    ctx: click.Context,
+    binary_name: str,
+    binary_args: tuple[str, ...],
+) -> None:
+    """Run an installed binary, passing all remaining arguments through to it.
+
+    Options to abx-pkg itself (e.g. --binproviders, --lib, --install, --update)
+    must appear BEFORE the `run` subcommand name. Everything after the binary
+    name is forwarded verbatim to the underlying binary's argv.
+    """
+
+    group_options = cast(CliOptions, ctx.obj["group_options"])
+    install_before_run = bool(ctx.obj.get("install_before_run", False))
+    update_before_run = bool(ctx.obj.get("update_before_run", False))
+
+    configure_cli_logging(dry_run=group_options.dry_run)
+
+    binary = build_binary(
+        binary_name,
+        group_options,
+        dry_run=group_options.dry_run,
+    )
+
+    try:
+        if update_before_run:
+            binary = binary.load_or_install(dry_run=group_options.dry_run)
+            binary = binary.update(dry_run=group_options.dry_run)
+        elif install_before_run:
+            binary = binary.load_or_install(dry_run=group_options.dry_run)
+        else:
+            binary = binary.load()
+    except ABXPkgError as err:
+        click.echo(format_error(err), err=True)
+        ctx.exit(1)
+        return
+
+    if group_options.dry_run:
+        # Provider exec honors dry_run and returns a no-op CompletedProcess;
+        # keep the behavior consistent here so nothing is actually run.
+        ctx.exit(0)
+        return
+
+    if binary.loaded_abspath is None or binary.loaded_binprovider is None:
+        click.echo(
+            f"abx-pkg: {binary_name}: binary could not be loaded",
+            err=True,
+        )
+        ctx.exit(1)
+        return
+
+    proc = binary.loaded_binprovider.exec(
+        bin_name=binary.loaded_abspath,
+        cmd=list(binary_args),
+        capture_output=False,
+    )
+    ctx.exit(proc.returncode)
 
 
 def main() -> None:

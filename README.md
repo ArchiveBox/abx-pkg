@@ -122,6 +122,17 @@ abx-pkg load yt-dlp
 abx-pkg load-or-install yt-dlp
 ```
 
+#### Execute an installed binary via the configured providers
+
+```bash
+abx-pkg run yt-dlp --help                          # resolves yt-dlp via the configured providers and execs it
+abx-pkg --binproviders=pip,brew run pip show black # restrict provider resolution (exercises PipProvider.exec)
+abx-pkg --binproviders=pip --install run yt-dlp    # load_or_install via selected providers before exec
+abx-pkg --binproviders=pip --update  run yt-dlp    # load_or_install + update before exec
+```
+
+abx-pkg options (e.g. `--binproviders`, `--lib`, `--install`, `--update`) must appear before the `run` subcommand; every argument after the binary name is forwarded verbatim to the underlying binary. `run` exits with the child's exit code, passes its `stdout`/`stderr` through unbuffered, and routes any abx-pkg install/load logs to `stderr` only — no headers, no footers, no parsing.
+
 #### Select specific providers / re-order provider precedence
 
 ```bash
@@ -144,7 +155,7 @@ env ABX_PKG_LIB_DIR=/any/dir/path abx-pkg install yt-dlp
 #### Run in "dry mode" to see what commands will do before executing
 
 ```bash
-abx-pkg install --dry-run some-dangerous-package      # outputs comamnds that would be run without executing them
+abx-pkg install --dry-run some-dangerous-package      # outputs commands that would be run without executing them
 # or
 env ABX_PKG_DRY_RUN=1 abx-pkg install some-dangerous-package
 ```
