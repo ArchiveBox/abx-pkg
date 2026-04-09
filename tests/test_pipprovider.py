@@ -1,4 +1,5 @@
 import tempfile
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,57 @@ from abx_pkg.exceptions import BinaryInstallError
 
 
 class TestPipProvider:
+    def test_version_falls_back_to_pip_metadata_when_console_script_rejects_flags(
+        self,
+    ):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            provider = PipProvider(
+                pip_venv=Path(tmpdir) / "venv",
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+            installed = provider.install("saws")
+
+            assert installed is not None
+            assert installed.loaded_abspath is not None
+            assert installed.loaded_version is not None
+
+            metadata_proc = provider._pip(
+                ["show", "--no-input", "saws"],
+                quiet=True,
+                timeout=provider.version_timeout,
+            )
+            assert metadata_proc.returncode == 0, (
+                metadata_proc.stderr or metadata_proc.stdout
+            )
+            metadata_version = next(
+                (
+                    SemVer.parse(line.split("Version: ", 1)[1])
+                    for line in metadata_proc.stdout.splitlines()
+                    if line.startswith("Version: ")
+                ),
+                None,
+            )
+            assert metadata_version is not None
+
+            failing_version_cmd = subprocess.run(
+                [str(installed.loaded_abspath), "--version"],
+                capture_output=True,
+                text=True,
+            )
+            assert failing_version_cmd.returncode != 0
+
+            assert installed.loaded_version == metadata_version
+            assert (
+                provider.get_version(
+                    "saws",
+                    abspath=installed.loaded_abspath,
+                    quiet=True,
+                    nocache=True,
+                )
+                == metadata_version
+            )
+
     def test_explicit_exclude_newer_flag_overrides_strict_provider_default(
         self,
         test_machine,
