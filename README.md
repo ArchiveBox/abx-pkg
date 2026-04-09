@@ -208,6 +208,27 @@ dry_run = False                      # or ABX_PKG_DRY_RUN=1 / DRY_RUN=1
 - Providers that do not support one of those controls leave the provider default as `None`. If you pass an explicit unsupported value during `install()` / `update()`, it is logged as a warning and ignored.
 - Precedence is: explicit action args > `Binary(...)` defaults > provider defaults.
 
+#### 🌱 Environment variables
+
+All abx-pkg env vars are read once at import time and only apply when set. Explicit constructor kwargs always override these defaults.
+
+| Variable | Applies to | Default | Effect |
+| --- | --- | --- | --- |
+| `ABX_PKG_LIB_DIR` | every provider with an `INSTALL_ROOT_FIELD` | unset | Centralized install root. When set, each provider defaults its install root to `$ABX_PKG_LIB_DIR/<provider name>` (e.g. `<lib>/npm`, `<lib>/pip`, `<lib>/gem`, `<lib>/playwright`). Accepts relative (`./lib`), tilde (`~/.config/abx/lib`), and absolute (`/tmp/abxlib`) paths. |
+| `ABX_PKG_DRY_RUN` / `DRY_RUN` | all providers | `0` | Flips the shared `dry_run` default. `ABX_PKG_DRY_RUN` wins if both are set. |
+| `ABX_PKG_INSTALL_TIMEOUT` | all providers | `120` | Seconds to wait for `install()` / `update()` / `uninstall()` handler subprocesses. |
+| `ABX_PKG_VERSION_TIMEOUT` | all providers | `10` | Seconds to wait for version / metadata probes (`--version`, `npm show`, `pip show`, etc.). |
+| `ABX_PKG_POSTINSTALL_SCRIPTS` | providers that support `postinstall_scripts` | unset | Hydrates the provider-level default for the `postinstall_scripts` kwarg on `pip`, `uv`, `npm`, `pnpm`, `yarn`, `bun`, `deno`, `brew`, `chromewebstore`, `puppeteer`. |
+| `ABX_PKG_MIN_RELEASE_AGE` | providers that support `min_release_age` | `7` | Hydrates the provider-level default (in days) for the `min_release_age` kwarg on `pip`, `uv`, `npm`, `pnpm`, `yarn`, `bun`, `deno`. |
+| `ABX_PKG_YARN_ROOT` | `YarnProvider` | `~/.cache/abx-pkg/yarn` | Fallback workspace dir when neither `ABX_PKG_LIB_DIR` nor `yarn_prefix=` is set. |
+| `ABX_PKG_NIX_PROFILE` | `NixProvider` | `~/.nix-profile` | Fallback nix profile path when neither `ABX_PKG_LIB_DIR` nor `nix_profile=` is set. |
+| `ABX_PKG_BASH_ROOT` | `BashProvider` | `~/.cache/abx-pkg/bash` | Fallback root for bash-script binaries when neither `ABX_PKG_LIB_DIR` nor `bash_root=` is set. |
+| `ABX_PKG_DOCKER_ROOT` | `DockerProvider` | `~/.cache/abx-pkg/docker` | Fallback root for docker shims when neither `ABX_PKG_LIB_DIR` nor `docker_root=` is set. |
+| `ABX_PKG_PUPPETEER_ROOT` | `PuppeteerProvider` | `~/.cache/abx-pkg/puppeteer` | Fallback root for downloaded browsers when neither `ABX_PKG_LIB_DIR` nor `puppeteer_root=` is set. |
+| `ABX_PKG_CHROMEWEBSTORE_ROOT` | `ChromeWebstoreProvider` | `~/.cache/abx-pkg/chromewebstore` | Fallback root for unpacked Chrome extensions when neither `ABX_PKG_LIB_DIR` nor `extensions_root=` is set. |
+
+Precedence for every install-root style default is: explicit `install_root=` / provider-specific alias (e.g. `npm_prefix=`, `pip_venv=`) > `ABX_PKG_LIB_DIR` > provider-specific env var (e.g. `ABX_PKG_YARN_ROOT`) > built-in default.
+
 Supported override keys are the same everywhere:
 
 ```python

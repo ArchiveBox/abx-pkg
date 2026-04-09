@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -83,7 +82,11 @@ class TestAbxPkgLibDir:
             "/tmp/abxlib",
         ],
     )
-    def test_all_path_formats_resolve_across_every_provider(self, lib_dir_value, tmp_path):
+    def test_all_path_formats_resolve_across_every_provider(
+        self,
+        lib_dir_value,
+        tmp_path,
+    ):
         script = textwrap.dedent(
             """
             import json
@@ -126,7 +129,10 @@ class TestAbxPkgLibDir:
             assert resolved_lib_dir == Path(lib_dir_value).resolve()
 
         # Every provider with an install_root field now defaults into
-        # ``<lib_dir>/<provider_name>``.
+        # ``<lib_dir>/<provider_name>`` — with no exceptions. Any
+        # provider whose ``@model_validator`` auto-corrects the field
+        # after construction (historically BrewProvider did this) must
+        # teach the validator to respect the caller's explicit value.
         expected_names = {
             provider_name for provider_name, _ in _providers_with_install_root_field()
         }
@@ -139,7 +145,8 @@ class TestAbxPkgLibDir:
             )
             assert Path(field_value) == resolved_lib_dir / provider_name, (
                 f"{provider_name}: expected {resolved_lib_dir / provider_name}, "
-                f"got {field_value}"
+                f"got {field_value} (a model_validator somewhere is "
+                f"overriding the ABX_PKG_LIB_DIR default)"
             )
 
     def test_explicit_install_root_kwarg_overrides_env_var(self, tmp_path):
@@ -198,6 +205,80 @@ class TestAbxPkgLibDir:
         payload = json.loads(proc.stdout.strip().splitlines()[-1])
         assert Path(payload["npm"]) == explicit_npm
         assert Path(payload["uv"]) == explicit_uv
+
+    def test_brew_prefix_respects_abx_pkg_lib_dir_even_with_brew_on_host(
+        self,
+        tmp_path,
+    ):
+        """Simulates a host that already has brew installed.
+
+        ``BrewProvider.load_PATH`` historically auto-corrected
+        ``brew_prefix`` to whatever brew location it detected on the
+        host, which would silently override the ``ABX_PKG_LIB_DIR``
+        default. Drop a real (no-op) ``brew`` binary into PATH so the
+        validator sees an install, and assert that a pinned
+        ``ABX_PKG_LIB_DIR`` still wins.
+        """
+        fake_brew_dir = tmp_path / "fakebrew" / "bin"
+        fake_brew_dir.mkdir(parents=True)
+        fake_brew = fake_brew_dir / "brew"
+        fake_brew.write_text('#!/bin/sh\necho "fake brew $*"\n', encoding="utf-8")
+        fake_brew.chmod(0o755)
+
+        lib_dir = tmp_path / "abx-lib"
+        extra_path = f"{fake_brew_dir}:{os.environ.get('PATH', '')}"
+        script = textwrap.dedent(
+            """
+            import json
+            from abx_pkg import BrewProvider
+            p = BrewProvider()
+            print(json.dumps({
+                "brew_prefix": str(p.brew_prefix),
+                "installer_bin_abspath": (
+                    str(p.INSTALLER_BIN_ABSPATH)
+                    if p.INSTALLER_BIN_ABSPATH is not None
+                    else None
+                ),
+            }))
+            """,
+        )
+        proc = _run_with_lib_dir(
+            str(lib_dir),
+            script,
+            extra_env={"PATH": extra_path},
+        )
+        assert proc.returncode == 0, proc.stderr
+        payload = json.loads(proc.stdout.strip().splitlines()[-1])
+
+        # Sanity: the validator actually saw the fake brew binary —
+        # otherwise its early-return would hide the bug we're guarding
+        # against.
+        assert payload["installer_bin_abspath"] is not None
+        assert Path(payload["installer_bin_abspath"]).resolve() == fake_brew.resolve()
+
+        # The pinned ABX_PKG_LIB_DIR/brew wins even with brew detected.
+        assert Path(payload["brew_prefix"]) == (lib_dir / "brew").resolve()
+
+        # And the default (no env var) should still auto-detect the
+        # fake brew's prefix directory — i.e. we haven't broken the
+        # original behavior.
+        env = os.environ.copy()
+        env["PATH"] = extra_path
+        env.pop("ABX_PKG_LIB_DIR", None)
+        default_proc = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        assert default_proc.returncode == 0, default_proc.stderr
+        default_payload = json.loads(
+            default_proc.stdout.strip().splitlines()[-1],
+        )
+        assert (
+            Path(default_payload["brew_prefix"]).resolve()
+            == fake_brew_dir.parent.resolve()
+        )
 
     def test_real_installs_land_under_abx_pkg_lib_dir(self, test_machine):
         """End-to-end: set ``ABX_PKG_LIB_DIR`` and run real installs through
@@ -311,8 +392,7 @@ class TestAbxPkgLibDir:
             ):
                 reported = Path(payload[key])
                 assert reported == lib_dir.resolve() / subdir_name, (
-                    f"{key}: expected {lib_dir.resolve() / subdir_name}, "
-                    f"got {reported}"
+                    f"{key}: expected {lib_dir.resolve() / subdir_name}, got {reported}"
                 )
                 assert reported.exists(), (
                     f"{key}: {reported} does not exist on disk after real install"

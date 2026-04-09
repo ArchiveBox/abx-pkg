@@ -157,7 +157,13 @@ class BrewProvider(BinProvider):
             ):
                 add_bin_dir(DEFAULT_LINUX_DIR)
 
-        self.brew_prefix = self._brew_prefixes()[0]
+        # Only auto-correct ``brew_prefix`` when the caller left it at
+        # the built-in guess (i.e. didn't pin one via ``brew_prefix=`` /
+        # ``install_root=`` / ``ABX_PKG_LIB_DIR``). Respect any explicit
+        # value the caller passed in so a pinned managed root sticks
+        # even on hosts where brew is already installed somewhere else.
+        if self.brew_prefix == GUESSED_BREW_PREFIX:
+            self.brew_prefix = self._brew_prefixes()[0]
         self.PATH = TypeAdapter(PATHStr).validate_python(bin_dirs)
         return self
 
