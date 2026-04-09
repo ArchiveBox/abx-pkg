@@ -1,0 +1,749 @@
+#!/usr/bin/env python3
+"""Build the abx-pkg landing page (GitHub Pages)."""
+from __future__ import annotations
+
+import argparse
+import inspect
+import json
+import os
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from jinja2 import Environment, FileSystemLoader, select_autoescape
+from markupsafe import Markup
+
+import abx_pkg
+from abx_pkg.binprovider import BinProvider
+
+
+SITE_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SITE_DIR.parent
+TEMPLATE_DIR = SITE_DIR
+DEFAULT_OUTPUT_DIR = SITE_DIR
+GITHUB_REPO = "https://github.com/ArchiveBox/abx-pkg"
+DEFAULT_GITHUB_REF = os.environ.get("ABX_PKG_GITHUB_REF", "main")
+
+# Categories for grouping providers on the landing page.
+CATEGORY_FALLBACK = "fallback"
+CATEGORY_SYSTEM = "system"
+CATEGORY_LANGUAGE = "language"
+CATEGORY_BROWSER = "browser"
+CATEGORY_DRIVER = "driver"
+CATEGORY_SCRIPT = "script"
+
+CATEGORY_LABELS = {
+    CATEGORY_FALLBACK: "PATH Fallback",
+    CATEGORY_SYSTEM: "System / OS",
+    CATEGORY_LANGUAGE: "Language Ecosystem",
+    CATEGORY_BROWSER: "Browser Runtime",
+    CATEGORY_DRIVER: "Orchestrator",
+    CATEGORY_SCRIPT: "Shell Scripts",
+}
+
+CATEGORY_ORDER = [
+    CATEGORY_FALLBACK,
+    CATEGORY_SYSTEM,
+    CATEGORY_LANGUAGE,
+    CATEGORY_BROWSER,
+    CATEGORY_SCRIPT,
+    CATEGORY_DRIVER,
+]
+
+
+# Hand-curated metadata that enriches what can be introspected at runtime.
+# Keyed by the provider's ``.name`` (lower-case short name).
+PROVIDER_METADATA: dict[str, dict[str, Any]] = {
+    "env": {
+        "emoji": "🌍",
+        "display_title": "EnvProvider",
+        "category": CATEGORY_FALLBACK,
+        "summary": (
+            "Read-only fallback that searches the existing $PATH for binaries "
+            "already installed on the host. Does not install anything."
+        ),
+        "tags": ["path-only", "no-install", "read-only"],
+        "source_file": "abx_pkg/binprovider.py",
+        "example_binary": "curl",
+        "example_arg": "--version",
+    },
+    "apt": {
+        "emoji": "🐧",
+        "display_title": "AptProvider",
+        "category": CATEGORY_SYSTEM,
+        "summary": (
+            "Installs packages via Debian / Ubuntu's apt-get. Always runs as root "
+            "and targets the host package database. Tries pyinfra/ansible drivers "
+            "first, then falls back to direct apt-get."
+        ),
+        "tags": ["linux", "root", "no-hermetic"],
+        "source_file": "abx_pkg/binprovider_apt.py",
+        "example_binary": "wget",
+    },
+    "brew": {
+        "emoji": "🍺",
+        "display_title": "BrewProvider",
+        "category": CATEGORY_SYSTEM,
+        "summary": (
+            "Installs packages via Homebrew on macOS/Linuxbrew. Discovery-only "
+            "prefix; no isolated hermetic Homebrew cellar. Auto-switches to "
+            "pyinfra/ansible when postinstall_scripts=True."
+        ),
+        "tags": ["macos", "linuxbrew", "postinstall-opt-in"],
+        "source_file": "abx_pkg/binprovider_brew.py",
+        "example_binary": "yt-dlp",
+    },
+    "pip": {
+        "emoji": "🐍",
+        "display_title": "PipProvider",
+        "category": CATEGORY_LANGUAGE,
+        "summary": (
+            "Installs Python wheels via pip. Set pip_venv for a hermetic venv "
+            "(auto-created on first use). Honors PIP_BINARY. Supports wheels-only "
+            "installs via postinstall_scripts=False."
+        ),
+        "tags": ["python", "venv-support", "security-controls"],
+        "source_file": "abx_pkg/binprovider_pip.py",
+        "example_binary": "yt-dlp",
+    },
+    "uv": {
+        "emoji": "🚀",
+        "display_title": "UvProvider",
+        "category": CATEGORY_LANGUAGE,
+        "summary": (
+            "Installs Python packages via uv. Two modes: hermetic venv mode "
+            "(uv_venv=Path(...)) or global tool mode (uv tool install). Full "
+            "support for postinstall_scripts=False and min_release_age."
+        ),
+        "tags": ["python", "venv-support", "tool-mode", "security-controls"],
+        "source_file": "abx_pkg/binprovider_uv.py",
+        "example_binary": "ruff",
+    },
+    "npm": {
+        "emoji": "📦",
+        "display_title": "NpmProvider",
+        "category": CATEGORY_LANGUAGE,
+        "summary": (
+            "Installs JavaScript packages via npm. Set npm_prefix for a hermetic "
+            "prefix under <prefix>/node_modules/.bin. Supports both "
+            "postinstall_scripts=False and min_release_age (on npm builds that "
+            "ship --min-release-age)."
+        ),
+        "tags": ["javascript", "prefix-support", "security-controls"],
+        "source_file": "abx_pkg/binprovider_npm.py",
+        "example_binary": "prettier",
+    },
+    "pnpm": {
+        "emoji": "📦",
+        "display_title": "PnpmProvider",
+        "category": CATEGORY_LANGUAGE,
+        "summary": (
+            "Installs JavaScript packages via pnpm. Set pnpm_prefix for a hermetic "
+            "prefix. PNPM_HOME is auto-populated so pnpm add -g works without "
+            "polluting the user's shell config. Requires pnpm 10.16+ for "
+            "min_release_age."
+        ),
+        "tags": ["javascript", "prefix-support", "security-controls"],
+        "source_file": "abx_pkg/binprovider_pnpm.py",
+        "example_binary": "prettier",
+    },
+    "yarn": {
+        "emoji": "🧶",
+        "display_title": "YarnProvider",
+        "category": CATEGORY_LANGUAGE,
+        "summary": (
+            "Installs JavaScript packages via Yarn 4 / Yarn Berry. Always operates "
+            "inside a workspace dir (auto-initialized with a stub package.json and "
+            ".yarnrc.yml using nodeLinker: node-modules). Yarn 4.10+ required for "
+            "security flags."
+        ),
+        "tags": ["javascript", "workspace", "security-controls"],
+        "source_file": "abx_pkg/binprovider_yarn.py",
+        "example_binary": "prettier",
+    },
+    "bun": {
+        "emoji": "🥖",
+        "display_title": "BunProvider",
+        "category": CATEGORY_LANGUAGE,
+        "summary": (
+            "Installs JavaScript packages via Bun. Set bun_prefix to mirror "
+            "$BUN_INSTALL. Supports both min_release_age (Bun 1.3+) and "
+            "postinstall_scripts=False via --ignore-scripts."
+        ),
+        "tags": ["javascript", "prefix-support", "security-controls"],
+        "source_file": "abx_pkg/binprovider_bun.py",
+        "example_binary": "prettier",
+    },
+    "deno": {
+        "emoji": "🦕",
+        "display_title": "DenoProvider",
+        "category": CATEGORY_LANGUAGE,
+        "summary": (
+            "Installs JavaScript/TypeScript packages via Deno. Mirrors "
+            "$DENO_INSTALL_ROOT. Deno's npm lifecycle scripts are opt-in "
+            "(reverse of npm). Supports min_release_age on Deno 2.5+."
+        ),
+        "tags": ["javascript", "typescript", "security-controls"],
+        "source_file": "abx_pkg/binprovider_deno.py",
+        "example_binary": "prettier",
+    },
+    "cargo": {
+        "emoji": "🦀",
+        "display_title": "CargoProvider",
+        "category": CATEGORY_LANGUAGE,
+        "summary": (
+            "Installs Rust crates via cargo install. Set cargo_root or use "
+            "cargo_home (default $CARGO_HOME or ~/.cargo). Passes --locked by "
+            "default; min_version becomes cargo install --version >=..."
+        ),
+        "tags": ["rust", "hermetic-support"],
+        "source_file": "abx_pkg/binprovider_cargo.py",
+        "example_binary": "ripgrep",
+    },
+    "gem": {
+        "emoji": "💎",
+        "display_title": "GemProvider",
+        "category": CATEGORY_LANGUAGE,
+        "summary": (
+            "Installs Ruby gems via gem install. Set gem_home / gem_bindir for "
+            "hermetic installs. Generated wrapper scripts are patched to activate "
+            "the configured GEM_HOME instead of the host default."
+        ),
+        "tags": ["ruby", "hermetic-support"],
+        "source_file": "abx_pkg/binprovider_gem.py",
+        "example_binary": "jekyll",
+    },
+    "goget": {
+        "emoji": "🐹",
+        "display_title": "GoGetProvider",
+        "category": CATEGORY_LANGUAGE,
+        "summary": (
+            "Installs Go binaries via go install. Set gopath or gobin for a "
+            "hermetic workspace. Default install arg is <bin_name>@latest. Note: "
+            "the provider name is goget, not go_get."
+        ),
+        "tags": ["go", "hermetic-support"],
+        "source_file": "abx_pkg/binprovider_goget.py",
+        "example_binary": "golangci-lint",
+    },
+    "nix": {
+        "emoji": "❄️",
+        "display_title": "NixProvider",
+        "category": CATEGORY_SYSTEM,
+        "summary": (
+            "Installs packages via nix profile install using flakes. Set "
+            "nix_profile for a custom profile, nix_state_dir for isolated "
+            "state/cache. Default install arg is nixpkgs#<bin_name>."
+        ),
+        "tags": ["nix", "flakes", "hermetic-support"],
+        "source_file": "abx_pkg/binprovider_nix.py",
+        "example_binary": "ffmpeg",
+    },
+    "docker": {
+        "emoji": "🐳",
+        "display_title": "DockerProvider",
+        "category": CATEGORY_SYSTEM,
+        "summary": (
+            "Pulls Docker images and writes a local shim wrapper that runs "
+            "docker run .... Binary version is parsed from the image tag, so "
+            "semver-like tags work best. Pass image refs as install_args."
+        ),
+        "tags": ["docker", "image", "shim"],
+        "source_file": "abx_pkg/binprovider_docker.py",
+        "example_binary": "hello-world",
+    },
+    "chromewebstore": {
+        "emoji": "🧩",
+        "display_title": "ChromeWebstoreProvider",
+        "category": CATEGORY_BROWSER,
+        "summary": (
+            "Downloads, unpacks, and caches Chrome Web Store extensions using the "
+            "packaged JS runtime under abx_pkg/js/chrome/. The resolved binary path "
+            "is the unpacked manifest.json."
+        ),
+        "tags": ["chrome", "extensions"],
+        "source_file": "abx_pkg/binprovider_chromewebstore.py",
+        "example_binary": "ublock-origin",
+    },
+    "puppeteer": {
+        "emoji": "🎭",
+        "display_title": "PuppeteerProvider",
+        "category": CATEGORY_BROWSER,
+        "summary": (
+            "Bootstraps @puppeteer/browsers through NpmProvider, then uses its CLI "
+            "to install managed browsers. Resolution uses semantic version ordering, "
+            "not lexicographic string sorting."
+        ),
+        "tags": ["browsers", "npm-bootstrap"],
+        "source_file": "abx_pkg/binprovider_puppeteer.py",
+        "example_binary": "chrome",
+    },
+    "playwright": {
+        "emoji": "🎬",
+        "display_title": "PlaywrightProvider",
+        "category": CATEGORY_BROWSER,
+        "summary": (
+            "Bootstraps playwright via npm, runs playwright install --with-deps, "
+            "then symlinks resolved browser executables into bin_dir. Pinning "
+            "playwright_root also pins PLAYWRIGHT_BROWSERS_PATH. Defaults euid=0 "
+            "so --with-deps can install system packages."
+        ),
+        "tags": ["browsers", "npm-bootstrap", "sudo"],
+        "source_file": "abx_pkg/binprovider_playwright.py",
+        "example_binary": "chromium",
+    },
+    "bash": {
+        "emoji": "🧪",
+        "display_title": "BashProvider",
+        "category": CATEGORY_SCRIPT,
+        "summary": (
+            "Runs literal shell-script overrides for install/update/uninstall. "
+            "Exports INSTALL_ROOT, BIN_DIR, BASH_INSTALL_ROOT, and BASH_BIN_DIR "
+            "into the shell environment for those commands."
+        ),
+        "tags": ["shell", "literal-overrides"],
+        "source_file": "abx_pkg/binprovider_bash.py",
+        "example_binary": "custom-script",
+    },
+    "pyinfra": {
+        "emoji": "🛠️",
+        "display_title": "PyinfraProvider",
+        "category": CATEGORY_DRIVER,
+        "summary": (
+            "Delegates installs to pyinfra operations. installer_module='auto' "
+            "resolves to operations.brew.packages on macOS and "
+            "operations.server.packages on Linux. No hermetic prefix support."
+        ),
+        "tags": ["driver", "infra"],
+        "source_file": "abx_pkg/binprovider_pyinfra.py",
+        "example_binary": "wget",
+    },
+    "ansible": {
+        "emoji": "📘",
+        "display_title": "AnsibleProvider",
+        "category": CATEGORY_DRIVER,
+        "summary": (
+            "Delegates installs via ansible-runner. installer_module='auto' "
+            "resolves to community.general.homebrew on macOS and "
+            "ansible.builtin.package on Linux. No hermetic prefix support."
+        ),
+        "tags": ["driver", "infra"],
+        "source_file": "abx_pkg/binprovider_ansible.py",
+        "example_binary": "wget",
+    },
+}
+
+
+# Global env vars (apply to more than one provider or to the CLI).
+GLOBAL_ENV_VARS: list[dict[str, str]] = [
+    {
+        "name": "ABX_PKG_DRY_RUN",
+        "default": "0",
+        "description": (
+            "Flips the shared dry_run default. Provider subprocesses are logged "
+            "and skipped, install()/update() return a placeholder, uninstall() "
+            "returns True. Beats DRY_RUN if both are set."
+        ),
+    },
+    {
+        "name": "DRY_RUN",
+        "default": "0",
+        "description": (
+            "Alternative dry-run toggle. ABX_PKG_DRY_RUN wins if both are set."
+        ),
+    },
+    {
+        "name": "ABX_PKG_INSTALL_TIMEOUT",
+        "default": "120",
+        "description": (
+            "Seconds to wait for install()/update()/uninstall() handler "
+            "subprocesses."
+        ),
+    },
+    {
+        "name": "ABX_PKG_VERSION_TIMEOUT",
+        "default": "10",
+        "description": (
+            "Seconds to wait for version / metadata probes (--version, npm show, "
+            "pip show, etc.)."
+        ),
+    },
+    {
+        "name": "ABX_PKG_POSTINSTALL_SCRIPTS",
+        "default": "unset",
+        "description": (
+            "Hydrates the provider-level default for postinstall_scripts on "
+            "supporting providers (pip, uv, npm, pnpm, yarn, bun, deno, brew, "
+            "chromewebstore, puppeteer)."
+        ),
+    },
+    {
+        "name": "ABX_PKG_MIN_RELEASE_AGE",
+        "default": "7",
+        "description": (
+            "Days of release age to require on supporting providers (pip, uv, "
+            "npm, pnpm, yarn, bun, deno)."
+        ),
+    },
+    {
+        "name": "ABX_PKG_BINPROVIDERS",
+        "default": "all",
+        "description": (
+            "Comma-separated provider names to enable (and their order) for the "
+            "abx-pkg CLI. Example: env,uv,pip,apt,brew"
+        ),
+    },
+    {
+        "name": "ABX_PKG_LIB_DIR",
+        "default": "~/.config/abx/lib",
+        "description": (
+            "Centralized install root. When set, each provider defaults its "
+            "install root to $ABX_PKG_LIB_DIR/<provider name>. Accepts relative, "
+            "tilde, and absolute paths."
+        ),
+    },
+]
+
+# Per-provider env vars that don't show up via simple introspection. These are
+# the <NAME>_ROOT and <NAME>_BINARY overrides documented in the README.
+PROVIDER_ENV_VARS: dict[str, list[dict[str, str]]] = {
+    "pip": [
+        {"name": "ABX_PKG_PIP_ROOT", "description": "Overrides pip_venv path."},
+        {"name": "PIP_BINARY", "description": "Pin the exact pip executable used."},
+    ],
+    "uv": [
+        {"name": "ABX_PKG_UV_ROOT", "description": "Overrides uv_venv path."},
+        {"name": "UV_BINARY", "description": "Pin the exact uv executable used."},
+    ],
+    "npm": [
+        {"name": "ABX_PKG_NPM_ROOT", "description": "Overrides npm_prefix path."},
+        {"name": "NPM_BINARY", "description": "Pin the exact npm executable used."},
+    ],
+    "pnpm": [
+        {"name": "ABX_PKG_PNPM_ROOT", "description": "Overrides pnpm_prefix path."},
+        {"name": "PNPM_BINARY", "description": "Pin the exact pnpm executable used."},
+    ],
+    "yarn": [
+        {"name": "ABX_PKG_YARN_ROOT", "description": "Overrides yarn_prefix path."},
+        {"name": "YARN_BINARY", "description": "Pin the exact yarn executable used."},
+    ],
+    "bun": [
+        {"name": "ABX_PKG_BUN_ROOT", "description": "Overrides bun_prefix path."},
+        {"name": "BUN_BINARY", "description": "Pin the exact bun executable used."},
+    ],
+    "deno": [
+        {"name": "ABX_PKG_DENO_ROOT", "description": "Overrides deno_root path."},
+        {"name": "DENO_BINARY", "description": "Pin the exact deno executable used."},
+    ],
+    "cargo": [
+        {"name": "ABX_PKG_CARGO_ROOT", "description": "Overrides cargo_root path."},
+        {"name": "CARGO_HOME", "description": "Standard cargo home directory."},
+    ],
+    "gem": [
+        {"name": "ABX_PKG_GEM_ROOT", "description": "Overrides gem_home path."},
+        {"name": "GEM_HOME", "description": "Standard gem home directory."},
+    ],
+    "goget": [
+        {"name": "ABX_PKG_GOGET_ROOT", "description": "Overrides gopath."},
+        {"name": "GOPATH", "description": "Standard Go workspace path."},
+    ],
+    "nix": [
+        {"name": "ABX_PKG_NIX_ROOT", "description": "Overrides nix_profile path."},
+        {"name": "ABX_PKG_NIX_PROFILE", "description": "Legacy alias for nix_profile."},
+    ],
+    "docker": [
+        {"name": "ABX_PKG_DOCKER_ROOT", "description": "Overrides docker_shim_dir parent."},
+    ],
+    "brew": [
+        {"name": "ABX_PKG_BREW_ROOT", "description": "Overrides brew_prefix (discovery only)."},
+    ],
+    "bash": [
+        {"name": "ABX_PKG_BASH_ROOT", "description": "Overrides bash_root state dir."},
+    ],
+    "chromewebstore": [
+        {
+            "name": "ABX_PKG_CHROMEWEBSTORE_ROOT",
+            "description": "Overrides extensions_root cache dir.",
+        },
+    ],
+    "puppeteer": [
+        {"name": "ABX_PKG_PUPPETEER_ROOT", "description": "Overrides puppeteer_root path."},
+    ],
+    "playwright": [
+        {
+            "name": "ABX_PKG_PLAYWRIGHT_ROOT",
+            "description": "Overrides playwright_root AND pins PLAYWRIGHT_BROWSERS_PATH to it.",
+        },
+    ],
+}
+
+
+def github_tree_url(relative_path: str) -> str:
+    return f"{GITHUB_REPO}/tree/{DEFAULT_GITHUB_REF}/{relative_path}"
+
+
+def github_blob_url(relative_path: str) -> str:
+    return f"{GITHUB_REPO}/blob/{DEFAULT_GITHUB_REF}/{relative_path}"
+
+
+def _esc(text: str) -> str:
+    return (
+        text.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+
+def format_json_value_html(value: Any) -> Markup:
+    """Return syntax-highlighted HTML for a provider field default."""
+    if value is None:
+        return Markup('<span class="cfg-null">None</span>')
+    if isinstance(value, bool):
+        cls = "cfg-bool-true" if value else "cfg-bool-false"
+        return Markup(f'<span class="{cls}">{str(value)}</span>')
+    if isinstance(value, (int, float)):
+        return Markup(f'<span class="cfg-number">{_esc(str(value))}</span>')
+    if isinstance(value, str):
+        escaped = _esc(value)
+        return Markup(f'<span class="cfg-string">&quot;{escaped}&quot;</span>')
+    if isinstance(value, Path):
+        escaped = _esc(str(value))
+        return Markup(f'<span class="cfg-path">Path(&quot;{escaped}&quot;)</span>')
+    if isinstance(value, (list, tuple)):
+        if not value:
+            return Markup('<span class="cfg-bracket">[]</span>')
+        items = "".join(
+            f'<div class="cfg-array-item">{format_json_value_html(item)}</div>'
+            for item in value
+        )
+        return Markup(
+            '<span class="cfg-bracket">[</span>'
+            f'<div class="cfg-array">{items}</div>'
+            '<span class="cfg-bracket">]</span>',
+        )
+    if isinstance(value, dict):
+        if not value:
+            return Markup('<span class="cfg-bracket">{}</span>')
+        rows = "".join(
+            '<div class="cfg-obj-row">'
+            f'<span class="cfg-obj-key">{_esc(str(k))}</span>: '
+            f"{format_json_value_html(v)}"
+            "</div>"
+            for k, v in value.items()
+        )
+        return Markup(
+            '<span class="cfg-bracket">{</span>'
+            f'<div class="cfg-obj">{rows}</div>'
+            '<span class="cfg-bracket">}</span>',
+        )
+    return Markup(_esc(repr(value)))
+
+
+def describe_annotation(annotation: Any) -> str:
+    if annotation is None:
+        return "None"
+    if hasattr(annotation, "__name__"):
+        return annotation.__name__
+    s = str(annotation)
+    s = s.replace("typing.", "").replace("pathlib.", "")
+    if len(s) > 60:
+        s = s[:57] + "..."
+    return s
+
+
+def collect_provider_fields(cls: type[BinProvider]) -> list[dict[str, Any]]:
+    """Return per-field metadata for a provider (incl. inherited base fields)."""
+    instance = cls()
+    fields: list[dict[str, Any]] = []
+    for name, field in cls.model_fields.items():
+        try:
+            value = getattr(instance, name)
+        except Exception:
+            value = None
+        # Skip noisy derived/mostly-internal base fields.
+        if name in {"overrides"}:
+            continue
+        fields.append(
+            {
+                "key": name,
+                "type": describe_annotation(field.annotation),
+                "default": format_json_value_html(value),
+                "description": (field.description or "").strip(),
+            },
+        )
+    return fields
+
+
+def build_provider(cls: type[BinProvider]) -> dict[str, Any]:
+    instance = cls()
+    short_name = instance.name
+    meta = PROVIDER_METADATA.get(short_name, {})
+    fields = collect_provider_fields(cls)
+    env_vars = PROVIDER_ENV_VARS.get(short_name, [])
+    source_file = meta.get("source_file") or inspect.getfile(cls).split("abx_pkg/")[-1]
+    source_file = f"abx_pkg/{source_file}" if not source_file.startswith("abx_pkg/") else source_file
+    category = meta.get("category", CATEGORY_LANGUAGE)
+
+    installer_bin = cls.model_fields.get("INSTALLER_BIN").default
+    default_path = cls.model_fields.get("PATH").default
+
+    example_binary = meta.get("example_binary", "my-tool")
+    example_arg = meta.get("example_arg", "--version")
+
+    commands = {
+        "cli_quick": f"abx-pkg --binproviders={short_name} install {example_binary}",
+        "cli_env": (
+            f"env ABX_PKG_BINPROVIDERS={short_name} "
+            f"abx-pkg install {example_binary}"
+        ),
+        "python": (
+            f"from abx_pkg import Binary, {short_name}\n\n"
+            f"bin = Binary(name={example_binary!r}, binproviders=[{short_name}]).load_or_install()\n"
+            f"bin.exec(cmd=[{example_arg!r}])"
+        ),
+    }
+
+    tags = list(meta.get("tags", []))
+    summary = meta.get("summary", "")
+    emoji = meta.get("emoji", "📦")
+    display_title = meta.get("display_title", cls.__name__)
+
+    search_parts = [
+        short_name,
+        display_title,
+        summary,
+        category,
+        CATEGORY_LABELS.get(category, category),
+        *tags,
+        *[f["key"] for f in fields],
+        *[e["name"] for e in env_vars],
+    ]
+    search_text = " ".join(str(s) for s in search_parts if s).lower()
+
+    return {
+        "short_name": short_name,
+        "class_name": cls.__name__,
+        "display_title": display_title,
+        "emoji": emoji,
+        "category": category,
+        "category_label": CATEGORY_LABELS.get(category, category),
+        "summary": summary,
+        "tags": tags,
+        "installer_bin": installer_bin,
+        "default_path": default_path,
+        "source_file": source_file,
+        "source_url": github_blob_url(source_file),
+        "fields": fields,
+        "field_count": len(fields),
+        "env_vars": env_vars,
+        "env_var_count": len(env_vars),
+        "commands": commands,
+        "example_binary": example_binary,
+        "search_text": search_text,
+    }
+
+
+def collect_providers() -> list[dict[str, Any]]:
+    providers: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for attrname in sorted(dir(abx_pkg)):
+        obj = getattr(abx_pkg, attrname)
+        if not inspect.isclass(obj):
+            continue
+        if not issubclass(obj, BinProvider) or obj is BinProvider:
+            continue
+        if obj.__name__ in seen:
+            continue
+        seen.add(obj.__name__)
+        providers.append(build_provider(obj))
+
+    category_rank = {name: idx for idx, name in enumerate(CATEGORY_ORDER)}
+    providers.sort(
+        key=lambda p: (
+            category_rank.get(p["category"], 99),
+            p["short_name"],
+        ),
+    )
+    return providers
+
+
+def group_by_category(providers: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for provider in providers:
+        groups.setdefault(provider["category"], []).append(provider)
+
+    ordered: list[dict[str, Any]] = []
+    for name in CATEGORY_ORDER:
+        if name not in groups:
+            continue
+        ordered.append(
+            {
+                "name": name,
+                "label": CATEGORY_LABELS.get(name, name),
+                "providers": groups[name],
+            },
+        )
+    return ordered
+
+
+def render_site(output_dir: Path, template_name: str) -> Path:
+    providers = collect_providers()
+    categories = group_by_category(providers)
+
+    environment = Environment(
+        loader=FileSystemLoader(TEMPLATE_DIR),
+        autoescape=select_autoescape(["html", "xml", "html.j2", "xml.j2"]),
+        trim_blocks=True,
+        lstrip_blocks=True,
+    )
+    template = environment.get_template(template_name)
+    html = template.render(
+        site={
+            "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+            "github_repo": GITHUB_REPO,
+            "github_ref": DEFAULT_GITHUB_REF,
+            "package_version": getattr(abx_pkg, "__version__", ""),
+            "provider_count": len(providers),
+            "field_count": sum(p["field_count"] for p in providers),
+            "env_var_count": sum(p["env_var_count"] for p in providers)
+            + len(GLOBAL_ENV_VARS),
+            "providers": providers,
+            "categories": categories,
+            "global_env_vars": GLOBAL_ENV_VARS,
+        },
+    )
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    index_path = output_dir / "index.html"
+    index_path.write_text(html + "\n", encoding="utf-8")
+    (output_dir / ".nojekyll").write_text("", encoding="utf-8")
+    return index_path
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Build the abx-pkg landing-page site.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default=str(DEFAULT_OUTPUT_DIR),
+        help="Directory to write the generated GitHub Pages site into.",
+    )
+    parser.add_argument(
+        "--template",
+        default="index.html.j2",
+        help="Template file to render from the docs/ directory.",
+    )
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    output_path = render_site(Path(args.output_dir), args.template)
+    print(f"Generated abx-pkg landing page at {output_path}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
