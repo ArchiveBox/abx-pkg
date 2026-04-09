@@ -38,8 +38,7 @@ except Exception:
 class PnpmProvider(BinProvider):
     """Standalone pnpm package manager provider.
 
-    Behaves like ``NpmProvider`` but always shells out to ``pnpm`` directly,
-    with no auto-switching to ``npm``.  ``minimumReleaseAge`` is enforced via
+    Shells out to ``pnpm`` directly. ``minimumReleaseAge`` is enforced via
     ``--config.minimumReleaseAge=<minutes>`` (pnpm 10.16+).
     """
 

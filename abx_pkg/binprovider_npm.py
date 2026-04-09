@@ -6,7 +6,6 @@ import os
 import sys
 import json
 import tempfile
-import subprocess
 
 from pathlib import Path
 from typing import ClassVar, Self
@@ -29,12 +28,10 @@ from .binprovider import (
     env_flag_is_true,
     remap_kwargs,
 )
-from .logging import get_logger, format_subprocess_output
-
-logger = get_logger(__name__)
+from .logging import format_subprocess_output
 
 # Cache these values globally because they never change at runtime
-_CACHED_GLOBAL_NPM_PREFIX: tuple[str, Path] | None = None
+_CACHED_GLOBAL_NPM_PREFIX: Path | None = None
 _CACHED_HOME_DIR: Path = Path("~").expanduser().absolute()
 
 
@@ -87,9 +84,12 @@ class NpmProvider(BinProvider):
             return False
 
         npm_abspath = self.INSTALLER_BIN_ABSPATH
-        if not npm_abspath or Path(npm_abspath).name != "npm":
+        if not npm_abspath:
             return False
 
+        # npm 11+ supports ``--min-release-age``. Probe ``npm install --help``
+        # rather than version-sniffing because the flag was backported to
+        # several 10.x releases and the exact version varies by distro.
         proc = self.exec(
             bin_name=npm_abspath,
             cmd=["install", "--help"],
@@ -181,12 +181,7 @@ class NpmProvider(BinProvider):
     @computed_field
     @property
     def INSTALLER_BIN_ABSPATH(self) -> HostBinPath | None:
-        """Resolve the package manager executable used for npm operations.
-
-        Prefer a real `npm` binary when both `npm` and `pnpm` are available so
-        the default behavior matches the provider name. `pnpm` remains a
-        supported fallback on hosts that do not ship `npm`.
-        """
+        """Resolve the npm executable, honoring ``NPM_BINARY`` for explicit overrides."""
         if self._INSTALLER_BIN_ABSPATH:
             return self._INSTALLER_BIN_ABSPATH
 
@@ -201,11 +196,8 @@ class NpmProvider(BinProvider):
             except Exception:
                 return None
 
-        abspath = (
-            bin_abspath(self.INSTALLER_BIN, PATH=self.PATH)
-            or bin_abspath(self.INSTALLER_BIN)
-            or bin_abspath("pnpm", PATH=self.PATH)
-            or bin_abspath("pnpm")
+        abspath = bin_abspath(self.INSTALLER_BIN, PATH=self.PATH) or bin_abspath(
+            self.INSTALLER_BIN,
         )
         if not abspath:
             return None
@@ -238,170 +230,50 @@ class NpmProvider(BinProvider):
         if self.npm_prefix:
             return self._merge_PATH(self.npm_prefix / "node_modules/.bin")
 
+        npm_abspath = self.INSTALLER_BIN_ABSPATH
+        if not npm_abspath:
+            return PATH
+
         npm_bin_dirs: set[Path] = set()
 
-        npm_abspath = self.INSTALLER_BIN_ABSPATH
-        if npm_abspath:
-            using_pnpm = Path(npm_abspath).name == "pnpm"
-            # find all local and global npm PATHs
-            npm_local_dir = self._CACHED_LOCAL_NPM_PREFIX or (
-                Path(self._npm(["bin"], quiet=True).stdout.strip()).parent.parent
-                if using_pnpm
-                else Path(self._npm(["prefix"], quiet=True).stdout.strip())
-            )
-            self._CACHED_LOCAL_NPM_PREFIX = npm_local_dir
+        # find all local and global npm PATHs
+        npm_local_dir = self._CACHED_LOCAL_NPM_PREFIX or Path(
+            self.exec(
+                bin_name=npm_abspath,
+                cmd=["prefix"],
+                quiet=True,
+            ).stdout.strip(),
+        )
+        self._CACHED_LOCAL_NPM_PREFIX = npm_local_dir
 
-            # start at npm_local_dir and walk up to $HOME (or /), finding all npm bin dirs along the way
-            search_dir = npm_local_dir
-            stop_if_reached = [str(Path("/")), str(_CACHED_HOME_DIR)]
-            num_hops, max_hops = 0, 6
-            while num_hops < max_hops and str(search_dir) not in stop_if_reached:
-                try:
-                    npm_bin_dirs.add(list(search_dir.glob("node_modules/.bin"))[0])
-                    break
-                except (IndexError, OSError, Exception):
-                    # could happen because we dont have permission to access the parent dir, or it's been moved, or many other weird edge cases...
-                    pass
-                search_dir = search_dir.parent
-                num_hops += 1
+        # start at npm_local_dir and walk up to $HOME (or /), finding all npm bin dirs along the way
+        search_dir = npm_local_dir
+        stop_if_reached = [str(Path("/")), str(_CACHED_HOME_DIR)]
+        num_hops, max_hops = 0, 6
+        while num_hops < max_hops and str(search_dir) not in stop_if_reached:
+            try:
+                npm_bin_dirs.add(list(search_dir.glob("node_modules/.bin"))[0])
+                break
+            except (IndexError, OSError, Exception):
+                # could happen because we dont have permission to access the parent dir, or it's been moved, or many other weird edge cases...
+                pass
+            search_dir = search_dir.parent
+            num_hops += 1
 
-            cached_bin, cached_dir = _CACHED_GLOBAL_NPM_PREFIX or ("", Path("/"))
-            npm_global_dir = (
-                cached_dir if cached_bin == Path(npm_abspath).name else None
+        npm_global_dir = _CACHED_GLOBAL_NPM_PREFIX or (
+            Path(
+                self.exec(
+                    bin_name=npm_abspath,
+                    cmd=["prefix", "-g"],
+                    quiet=True,
+                ).stdout.strip(),
             )
-            npm_global_dir = npm_global_dir or (
-                Path(self._npm(["bin", "-g"], quiet=True).stdout.strip())
-                if using_pnpm
-                else Path(self._npm(["prefix", "-g"], quiet=True).stdout.strip())
-                / "bin"
-            )
-            _CACHED_GLOBAL_NPM_PREFIX = (Path(npm_abspath).name, npm_global_dir)
-            npm_bin_dirs.add(npm_global_dir)
+            / "bin"
+        )
+        _CACHED_GLOBAL_NPM_PREFIX = npm_global_dir
+        npm_bin_dirs.add(npm_global_dir)
 
         return self._merge_PATH(*sorted(npm_bin_dirs), PATH=PATH)
-
-    def _write_pnpm_workspace_config(self, min_release_age: float = 7.0) -> None:
-        """Write/update pnpm-workspace.yaml with minimumReleaseAge if pnpm is the backend.
-
-        Called before every install/update/uninstall so the config always
-        reflects the current Binary.min_release_age value.  When the age is
-        ``0`` (disabled), the ``minimumReleaseAge`` key is *removed* from the
-        file so pnpm reverts to its default behavior.
-
-        pnpm's minimumReleaseAge is config-only (no CLI flag).  The value is
-        in **minutes**, converted from days.  The file is written into the
-        directory pnpm operates from (npm_prefix when set, otherwise the
-        pnpm home / cache dir).
-        """
-        npm_abspath = self.INSTALLER_BIN_ABSPATH
-        if not npm_abspath or Path(npm_abspath).name != "pnpm":
-            return
-
-        days = min_release_age
-
-        config_dir = self.npm_prefix or self.cache_dir / "pnpm-home"
-        config_dir.mkdir(parents=True, exist_ok=True)
-        config_path = config_dir / "pnpm-workspace.yaml"
-
-        # Preserve any existing content and only update/remove minimumReleaseAge
-        try:
-            existing = config_path.read_text()
-        except FileNotFoundError:
-            existing = ""
-
-        key = "minimumReleaseAge:"
-
-        if days <= 0:
-            # Remove the key from the config if present
-            if key in existing:
-                lines = [
-                    line
-                    for line in existing.splitlines()
-                    if not line.strip().startswith(key)
-                ]
-                content = "\n".join(lines).strip()
-                if content:
-                    config_path.write_text(content + "\n")
-                elif config_path.exists():
-                    config_path.write_text("")
-                logger.debug("Removed minimumReleaseAge from %s", config_path)
-            return
-
-        minutes = int(days * 24 * 60)
-        new_line = f"minimumReleaseAge: {minutes}"
-        if key in existing:
-            # Replace existing value
-            lines = [
-                new_line if line.strip().startswith(key) else line
-                for line in existing.splitlines()
-            ]
-            config_path.write_text("\n".join(lines) + "\n")
-        else:
-            # Append to file
-            config_path.write_text(
-                existing.rstrip("\n") + f"\n{new_line}\n"
-                if existing
-                else f"{new_line}\n",
-            )
-
-        logger.debug("Wrote %s with minimumReleaseAge=%d", config_path, minutes)
-
-    def _npm(
-        self,
-        npm_cmd: list[str],
-        quiet: bool = False,
-        timeout: int | None = None,
-    ) -> subprocess.CompletedProcess:
-        global _CACHED_GLOBAL_NPM_PREFIX
-        env = os.environ.copy()
-
-        npm_abspath = self._require_installer_bin()
-
-        # `pnpm` is close enough to npm for the operations we use, but its CLI
-        # shape differs enough that we normalize subcommands and flags in one
-        # place instead of duplicating that branching in install/update/etc.
-        subcommand, *npm_args = npm_cmd
-        cmd = npm_cmd
-        if Path(npm_abspath).name == "pnpm":
-            pnpm_home = Path(
-                env.get("PNPM_HOME")
-                or (
-                    self.npm_prefix / "node_modules/.bin"
-                    if self.npm_prefix
-                    else self.cache_dir / "pnpm-home"
-                ),
-            )
-            pnpm_home.mkdir(parents=True, exist_ok=True)
-            env["PNPM_HOME"] = str(pnpm_home)
-            path_entries = [entry for entry in env.get("PATH", "").split(":") if entry]
-            if str(pnpm_home) not in path_entries:
-                env["PATH"] = ":".join([str(pnpm_home), *path_entries])
-            cmd = [
-                {
-                    "install": "add",
-                    "show": "view",
-                    "uninstall": "remove",
-                    "list": "ls",
-                }.get(subcommand, subcommand),
-                *(
-                    f"--dir={arg.split('=', 1)[-1]}"
-                    if arg.startswith("--prefix=")
-                    else f"--store-dir={arg.split('=', 1)[-1]}"
-                    if arg.startswith("--cache=")
-                    else arg
-                    for arg in npm_args
-                    if arg not in ("--force", "--no-audit", "--no-fund")
-                    and not arg.startswith("--min-release-age")
-                ),
-            ]
-
-        return self.exec(
-            bin_name=npm_abspath,
-            cmd=cmd,
-            quiet=quiet,
-            timeout=timeout,
-            env=env,
-        )
 
     def setup(
         self,
@@ -420,6 +292,39 @@ class NpmProvider(BinProvider):
         if self.npm_prefix:
             (self.npm_prefix / "node_modules/.bin").mkdir(parents=True, exist_ok=True)
 
+    def _build_mutation_args(
+        self,
+        install_args: InstallArgs,
+        *,
+        postinstall_scripts: bool,
+        min_release_age: float,
+    ) -> list[str]:
+        """Shared ``install``/``update`` CLI args (security flags + prefix)."""
+        explicit_args = [*self.npm_install_args, self.cache_arg, *install_args]
+        min_release_age_days = f"{min_release_age:g}"
+        extra: list[str] = []
+        if not postinstall_scripts and not self._install_args_have_option(
+            explicit_args,
+            "--ignore-scripts",
+        ):
+            extra.append("--ignore-scripts")
+        if min_release_age > 0 and not self._install_args_have_option(
+            explicit_args,
+            "--min-release-age",
+        ):
+            extra.append(f"--min-release-age={min_release_age_days}")
+
+        mutation_args = [
+            *self.npm_install_args,
+            self.cache_arg,
+            *extra,
+        ]
+        if self.npm_prefix:
+            mutation_args.append(f"--prefix={self.npm_prefix}")
+        else:
+            mutation_args.append("--global")
+        return mutation_args
+
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(
         self,
@@ -430,11 +335,8 @@ class NpmProvider(BinProvider):
         min_version: SemVer | None = None,
         timeout: int | None = None,
     ) -> str:
-        self.setup(
-            postinstall_scripts=postinstall_scripts,
-            min_release_age=min_release_age,
-            min_version=min_version,
-        )
+        self.setup()
+        npm_abspath = self._require_installer_bin()
         postinstall_scripts = (
             False if postinstall_scripts is None else postinstall_scripts
         )
@@ -454,46 +356,15 @@ class NpmProvider(BinProvider):
             postinstall_scripts=postinstall_scripts,
             min_release_age=min_release_age,
         )
-        self._write_pnpm_workspace_config(min_release_age=min_release_age)
-        self._require_installer_bin()
 
-        min_release_age_days = f"{min_release_age:g}"
-        explicit_npm_args = [*self.npm_install_args, self.cache_arg, *install_args]
-        npm_cmd_args = [
-            *self.npm_install_args,
-            self.cache_arg,
-            *(
-                ["--ignore-scripts"]
-                if (
-                    not postinstall_scripts
-                    and not self._install_args_have_option(
-                        explicit_npm_args,
-                        "--ignore-scripts",
-                    )
-                )
-                else []
-            ),
-            *(
-                [f"--min-release-age={min_release_age_days}"]
-                if min_release_age > 0
-                and not self._install_args_have_option(
-                    explicit_npm_args,
-                    "--min-release-age",
-                )
-                else []
-            ),
-        ]
-        if self.npm_prefix:
-            npm_cmd_args.append(f"--prefix={self.npm_prefix}")
-        else:
-            npm_cmd_args.append("--global")
-
-        proc = self._npm(
-            [
-                "install",
-                *npm_cmd_args,
-                *install_args,
-            ],
+        mutation_args = self._build_mutation_args(
+            install_args,
+            postinstall_scripts=postinstall_scripts,
+            min_release_age=min_release_age,
+        )
+        proc = self.exec(
+            bin_name=npm_abspath,
+            cmd=["install", *mutation_args, *install_args],
             timeout=timeout,
         )
 
@@ -511,11 +382,8 @@ class NpmProvider(BinProvider):
         min_version: SemVer | None = None,
         timeout: int | None = None,
     ) -> str:
-        self.setup(
-            postinstall_scripts=postinstall_scripts,
-            min_release_age=min_release_age,
-            min_version=min_version,
-        )
+        self.setup()
+        npm_abspath = self._require_installer_bin()
         postinstall_scripts = (
             False if postinstall_scripts is None else postinstall_scripts
         )
@@ -535,42 +403,15 @@ class NpmProvider(BinProvider):
             postinstall_scripts=postinstall_scripts,
             min_release_age=min_release_age,
         )
-        self._write_pnpm_workspace_config(min_release_age=min_release_age)
-        self._require_installer_bin()
 
-        min_release_age_days = f"{min_release_age:g}"
-        explicit_update_args = [*self.npm_install_args, self.cache_arg, *install_args]
-        update_args = [
-            *self.npm_install_args,
-            self.cache_arg,
-            *(
-                ["--ignore-scripts"]
-                if (
-                    not postinstall_scripts
-                    and not self._install_args_have_option(
-                        explicit_update_args,
-                        "--ignore-scripts",
-                    )
-                )
-                else []
-            ),
-            *(
-                [f"--min-release-age={min_release_age_days}"]
-                if min_release_age > 0
-                and not self._install_args_have_option(
-                    explicit_update_args,
-                    "--min-release-age",
-                )
-                else []
-            ),
-        ]
-        if self.npm_prefix:
-            update_args.append(f"--prefix={self.npm_prefix}")
-        else:
-            update_args.append("--global")
-
-        proc = self._npm(
-            ["update", *update_args, *install_args],
+        mutation_args = self._build_mutation_args(
+            install_args,
+            postinstall_scripts=postinstall_scripts,
+            min_release_age=min_release_age,
+        )
+        proc = self.exec(
+            bin_name=npm_abspath,
+            cmd=["update", *mutation_args, *install_args],
             timeout=timeout,
         )
 
@@ -588,23 +429,18 @@ class NpmProvider(BinProvider):
         min_version: SemVer | None = None,
         timeout: int | None = None,
     ) -> bool:
+        npm_abspath = self._require_installer_bin()
         postinstall_scripts = (
             False if postinstall_scripts is None else postinstall_scripts
         )
         install_args = install_args or self.get_install_args(bin_name)
-        postinstall_scripts, min_release_age = self._resolve_security_constraints(
+        postinstall_scripts, _ = self._resolve_security_constraints(
             install_args,
             postinstall_scripts=postinstall_scripts,
             min_release_age=min_release_age,
         )
-        self._write_pnpm_workspace_config(min_release_age=min_release_age)
-        self._require_installer_bin()
 
-        explicit_uninstall_args = [
-            *self.npm_install_args,
-            self.cache_arg,
-            *install_args,
-        ]
+        explicit_args = [*self.npm_install_args, self.cache_arg, *install_args]
         uninstall_args = [
             *self.npm_install_args,
             self.cache_arg,
@@ -613,7 +449,7 @@ class NpmProvider(BinProvider):
                 if (
                     not postinstall_scripts
                     and not self._install_args_have_option(
-                        explicit_uninstall_args,
+                        explicit_args,
                         "--ignore-scripts",
                     )
                 )
@@ -625,8 +461,9 @@ class NpmProvider(BinProvider):
         else:
             uninstall_args.append("--global")
 
-        proc = self._npm(
-            ["uninstall", *uninstall_args, *install_args],
+        proc = self.exec(
+            bin_name=npm_abspath,
+            cmd=["uninstall", *uninstall_args, *install_args],
             timeout=timeout,
         )
 
@@ -650,7 +487,8 @@ class NpmProvider(BinProvider):
         except Exception:
             pass
 
-        if not self.INSTALLER_BIN_ABSPATH:
+        npm_abspath = self.INSTALLER_BIN_ABSPATH
+        if not npm_abspath:
             return None
 
         # fallback to using npm show to get alternate binary names based on the package, then try to find those in BinProvider.PATH
@@ -660,8 +498,9 @@ class NpmProvider(BinProvider):
                 0
             ]  # assume first package in list is the main one
             package_info = json.loads(
-                self._npm(
-                    ["show", "--json", main_package, "bin"],
+                self.exec(
+                    bin_name=npm_abspath,
+                    cmd=["show", "--json", main_package, "bin"],
                     timeout=self.version_timeout,
                     quiet=True,
                 ).stdout.strip(),
@@ -705,7 +544,8 @@ class NpmProvider(BinProvider):
         except ValueError:
             pass
 
-        if not self.INSTALLER_BIN_ABSPATH:
+        npm_abspath = self.INSTALLER_BIN_ABSPATH
+        if not npm_abspath:
             return None
 
         package = None
@@ -727,8 +567,9 @@ class NpmProvider(BinProvider):
 
             # npm list --depth=0 --json --prefix=<prefix> "@postlight/parser"
             # (dont use 'npm info @postlight/parser version', it shows *any* available version, not installed version)
-            json_output = self._npm(
-                [
+            json_output = self.exec(
+                bin_name=npm_abspath,
+                cmd=[
                     "list",
                     f"--prefix={self.npm_prefix}" if self.npm_prefix else "--global",
                     "--depth=0",
@@ -762,8 +603,9 @@ class NpmProvider(BinProvider):
                 else ["root", "--global"]
             )
             modules_dir = Path(
-                self._npm(
-                    root_args,
+                self.exec(
+                    bin_name=npm_abspath,
+                    cmd=root_args,
                     timeout=timeout,
                     quiet=True,
                 ).stdout.strip(),
