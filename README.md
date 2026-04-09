@@ -99,8 +99,12 @@ curl.exec(cmd=['--version'])                                        # curl 8.4.0
 
 ## Usage
 
+### Install
+
 ```bash
 pip install abx-pkg
+# or
+uv tool add abx-pkg
 ```
 
 ### CLI
@@ -157,7 +161,9 @@ pnpm pnpm /path/to/pnpm 10.12.1
 
 CLI result lines are written to `stdout`. Progress and debug logging are written to `stderr`, and interactive TTY sessions default to `DEBUG` logging.
 
-### Lazy Provider Singletons
+### Python Library
+
+#### Basic Usage
 
 All built-in providers are available as lazy singletons — just import them by name:
 
@@ -177,9 +183,7 @@ from abx_pkg import PipProvider
 custom_pip = PipProvider(pip_venv=Path("/tmp/abx-pkg-venv"), min_release_age=0)
 ```
 
-### Version Floors
-
-`Binary.min_version` is enforced after a provider resolves or installs a binary. Provider discovery can still succeed, but the final `Binary` will be rejected if the loaded version is below your required floor.
+Use the `Binary` class to declare a package that can be installed by one of several ordered providers, with an optional version floor:
 
 ```python
 from abx_pkg import Binary, SemVer, env, brew
@@ -191,7 +195,273 @@ curl = Binary(
 ).load_or_install()
 ```
 
-Use `min_version=None` to explicitly disable version floor checks.
+`min_version` is enforced after a provider resolves or installs a binary — provider discovery can still succeed, but the final `Binary` is rejected if the loaded version is below the floor. Use `min_version=None` to disable the check.
+
+#### Advanced Usage
+
+<details>
+<summary><strong>Define a reusable <code>Binary</code> subclass with per-provider overrides</strong></summary>
+
+```python
+from pydantic import InstanceOf
+from abx_pkg import BinProvider, Binary, BinProviderName, BinName, HandlerDict, BrewProvider
+from abx_pkg import env, pip, apt
+
+class CustomBrewProvider(BrewProvider):
+    name: BinProviderName = 'custom_brew'
+
+    def get_macos_packages(self, bin_name: str, **context) -> list[str]:
+        return ['yt-dlp'] if bin_name == 'ytdlp' else [bin_name]
+
+class YtdlpBinary(Binary):
+    name: BinName = 'ytdlp'
+    description: str = 'YT-DLP (Replacement for YouTube-DL) Media Downloader'
+
+    # define the providers this binary supports
+    binproviders: list[InstanceOf[BinProvider]] = [env, pip, apt, CustomBrewProvider()]
+
+    # customize installed package names for specific package managers
+    overrides: dict[BinProviderName, HandlerDict] = {
+        'pip': {'install_args': ['yt-dlp[default,curl-cffi]']},   # literal values
+        'apt': {'install_args': lambda: ['yt-dlp', 'ffmpeg']},    # any pure Callable
+        'custom_brew': {'install_args': 'self.get_macos_packages'},  # or a string ref to a method on self
+    }
+
+
+ytdlp = YtdlpBinary().load_or_install()
+print(ytdlp.binprovider)    # EnvProvider(...) / PipProvider(...) / AptProvider(...) / CustomBrewProvider(...)
+print(ytdlp.abspath)        # Path(...)
+print(ytdlp.version)        # SemVer(...)
+print(ytdlp.is_valid)       # True
+
+# Lifecycle actions preserve the Binary type and refresh/clear loaded metadata as needed
+ytdlp = ytdlp.update()
+assert ytdlp.is_valid
+ytdlp = ytdlp.uninstall()
+assert ytdlp.abspath is None and ytdlp.version is None
+```
+
+</details>
+
+<details>
+<summary><strong>Pick a binary dynamically (e.g. podman-or-docker) via overrides</strong></summary>
+
+```python
+import os
+import platform
+from pydantic import InstanceOf
+from abx_pkg import BinProvider, Binary, BinProviderName, BinName, HandlerDict
+from abx_pkg import env, apt
+
+class DockerBinary(Binary):
+    name: BinName = 'docker'
+    binproviders: list[InstanceOf[BinProvider]] = [env, apt]
+
+    overrides: dict[BinProviderName, HandlerDict] = {
+        'env': {
+            # prefer podman if installed, fall back to docker
+            'abspath': lambda: os.which('podman') or os.which('docker') or os.which('docker-ce'),
+        },
+        'apt': {
+            # vary the installed package name based on CPU architecture
+            'install_args': {
+                'amd64': ['docker'],
+                'armv7l': ['docker-ce'],
+                'arm64': ['docker-ce'],
+            }.get(platform.machine(), 'docker'),
+        },
+    }
+
+docker = DockerBinary().load_or_install()
+```
+
+</details>
+
+<details>
+<summary><strong>Subclass <code>BinProvider</code> to add support for a new package manager</strong></summary>
+
+```python
+from pathlib import Path
+from abx_pkg import (
+    BinProvider,
+    BinProviderName,
+    BinName,
+    HostBinPath,
+    InstallArgs,
+    SemVer,
+    bin_abspath,
+)
+
+class CargoProvider(BinProvider):
+    name: BinProviderName = 'cargo'
+    INSTALLER_BIN: BinName = 'cargo'
+    PATH: str = str(Path.home() / '.cargo/bin')
+
+    def default_install_args_handler(self, bin_name: BinName, **context) -> InstallArgs:
+        return [bin_name]
+
+    def default_install_handler(
+        self,
+        bin_name: BinName,
+        install_args: InstallArgs | None = None,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        min_version: SemVer | None = None,
+        timeout: int | None = None,
+    ) -> str:
+        install_args = install_args or self.get_install_args(bin_name)
+        installer = self._require_installer_bin()
+        proc = self.exec(bin_name=installer, cmd=['install', *install_args], timeout=timeout)
+        if proc.returncode != 0:
+            self._raise_proc_error('install', install_args, proc)
+        return proc.stdout.strip() or proc.stderr.strip()
+
+    def default_abspath_handler(self, bin_name: BinName, **context) -> HostBinPath | None:
+        return bin_abspath(bin_name, PATH=self.PATH)
+
+    def default_version_handler(
+        self,
+        bin_name: BinName,
+        abspath: HostBinPath | None = None,
+        timeout: int | None = None,
+        **context,
+    ) -> SemVer | None:
+        return self._version_from_exec(bin_name, abspath=abspath, timeout=timeout)
+
+
+cargo = CargoProvider()
+rg = cargo.install(bin_name='ripgrep')
+print(rg.binprovider)    # CargoProvider(...)
+print(rg.version)        # SemVer(...)
+```
+
+</details>
+
+<details>
+<summary><strong>Django integration: store <code>BinProvider</code> / <code>Binary</code> in model fields and render them in the Admin</strong></summary>
+
+With a few more packages, you get type-checked Django fields & forms that support `BinProvider` and `Binary`.
+
+> [!TIP]
+> For the full Django experience, we recommend installing these 3 excellent packages:
+> - [`django-admin-data-views`](https://github.com/MrThearMan/django-admin-data-views)
+> - [`django-pydantic-field`](https://github.com/surenkov/django-pydantic-field)
+> - [`django-jsonform`](https://django-jsonform.readthedocs.io/)
+> `pip install abx-pkg django-admin-data-views django-pydantic-field django-jsonform`
+
+**Django model fields:**
+
+```python
+from django.db import models
+from abx_pkg import BinProvider, Binary, SemVer
+from django_pydantic_field import SchemaField
+
+class Dependency(models.Model):
+    label = models.CharField(max_length=63)
+    default_binprovider: BinProvider = SchemaField()
+    binaries: list[Binary] = SchemaField(default=[])
+    min_version: SemVer = SchemaField(default=(0, 0, 1))
+```
+
+Saving a `Binary` using the model:
+
+```python
+from abx_pkg import Binary, env
+
+curl = Binary(name='curl').load()
+
+obj = Dependency(
+    label='runtime tools',
+    default_binprovider=env,   # store BinProvider values directly
+    binaries=[curl],            # store Binary/SemVer values directly
+)
+obj.save()
+```
+
+When fetching back from the DB, `Binary` fields are auto-deserialized and immediately usable:
+
+```python
+obj = Dependency.objects.get(label='runtime tools')
+assert obj.binaries[0].abspath == curl.abspath
+obj.binaries[0].exec(cmd=['--version'])
+```
+
+For a full example see the bundled [`django_example_project/`](https://github.com/ArchiveBox/abx-pkg/tree/main/django_example_project).
+
+**Django Admin integration:**
+
+<img height="220" alt="Django Admin binaries list view" src="https://github.com/ArchiveBox/abx-pkg/assets/511499/a9980217-f39e-434e-b266-20cd6feb17c3" align="top"><img height="220" alt="Django Admin binaries detail view" src="https://github.com/ArchiveBox/abx-pkg/assets/511499/d4d9086e-c8f4-4b6e-8ee8-8c8a864715b0" align="top">
+
+```python
+# settings.py
+INSTALLED_APPS = [
+    # ...
+    'admin_data_views',
+    'abx_pkg',
+]
+
+ABX_PKG_GET_ALL_BINARIES = 'project.views.get_all_binaries'
+ABX_PKG_GET_BINARY = 'project.views.get_binary'
+
+ADMIN_DATA_VIEWS = {
+    "NAME": "Environment",
+    "URLS": [
+        {
+            "route": "binaries/",
+            "view": "abx_pkg.views.binaries_list_view",
+            "name": "binaries",
+            "items": {
+                "route": "<str:key>/",
+                "view": "abx_pkg.views.binary_detail_view",
+                "name": "binary",
+            },
+        },
+    ],
+}
+```
+
+If you override the default site admin, register the views manually:
+
+```python
+from abx_pkg.admin import register_admin_views
+
+custom_admin = YourSiteAdmin()
+register_admin_views(custom_admin)
+```
+
+</details>
+
+### Configuration
+
+All abx-pkg env vars are read once at import time and only apply when set. Explicit constructor kwargs always override these defaults.
+
+**Behavioral controls** (apply across all providers):
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `ABX_PKG_DRY_RUN` / `DRY_RUN` | `0` | Flips the shared `dry_run` default. `ABX_PKG_DRY_RUN` wins if both are set. Provider subprocesses are logged and skipped, `install()` / `update()` return a placeholder, `uninstall()` returns `True`. |
+| `ABX_PKG_INSTALL_TIMEOUT` | `120` | Seconds to wait for `install()` / `update()` / `uninstall()` handler subprocesses. |
+| `ABX_PKG_VERSION_TIMEOUT` | `10` | Seconds to wait for version / metadata probes (`--version`, `npm show`, `pip show`, etc.). |
+| `ABX_PKG_POSTINSTALL_SCRIPTS` | unset | Hydrates the provider-level default for the `postinstall_scripts` kwarg on every provider that supports it (`pip`, `uv`, `npm`, `pnpm`, `yarn`, `bun`, `deno`, `brew`, `chromewebstore`, `puppeteer`). |
+| `ABX_PKG_MIN_RELEASE_AGE` | `7` | Hydrates the provider-level default (in days) for the `min_release_age` kwarg on every provider that supports it (`pip`, `uv`, `npm`, `pnpm`, `yarn`, `bun`, `deno`). |
+| `ABX_PKG_BINPROVIDERS` | all | Comma-separated list of provider names to enable (and their order) for the `abx-pkg` CLI. |
+
+**Install-root controls** (one global default + one per-provider override):
+
+| Variable | Applies to | Effect |
+| --- | --- | --- |
+| `ABX_PKG_LIB_DIR` | **every** provider with an `INSTALL_ROOT_FIELD` | Centralized install root. When set, each provider defaults its install root to `$ABX_PKG_LIB_DIR/<provider name>` (e.g. `<lib>/npm`, `<lib>/pip`, `<lib>/gem`, `<lib>/playwright`). Accepts relative (`./lib`), tilde (`~/.config/abx/lib`), and absolute (`/tmp/abxlib`) paths. |
+| `ABX_PKG_<BINPROVIDER>_ROOT` | the matching provider-specific install-root field | Generic per-provider override; beats `ABX_PKG_LIB_DIR/<provider name>`. Examples: `ABX_PKG_PIP_ROOT -> PipProvider(pip_venv=...)`, `ABX_PKG_UV_ROOT -> UvProvider(uv_venv=...)`, `ABX_PKG_NPM_ROOT -> NpmProvider(npm_prefix=...)`, `ABX_PKG_GOGET_ROOT -> GoGetProvider(gopath=...)`, `ABX_PKG_CHROMEWEBSTORE_ROOT -> ChromeWebstoreProvider(extensions_root=...)`. The `<BINPROVIDER>` token is the provider name uppercased. |
+
+Install-root precedence (most specific wins): explicit `install_root=` / provider-specific kwarg (e.g. `npm_prefix=`, `pip_venv=`) > `ABX_PKG_<NAME>_ROOT` > `ABX_PKG_LIB_DIR/<name>` > built-in default.
+
+**Provider-specific binary overrides:**
+
+Each provider also honors a `<NAME>_BINARY=/abs/path/to/<name>` env var to pin the exact executable it shells out to — `PIP_BINARY`, `UV_BINARY`, `NPM_BINARY`, `PNPM_BINARY`, `YARN_BINARY`, `BUN_BINARY`, `DENO_BINARY`, etc.
+
+---
+
+## API Reference
 
 ### [`BinProvider`](https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/binprovider.py#:~:text=class%20BinProvider)
 
@@ -226,28 +496,7 @@ dry_run = False                      # or ABX_PKG_DRY_RUN=1 / DRY_RUN=1
 - Providers that do not support one of those controls leave the provider default as `None`. If you pass an explicit unsupported value during `install()` / `update()`, it is logged as a warning and ignored.
 - Precedence is: explicit action args > `Binary(...)` defaults > provider defaults.
 
-#### 🌱 Environment variables
-
-All abx-pkg env vars are read once at import time and only apply when set. Explicit constructor kwargs always override these defaults.
-
-**Behavioral controls** (apply across all providers):
-
-| Variable | Default | Effect |
-| --- | --- | --- |
-| `ABX_PKG_DRY_RUN` / `DRY_RUN` | `0` | Flips the shared `dry_run` default. `ABX_PKG_DRY_RUN` wins if both are set. Provider subprocesses are logged and skipped, `install()` / `update()` return a placeholder, `uninstall()` returns `True`. |
-| `ABX_PKG_INSTALL_TIMEOUT` | `120` | Seconds to wait for `install()` / `update()` / `uninstall()` handler subprocesses. |
-| `ABX_PKG_VERSION_TIMEOUT` | `10` | Seconds to wait for version / metadata probes (`--version`, `npm show`, `pip show`, etc.). |
-| `ABX_PKG_POSTINSTALL_SCRIPTS` | unset | Hydrates the provider-level default for the `postinstall_scripts` kwarg on every provider that supports it (`pip`, `uv`, `npm`, `pnpm`, `yarn`, `bun`, `deno`, `brew`, `chromewebstore`, `puppeteer`). |
-| `ABX_PKG_MIN_RELEASE_AGE` | `7` | Hydrates the provider-level default (in days) for the `min_release_age` kwarg on every provider that supports it (`pip`, `uv`, `npm`, `pnpm`, `yarn`, `bun`, `deno`). |
-
-**Install-root controls** (one global default + one per-provider override):
-
-| Variable | Applies to | Effect |
-| --- | --- | --- |
-| `ABX_PKG_LIB_DIR` | **every** provider with an `INSTALL_ROOT_FIELD` | Centralized install root. When set, each provider defaults its install root to `$ABX_PKG_LIB_DIR/<provider name>` (e.g. `<lib>/npm`, `<lib>/pip`, `<lib>/gem`, `<lib>/playwright`). Accepts relative (`./lib`), tilde (`~/.config/abx/lib`), and absolute (`/tmp/abxlib`) paths. |
-| `ABX_PKG_<BINPROVIDER>_ROOT` | the matching provider-specific install-root field | Generic per-provider override; beats `ABX_PKG_LIB_DIR/<provider name>`. Examples: `ABX_PKG_PIP_ROOT -> PipProvider(pip_venv=...)`, `ABX_PKG_UV_ROOT -> UvProvider(uv_venv=...)`, `ABX_PKG_NPM_ROOT -> NpmProvider(npm_prefix=...)`, `ABX_PKG_GOGET_ROOT -> GoGetProvider(gopath=...)`, `ABX_PKG_CHROMEWEBSTORE_ROOT -> ChromeWebstoreProvider(extensions_root=...)`. The `<BINPROVIDER>` token is the provider name uppercased (`pip`, `uv`, `npm`, `pnpm`, `yarn`, `bun`, `cargo`, `gem`, `goget`, `nix`, `docker`, `bash`, `playwright`, `puppeteer`, `chromewebstore`, etc.). |
-
-Install-root precedence (most specific wins): explicit `install_root=` / provider-specific kwarg (e.g. `npm_prefix=`, `pip_venv=`) > `ABX_PKG_<NAME>_ROOT` > `ABX_PKG_LIB_DIR/<name>` > built-in default.
+For the full list of env vars that hydrate these defaults, see [Configuration](#configuration) above.
 
 Supported override keys are the same everywhere:
 
@@ -745,8 +994,7 @@ ansible_playbook_template = ANSIBLE_INSTALL_PLAYBOOK_TEMPLATE
 
 ### [`Binary`](https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/binary.py#:~:text=class%20Binary)
 
-This type represents a single binary dependency aka a package (e.g. `wget`, `curl`, `ffmpeg`, etc.).  
-It can define one or more `BinProvider`s that it supports, along with overrides to customize the behavior for each.
+Represents a single binary dependency aka a package (e.g. `wget`, `curl`, `ffmpeg`). Each `Binary` can declare one or more `BinProvider`s it supports, along with per-provider overrides.
 
 `Binary`s implement the following interface:
 - `load()`, `install()`, `update()`, `uninstall()`, `load_or_install()` `->` `Binary`
@@ -757,97 +1005,27 @@ It can define one or more `BinProvider`s that it supports, along with overrides 
 - `version` / `loaded_version`
 - `sha256` / `loaded_sha256`
 
-`Binary.install()` and `Binary.update()` return a fresh loaded `Binary`.
-`Binary.uninstall()` returns a `Binary` with `binprovider`, `abspath`, `version`, and `sha256` cleared after removal.
-`Binary.load()`, `Binary.install()`, `Binary.load_or_install()`, and `Binary.update()` all enforce `min_version` consistently.
+`Binary.install()` and `Binary.update()` return a fresh loaded `Binary`. `Binary.uninstall()` returns a `Binary` with `binprovider`, `abspath`, `version`, and `sha256` cleared after removal. `Binary.load()`, `Binary.install()`, `Binary.load_or_install()`, and `Binary.update()` all enforce `min_version` consistently.
 
 ```python
-from pydantic import InstanceOf
-from abx_pkg import BinProvider, Binary, BinProviderName, BinName, HandlerDict, SemVer, BrewProvider
-from abx_pkg import env, pip, apt
+from abx_pkg import Binary, SemVer, env, brew
 
-class CustomBrewProvider(BrewProvider):
-    name: BinProviderName = 'custom_brew'
+curl = Binary(
+    name="curl",
+    min_version=SemVer("8.0.0"),
+    binproviders=[env, brew],
+).load_or_install()
 
-    def get_macos_packages(self, bin_name: str, **context) -> list[str]:
-        return ['yt-dlp'] if bin_name == 'ytdlp' else [bin_name]
+print(curl.binprovider)   # EnvProvider(...) or BrewProvider(...)
+print(curl.abspath)       # Path('/usr/local/bin/curl')
+print(curl.version)       # SemVer(8, 4, 0)
+print(curl.is_valid)      # True
 
-# Example: Create a reusable class defining a binary and its providers
-class YtdlpBinary(Binary):
-    name: BinName = 'ytdlp'
-    description: str = 'YT-DLP (Replacement for YouTube-DL) Media Downloader'
-
-    # define the providers this binary supports
-    binproviders: list[InstanceOf[BinProvider]] = [env, pip, apt, CustomBrewProvider()]
-    
-    # customize installed package names for specific package managers
-    overrides: dict[BinProviderName, HandlerDict] = {
-        'pip': {'install_args': ['yt-dlp[default,curl-cffi]']}, # can use literal values (install_args -> list[str], version -> SemVer, abspath -> Path, install -> str log)
-        'apt': {'install_args': lambda: ['yt-dlp', 'ffmpeg']},  # also accepts any pure Callable that returns a list of packages
-        'custom_brew': {'install_args': 'self.get_macos_packages'},    # also accepts string reference to function on self (where self is the BinProvider)
-    }
-
-
-ytdlp = YtdlpBinary().load_or_install()
-print(ytdlp.binprovider)                  # EnvProvider(...) / PipProvider(...) / AptProvider(...) / CustomBrewProvider(...)
-print(ytdlp.abspath)                      # Path(...)
-print(ytdlp.abspaths)                     # {'env': [Path(...)], 'custom_brew': [Path(...)]}
-print(ytdlp.version)                      # SemVer(...)
-print(ytdlp.sha256)                       # '<sha256>'
-print(ytdlp.is_valid)                     # True
-
-# Lifecycle actions preserve the Binary type and refresh/clear loaded metadata as needed
-ytdlp = ytdlp.update()
-assert ytdlp.is_valid
-ytdlp = ytdlp.uninstall()
-assert ytdlp.abspath is None and ytdlp.version is None
+curl = curl.update()
+curl = curl.uninstall()
 ```
 
-```python
-import os
-import platform
-from pydantic import InstanceOf
-from abx_pkg import BinProvider, Binary, BinProviderName, BinName, HandlerDict, SemVer
-from abx_pkg import env, apt
-
-# Example: Create a binary that uses Podman if available, or Docker otherwise
-class DockerBinary(Binary):
-    name: BinName = 'docker'
-
-    # define the providers this binary supports
-    binproviders: list[InstanceOf[BinProvider]] = [env, apt]
-    
-    overrides: dict[BinProviderName, HandlerDict] = {
-        'env': {
-            # example: prefer podman if installed (falling back to docker)
-            'abspath': lambda: os.which('podman') or os.which('docker') or os.which('docker-ce'),
-        },
-        'apt': {
-            # example: vary installed package name based on your CPU architecture
-            'install_args': {
-                'amd64': ['docker'],
-                'armv7l': ['docker-ce'],
-                'arm64': ['docker-ce'],
-            }.get(platform.machine(), 'docker'),
-        },
-    }
-
-docker = DockerBinary().load_or_install()
-print(docker.binprovider)                 # EnvProvider(...) / AptProvider(...)
-print(docker.abspath)                     # Path(...)
-print(docker.abspaths)                    # {'env': [Path(...)], ...}
-print(docker.version)                     # SemVer(...)
-print(docker.is_valid)                    # True
-
-# You can also seed loaded field values at construction time,
-# e.g. if you want to point at a specific existing binary path:
-custom_docker = DockerBinary(abspath='~/custom/bin/podman').load()
-print(custom_docker.name)                 # 'docker'
-print(custom_docker.binprovider)          # EnvProvider(...) / AptProvider(...)
-print(custom_docker.abspath)              # Path(...)
-print(custom_docker.version)              # SemVer(...)
-print(custom_docker.is_valid)             # True
-```
+For reusable `Binary` subclasses with per-provider overrides, see [Advanced Usage](#advanced-usage) above.
 
 ### [`SemVer`](https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/semver.py#:~:text=class%20SemVer)
 
@@ -899,160 +1077,6 @@ uv build
 <br/>
 
 
-<details>
-<summary><strong>Django Usage</strong></summary>
-
-With a few more packages, you get type-checked Django fields & forms that support `BinProvider` and `Binary`.
-
-> [!TIP]
-> For the full Django experience, we recommend installing these 3 excellent packages:
-> - [`django-admin-data-views`](https://github.com/MrThearMan/django-admin-data-views)
-> - [`django-pydantic-field`](https://github.com/surenkov/django-pydantic-field)
-> - [`django-jsonform`](https://django-jsonform.readthedocs.io/)
-> `pip install abx-pkg django-admin-data-views django-pydantic-field django-jsonform`
-
-### Django Model Usage: Store `BinProvider` and `Binary` entries in your model fields
-
-```bash
-pip install django-pydantic-field
-```
-
-*For more info see the [`django-pydantic-field`](https://github.com/surenkov/django-pydantic-field) docs...*
-
-Example Django `models.py` showing how to store `Binary` and `BinProvider` instances in DB fields:
-```python
-from django.db import models
-from abx_pkg import BinProvider, Binary, SemVer
-from django_pydantic_field import SchemaField
-
-class Dependency(models.Model):
-    label = models.CharField(max_length=63)
-    default_binprovider: BinProvider = SchemaField()
-    binaries: list[Binary] = SchemaField(default=[])
-    min_version: SemVer = SchemaField(default=(0, 0, 1))
-```
-
-And here's how to save a `Binary` using the example model:
-```python
-from abx_pkg import Binary, SemVer, env
-
-# find existing curl Binary in $PATH
-curl = Binary(name='curl').load()
-
-# save it to the DB using our new model
-obj = Dependency(
-    label='runtime tools',
-    default_binprovider=env,                      # store BinProvider values directly
-    binaries=[curl],                              # store Binary/SemVer values directly
-    min_version=SemVer('6.5.0'),
-)
-obj.save()
-```
-
-When fetching it back from the DB, the `Binary` field is auto-deserialized / immediately usable:
-```
-obj = Dependency.objects.get(label='runtime tools')    # everything is transparently serialized to/from the DB,
-                                                        # and is ready to go immediately after querying:
-assert obj.binaries[0].abspath == curl.abspath
-print(obj.binaries[0].abspath)                         #   Path('/usr/local/bin/curl')
-obj.binaries[0].exec(cmd=['--version'])               #   curl 7.81.0 (x86_64-apple-darwin23.0) libcurl/7.81.0 ...
-```
-*For a full example see our provided [`django_example_project/`](https://github.com/ArchiveBox/abx-pkg/tree/main/django_example_project)...*
-
-### Django Admin Usage: Display `Binary` objects nicely in the Admin UI
-
-<img height="220" alt="Django Admin binaries list view" src="https://github.com/ArchiveBox/abx-pkg/assets/511499/a9980217-f39e-434e-b266-20cd6feb17c3" align="top"><img height="220" alt="Django Admin binaries detail view" src="https://github.com/ArchiveBox/abx-pkg/assets/511499/d4d9086e-c8f4-4b6e-8ee8-8c8a864715b0" align="top">
-
-```bash
-pip install abx-pkg django-admin-data-views
-```
-*For more info see the [`django-admin-data-views`](https://github.com/MrThearMan/django-admin-data-views) docs...*
-
-Then add this to your `settings.py`:
-```python
-INSTALLED_APPS = [
-    # ...
-    'admin_data_views',
-    'abx_pkg',
-    # ...
-]
-
-# point these to a function that gets the list of all binaries / a single binary
-ABX_PKG_GET_ALL_BINARIES = 'project.views.get_all_binaries'
-ABX_PKG_GET_BINARY = 'project.views.get_binary'
-
-ADMIN_DATA_VIEWS = {
-    "NAME": "Environment",
-    "URLS": [
-        {
-            "route": "binaries/",
-            "view": "abx_pkg.views.binaries_list_view",
-            "name": "binaries",
-            "items": {
-                "route": "<str:key>/",
-                "view": "abx_pkg.views.binary_detail_view",
-                "name": "binary",
-            },
-        },
-        # Coming soon: binprovider_list_view + binprovider_detail_view ...
-    ],
-}
-```
-*For a full example see our provided [`django_example_project/`](https://github.com/ArchiveBox/abx-pkg/tree/main/django_example_project)...*
-
-If you override the default site admin, you must register the views manually:
-
-```python
-class YourSiteAdmin(admin.AdminSite):
-    """Your customized version of admin.AdminSite"""
-    ...
-
-custom_admin = YourSiteAdmin()
-custom_admin.register(get_user_model())
-...
-from abx_pkg.admin import register_admin_views
-register_admin_views(custom_admin)
-```
-
-### ~~Django Admin Usage: JSONFormWidget for editing `BinProvider` and `Binary` data~~
-
-<img src="https://github.com/ArchiveBox/abx-pkg/assets/511499/63705a57-4f62-4dbe-9f3a-0515323d8b5e" width="600px"/>
-
-> [!IMPORTANT]
-> This feature is coming soon but is blocked on a few issues being fixed first:
-> - https://github.com/surenkov/django-pydantic-field/issues/64
-> - https://github.com/surenkov/django-pydantic-field/issues/65
-> - https://github.com/surenkov/django-pydantic-field/issues/66
-
-~~Install `django-jsonform` to get auto-generated Forms for editing BinProvider, Binary, etc. data~~
-```bash
-pip install django-pydantic-field django-jsonform
-```
-*For more info see the [`django-jsonform`](https://django-jsonform.readthedocs.io/) docs...*
-
-`admin.py`:
-```python
-from django.contrib import admin
-from django_jsonform.widgets import JSONFormWidget
-from django_pydantic_field.v2.fields import PydanticSchemaField
-
-class MyModelAdmin(admin.ModelAdmin):
-    formfield_overrides = {PydanticSchemaField: {"widget": JSONFormWidget}}
-
-admin.site.register(MyModel, MyModelAdmin)
-```
-
-*For a full example see our provided [`django_example_project/`](https://github.com/ArchiveBox/abx-pkg/tree/main/django_example_project)...*
-
-</details>
-
-<br/>
-
----
-
-<br/>
-
-
 ## Logging
 
 `abx-pkg` uses the standard Python `logging` module. By default it stays quiet unless your application configures logging explicitly.
@@ -1094,75 +1118,9 @@ logging.basicConfig(level=logging.INFO)
 logging.getLogger("abx_pkg").setLevel(logging.DEBUG)
 ```
 
-## Examples
-
-### Advanced: Implement your own package manager behavior by subclassing BinProvider
-
-```python
-from pathlib import Path
-from abx_pkg import (
-    BinProvider,
-    BinProviderName,
-    BinName,
-    HostBinPath,
-    InstallArgs,
-    SemVer,
-    bin_abspath,
-    bin_version,
-)
-
-class CargoProvider(BinProvider):
-    name: BinProviderName = 'cargo'
-    INSTALLER_BIN: BinName = 'cargo'
-    PATH = str(Path.home() / '.cargo/bin')
-
-    def default_install_args_handler(self, bin_name: BinName, **context) -> InstallArgs:
-        return [bin_name]
-
-    def default_install_handler(
-        self,
-        bin_name: BinName,
-        install_args: InstallArgs | None = None,
-        postinstall_scripts: bool | None = None,
-        min_release_age: float | None = None,
-        min_version: SemVer | None = None,
-        timeout: int | None = None,
-    ) -> str:
-        install_args = install_args or self.get_install_args(bin_name)
-        installer = self.INSTALLER_BIN_ABSPATH
-        assert installer
-        proc = self.exec(installer, cmd=['install', *install_args], timeout=timeout)
-        assert proc.returncode == 0
-        return proc.stdout.strip() or proc.stderr.strip()
-
-    def default_abspath_handler(self, bin_name: BinName, **context) -> HostBinPath | None:
-        return bin_abspath(bin_name, PATH=self.PATH)
-
-    def default_version_handler(
-        self,
-        bin_name: BinName,
-        abspath: HostBinPath | None = None,
-        timeout: int | None = None,
-        **context,
-    ) -> SemVer | None:
-        return self._version_from_exec(bin_name, abspath=abspath, timeout=timeout)
-
-cargo = CargoProvider()
-rg = cargo.install(bin_name='ripgrep')
-print(rg.binprovider)                   # CargoProvider(...)
-print(rg.version)                       # SemVer(...)
-```
-
-
-<br/>
-
----
-
-<br/>
-
 *Note:* this package used to be called `pydantic-pkgr`, it was renamed to `abx-pkg` on 2024-11-12.
 
-### TODO
+## TODO
 
 - [x] Implement initial basic support for `apt`, `brew`, and `pip`
 - [x] Provide editability and actions via Django Admin UI using [`django-pydantic-field`](https://github.com/surenkov/django-pydantic-field) and [`django-jsonform`](https://django-jsonform.readthedocs.io/en/latest/)
@@ -1170,7 +1128,7 @@ print(rg.version)                       # SemVer(...)
 - [ ] Implement more package managers (`apk`, `ppm`, `pkg`, etc.)
 
 
-### Other Packages We Like
+## Other Packages We Like
 
 - https://github.com/MrThearMan/django-signal-webhooks
 - https://github.com/MrThearMan/django-admin-data-views
