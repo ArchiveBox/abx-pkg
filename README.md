@@ -97,42 +97,6 @@ print(curl.abspath, curl.version, curl.binprovider, curl.is_valid)  # Path(...) 
 curl.exec(cmd=['--version'])                                        # curl 8.4.0 (x86_64-apple-darwin23.0) libcurl/8.4.0 ...
 ```
 
-### Supported Providers
-
-**So far it supports `installing`/`finding installed`/`updating`/`removing` packages or binaries on `Linux`/`macOS` with:**
-
-- `apt` (Ubuntu/Debian/etc.)
-- `brew` (macOS/Linux)
-- `pip` (Linux/macOS)
-- `uv` (Linux/macOS)
-- `npm` (Linux/macOS)
-- `pnpm` (Linux/macOS)
-- `yarn` (Linux/macOS, Yarn 4+ / Berry recommended)
-- `bun` (Linux/macOS)
-- `deno` (Linux/macOS)
-- `cargo` (Linux/macOS)
-- `gem` (Linux/macOS)
-- `goget` (Linux/macOS, via [`GoGetProvider`](./abx_pkg/binprovider_goget.py))
-- `nix` (Linux/macOS)
-- `docker` (Linux/macOS, using local wrapper scripts that run `docker run`)
-- `env` (looks for existing version of binary in user's `$PATH` at runtime)
-- `bash` (Linux/macOS, runs explicit shell-command overrides in a managed install root)
-- `chromewebstore` (Linux/macOS, downloads and unpacks Chrome Web Store extensions)
-- `puppeteer` (Linux/macOS, installs browser artifacts via `@puppeteer/browsers`)
-- `pyinfra` (Linux/macOS, delegates to host package managers through `pyinfra`)
-- `ansible` (Linux/macOS, delegates to host package managers through `ansible-runner`)
-
-*Planned:* `apk`, `pkg`, and additional future provider backends.
-
-`DockerProvider` expects image refs as install args, typically via overrides on a `Binary`. It writes a local wrapper script for the binary and executes it via `docker run ...`; the binary version is parsed from the image tag, so semver-like tags work best.
-
-`NpmProvider` shells out to `npm` directly and expects it to be installed on the host.
-
-`PnpmProvider`, `YarnProvider`, `BunProvider`, and `DenoProvider` are dedicated wrappers around their respective package managers — pick one explicitly when you want the security defaults of a specific tool. All four hydrate `min_release_age` from the latest supply-chain hardening flags shipped by their upstream CLIs.
-
----
-
-
 ## Usage
 
 ```bash
@@ -316,6 +280,8 @@ Providers with isolated install locations also expose a shared constructor surfa
 - Providers that do not have an isolated install location reject `install_root` / `bin_dir` at construction time instead of silently ignoring them.
 - When an explicit install root or bin dir is configured, that provider-specific bin location wins during binary discovery and subprocess execution instead of being left behind ambient host `PATH` entries.
 
+**Supported Providers:**
+
 <details>
 <summary><h4>🌍 <code>EnvProvider</code> (<code>env</code>)</h4></summary>
 
@@ -388,11 +354,12 @@ pip_install_args = ["--no-input", "--disable-pip-version-check", "--quiet"]
 pip_bootstrap_packages = ["pip", "setuptools"]
 ```
 
-- Install root: `pip_venv=None` uses the system/user Python environment. Set `pip_venv=Path(...)` or `install_root=Path(...)` for a hermetic venv rooted at `<pip_venv>/bin`, and that venv bin dir becomes the provider's active executable search path.
+- Install root: `pip_venv=None` uses the system/user Python environment. Set `pip_venv=Path(...)` or `install_root=Path(...)` for a hermetic venv rooted at `<pip_venv>/bin`, and that venv bin dir becomes the provider's active executable search path. When `pip_venv` is set, `setup()` creates the venv on first use via Python's built-in `venv` module and bootstraps the latest `pip_bootstrap_packages` into it.
+- Auto-switching: none. Shells out to `pip` directly. Honors `PIP_BINARY=/abs/path/to/pip`. Use `UvProvider` for uv-backed installs.
 - `dry_run`: shared behavior.
-- Security: supports `postinstall_scripts=False` and (on pip >= 26.0) `min_release_age`, hydrated from `ABX_PKG_POSTINSTALL_SCRIPTS` and `ABX_PKG_MIN_RELEASE_AGE`. For stricter enforcement on older hosts, use `UvProvider` instead.
+- Security: supports `postinstall_scripts=False` (always) and `min_release_age` (on pip >= 26.0 or in a freshly bootstrapped `pip_venv`). Hydrated from `ABX_PKG_POSTINSTALL_SCRIPTS` and `ABX_PKG_MIN_RELEASE_AGE`. For stricter enforcement on hosts with older system pip, use `UvProvider` instead.
 - Overrides: `install_args` is passed as pip requirement specs; unpinned specs get a `>=min_version` floor when `min_version` is supplied.
-- Notes: `postinstall_scripts=False` adds `pip --only-binary :all:` (wheels only). `min_release_age` is enforced with `pip --uploaded-prior-to=<cutoff>` on pip >= 26.0 (see pypa/pip#13625). Explicit conflicting flags already present in `install_args` win over the derived defaults.
+- Notes: `postinstall_scripts=False` adds `pip --only-binary :all:` (wheels only, no arbitrary sdist build scripts). `min_release_age` is enforced with `pip --uploaded-prior-to=<ISO8601>` on pip >= 26.0 (see pypa/pip#13625); older pip silently skips the flag. Explicit conflicting flags already present in `install_args` win over the derived defaults. `get_version` / `get_abspath` fall back to parsing `pip show <package>` output when the console script can't report its own version.
 
 </details>
 
@@ -414,7 +381,7 @@ uv_install_args = []
 - Install root: **two modes, picked by whether `uv_venv` is set.**
   - *Hermetic venv mode (`uv_venv=Path(...)` or `install_root=Path(...)`)*: creates a real venv at the requested path via `uv venv` and installs packages into it with `uv pip install --python <venv>/bin/python ...`. Binaries land in `<uv_venv>/bin/<name>`. This is the idiomatic "install a Python library + its CLI entrypoints into an isolated environment" path and matches `PipProvider`'s `pip_venv` semantics.
   - *Global tool mode (`uv_venv=None`)*: delegates to `uv tool install` which creates a fresh venv per tool under `UV_TOOL_DIR` (default `~/.local/share/uv/tools`) and writes shims into `UV_TOOL_BIN_DIR` (default `~/.local/bin`). Pass `uv_tool_dir=Path(...)` / `uv_tool_bin_dir=Path(...)` to override those dirs hermetically. This is the idiomatic "install a CLI tool globally" path.
-- Auto-switching: none. Honors `UV_BINARY=/abs/path/to/uv`. Unlike `PipProvider`, `UvProvider` never falls back to plain `pip` — if `uv` isn't on the host, the provider is unavailable.
+- Auto-switching: none. Honors `UV_BINARY=/abs/path/to/uv`. If `uv` isn't on the host, the provider is unavailable.
 - `dry_run`: shared behavior.
 - Security: supports both `min_release_age` and `postinstall_scripts=False`, and hydrates their provider defaults from `ABX_PKG_MIN_RELEASE_AGE` and `ABX_PKG_POSTINSTALL_SCRIPTS`. In both modes, `postinstall_scripts=False` becomes `--no-build` (wheels-only, no arbitrary sdist build scripts) and `min_release_age` becomes `--exclude-newer=<ISO8601>` (uv 0.4+). Explicit conflicting flags already present in `install_args` win over the derived defaults.
 - Overrides: `install_args` is passed as requirement specs; unpinned specs get a `>=min_version` floor when `min_version` is supplied.
@@ -435,12 +402,12 @@ cache_dir = user_cache_path("npm", "abx-pkg") or <system temp>/npm-cache
 npm_install_args = ["--force", "--no-audit", "--no-fund", "--loglevel=error"]
 ```
 
-- Install root: `npm_prefix=None` installs globally. Set `npm_prefix=Path(...)` or `install_root=Path(...)` to install under `<prefix>/node_modules/.bin`; that prefix bin dir becomes the provider's active executable search path.
-- Honors `NPM_BINARY=/abs/path/to/npm` to pin a specific `npm` executable. For pnpm, use `PnpmProvider` directly.
+- Install root: `npm_prefix=None` installs globally (walks up from the host's `npm prefix` / `npm prefix -g` to seed `PATH`). Set `npm_prefix=Path(...)` or `install_root=Path(...)` to install under `<prefix>/node_modules/.bin`; that prefix bin dir becomes the provider's active executable search path.
+- Auto-switching: none. Shells out to `npm` directly and expects `npm` to be installed on the host. Honors `NPM_BINARY=/abs/path/to/npm`. Use `PnpmProvider` for pnpm.
 - `dry_run`: shared behavior.
-- Security: supports both `min_release_age` and `postinstall_scripts=False`, and hydrates their provider defaults from `ABX_PKG_MIN_RELEASE_AGE` and `ABX_PKG_POSTINSTALL_SCRIPTS`.
+- Security: supports both `postinstall_scripts=False` and `min_release_age`, hydrated from `ABX_PKG_POSTINSTALL_SCRIPTS` and `ABX_PKG_MIN_RELEASE_AGE`. `min_release_age` requires an npm build that ships `--min-release-age` (detected once by probing `npm install --help`).
 - Overrides: `install_args` is passed as npm package specs; unpinned specs get rewritten to `pkg@>=<min_version>` when `min_version` is supplied.
-- Notes: `ABX_PKG_POSTINSTALL_SCRIPTS` and `ABX_PKG_MIN_RELEASE_AGE` apply here by default. `postinstall_scripts=False` adds `--ignore-scripts`; `min_release_age` adds `--min-release-age=<days>` when the host npm supports it (detected by probing `npm install --help`). Explicit conflicting flags already present in `install_args` win over the derived defaults.
+- Notes: `postinstall_scripts=False` adds `--ignore-scripts`; `min_release_age` adds `--min-release-age=<days>`. Explicit conflicting flags already present in `install_args` win over the derived defaults. `get_version` / `get_abspath` fall back to parsing `npm show --json <package>` and `npm list --json --depth=0` output when the console script can't report its own version.
 
 </details>
 
@@ -663,7 +630,7 @@ docker_run_args = ["--rm", "-i"]
 - `dry_run`: shared behavior.
 - Security: `min_release_age` and `postinstall_scripts=False` are unsupported and are ignored with a warning if explicitly requested.
 - Overrides: `install_args` is a list of Docker image refs. The first item is treated as the main image and becomes the generated shim target.
-- Notes: default install args are `["<bin_name>:latest"]`. `install()` / `update()` run `docker pull`, write metadata JSON, and create an executable wrapper that runs `docker run ...`.
+- Notes: default install args are `["<bin_name>:latest"]`. `install()` / `update()` run `docker pull`, write metadata JSON, and create an executable wrapper that runs `docker run ...`. Expects image refs as install args, typically via overrides on a `Binary`. It writes a local wrapper script for the binary and executes it via `docker run ...`; the binary version is parsed from the image tag, so semver-like tags work best.
 
 </details>
 
