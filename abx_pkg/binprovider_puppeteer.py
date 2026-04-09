@@ -13,7 +13,14 @@ from collections.abc import Iterable
 
 from pydantic import Field, computed_field, model_validator
 
-from .base_types import BinName, BinProviderName, HostBinPath, InstallArgs, PATHStr
+from .base_types import (
+    ABX_PKG_LIB_DIR,
+    BinName,
+    BinProviderName,
+    HostBinPath,
+    InstallArgs,
+    PATHStr,
+)
 from .binary import Binary
 from .binprovider import BinProvider, EnvProvider, env_flag_is_true, remap_kwargs
 from .binprovider_npm import NpmProvider
@@ -45,7 +52,9 @@ class PuppeteerProvider(BinProvider):
     )
     min_release_age: float | None = Field(default=None, repr=False)
 
-    puppeteer_root: Path | None = None
+    puppeteer_root: Path | None = (
+        (ABX_PKG_LIB_DIR / "puppeteer") if ABX_PKG_LIB_DIR else None
+    )
     browser_bin_dir: Path | None = None
     browser_cache_dir: Path | None = None
 

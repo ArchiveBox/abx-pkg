@@ -10,7 +10,7 @@ from typing import Any, ClassVar, Self
 
 from pydantic import Field, computed_field, model_validator
 
-from .base_types import BinName, BinProviderName, PATHStr
+from .base_types import ABX_PKG_LIB_DIR, BinName, BinProviderName, PATHStr
 from .binprovider import (
     BinProvider,
     BinProviderOverrides,
@@ -41,7 +41,9 @@ class ChromeWebstoreProvider(BinProvider):
     )
     min_release_age: float | None = Field(default=None, repr=False)
 
-    extensions_root: Path | None = None
+    extensions_root: Path | None = (
+        (ABX_PKG_LIB_DIR / "chromewebstore") if ABX_PKG_LIB_DIR else None
+    )
     extensions_dir: Path | None = None
     overrides: BinProviderOverrides = {
         "*": {

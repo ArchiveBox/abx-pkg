@@ -9,7 +9,14 @@ from typing import Any, ClassVar, Self
 
 from pydantic import Field, TypeAdapter, computed_field, model_validator
 
-from .base_types import BinName, BinProviderName, HostBinPath, InstallArgs, PATHStr
+from .base_types import (
+    ABX_PKG_LIB_DIR,
+    BinName,
+    BinProviderName,
+    HostBinPath,
+    InstallArgs,
+    PATHStr,
+)
 from .binprovider import (
     BinProviderOverrides,
     EnvProvider,
@@ -34,7 +41,7 @@ class BashProvider(EnvProvider):
     postinstall_scripts: bool | None = Field(default=None, repr=False)
     min_release_age: float | None = Field(default=None, repr=False)
 
-    bash_root: Path | None = None
+    bash_root: Path | None = (ABX_PKG_LIB_DIR / "bash") if ABX_PKG_LIB_DIR else None
     bash_bin_dir: Path | None = None
 
     overrides: BinProviderOverrides = {

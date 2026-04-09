@@ -11,7 +11,14 @@ from typing import ClassVar, Self
 
 from pydantic import Field, computed_field, model_validator
 
-from .base_types import BinName, BinProviderName, HostBinPath, InstallArgs, PATHStr
+from .base_types import (
+    ABX_PKG_LIB_DIR,
+    BinName,
+    BinProviderName,
+    HostBinPath,
+    InstallArgs,
+    PATHStr,
+)
 from .binary import Binary
 from .binprovider import BinProvider, remap_kwargs
 from .binprovider_npm import NpmProvider
@@ -56,7 +63,9 @@ class PlaywrightProvider(BinProvider):
     # ``playwright_root`` is both the abx-pkg install root and the
     # ``PLAYWRIGHT_BROWSERS_PATH`` we export to the CLI. Leave unset to
     # let playwright use its own OS-default browsers path.
-    playwright_root: Path | None = None
+    playwright_root: Path | None = (
+        (ABX_PKG_LIB_DIR / "playwright") if ABX_PKG_LIB_DIR else None
+    )
     browser_bin_dir: Path | None = None  # symlink dir for resolved browsers
 
     # Flags prepended to every ``playwright install`` call. Default
@@ -138,7 +147,12 @@ class PlaywrightProvider(BinProvider):
         env = (kwargs.pop("env", None) or os.environ.copy()).copy()
         if self.playwright_root is not None:
             env["PLAYWRIGHT_BROWSERS_PATH"] = str(self.playwright_root)
-        cwd_candidates = [cwd, self.install_root, self.npm_prefix.parent, Path.cwd()]
+        cwd_candidates: list[Path | str | None] = [
+            cwd,
+            self.install_root,
+            self.npm_prefix.parent if self.npm_prefix is not None else None,
+            Path.cwd(),
+        ]
         resolved_cwd = next(
             (str(candidate) for candidate in cwd_candidates if candidate is not None),
             ".",
@@ -231,6 +245,9 @@ class PlaywrightProvider(BinProvider):
         return path if path.exists() else None
 
     def _refresh_symlink(self, bin_name: str, target: Path) -> Path:
+        assert self.bin_dir is not None, (
+            "_refresh_symlink must only be called when bin_dir is set"
+        )
         link = self.bin_dir / bin_name
         link.parent.mkdir(parents=True, exist_ok=True)
         if link.exists() or link.is_symlink():
@@ -329,7 +346,7 @@ class PlaywrightProvider(BinProvider):
                     npm_prefix=self.npm_prefix,
                     postinstall_scripts=True,
                     min_release_age=0,
-                ).update("playwright", packages=["playwright"])
+                ).update("playwright")
             except Exception:
                 logger.debug(
                     "PlaywrightProvider: npm update for ``playwright`` failed, "

@@ -10,7 +10,14 @@ from typing import Any, ClassVar
 from pydantic import model_validator, TypeAdapter, computed_field
 from typing import Self
 
-from .base_types import BinProviderName, PATHStr, BinName, InstallArgs, HostBinPath
+from .base_types import (
+    ABX_PKG_LIB_DIR,
+    BinProviderName,
+    PATHStr,
+    BinName,
+    InstallArgs,
+    HostBinPath,
+)
 from .semver import SemVer
 from .binprovider import BinProvider, remap_kwargs
 from .logging import format_subprocess_output
@@ -29,7 +36,7 @@ class DockerProvider(BinProvider):
 
     PATH: PATHStr = ""
 
-    docker_root: Path | None = None
+    docker_root: Path | None = (ABX_PKG_LIB_DIR / "docker") if ABX_PKG_LIB_DIR else None
     docker_shim_dir: Path | None = None
     docker_run_args: list[str] = ["--rm", "-i"]
 

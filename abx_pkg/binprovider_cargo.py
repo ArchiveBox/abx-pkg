@@ -8,7 +8,7 @@ from pathlib import Path
 from pydantic import model_validator, computed_field
 from typing import ClassVar, Self
 
-from .base_types import BinProviderName, PATHStr, BinName, InstallArgs
+from .base_types import ABX_PKG_LIB_DIR, BinProviderName, PATHStr, BinName, InstallArgs
 from .semver import SemVer
 from .binprovider import BinProvider, remap_kwargs
 from .logging import format_subprocess_output
@@ -24,7 +24,7 @@ class CargoProvider(BinProvider):
 
     PATH: PATHStr = ""
 
-    cargo_root: Path | None = None
+    cargo_root: Path | None = (ABX_PKG_LIB_DIR / "cargo") if ABX_PKG_LIB_DIR else None
     cargo_home: Path = DEFAULT_CARGO_HOME
     cargo_install_args: list[str] = ["--locked"]
 

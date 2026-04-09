@@ -15,6 +15,7 @@ from pydantic import Field, model_validator, TypeAdapter, computed_field
 from platformdirs import user_cache_path
 
 from .base_types import (
+    ABX_PKG_LIB_DIR,
     BinProviderName,
     PATHStr,
     BinName,
@@ -65,7 +66,9 @@ class NpmProvider(BinProvider):
         repr=False,
     )
 
-    npm_prefix: Path | None = None  # None = -g global, otherwise it's a path
+    npm_prefix: Path | None = (
+        (ABX_PKG_LIB_DIR / "npm") if ABX_PKG_LIB_DIR else None
+    )  # None = -g global, otherwise it's a path
 
     cache_dir: Path = USER_CACHE_PATH
     cache_arg: str = f"--cache={cache_dir}"

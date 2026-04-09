@@ -17,6 +17,7 @@ from typing import ClassVar, Self
 from pydantic import Field, model_validator, TypeAdapter, computed_field
 
 from .base_types import (
+    ABX_PKG_LIB_DIR,
     BinProviderName,
     PATHStr,
     BinName,
@@ -67,8 +68,8 @@ class PipProvider(BinProvider):
     )
 
     pip_venv: Path | None = (
-        None  # None = system site-packages (user or global), otherwise it's a path e.g. DATA_DIR/lib/pip/venv
-    )
+        (ABX_PKG_LIB_DIR / "pip") if ABX_PKG_LIB_DIR else None
+    )  # None = system site-packages (user or global), otherwise it's a path e.g. DATA_DIR/lib/pip/venv
 
     cache_dir: Path = USER_CACHE_PATH
     cache_arg: str = f"--cache-dir={cache_dir}"

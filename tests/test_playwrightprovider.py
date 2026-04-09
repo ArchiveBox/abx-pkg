@@ -25,6 +25,7 @@ class TestPlaywrightProvider:
             assert installed.name == "chromium"
             assert installed.loaded_abspath is not None
             assert installed.loaded_abspath.exists()
+            assert provider.bin_dir is not None
             assert installed.loaded_abspath.parent == provider.bin_dir
             assert installed.loaded_abspath == provider.bin_dir / "chromium"
             # The symlink resolves into playwright_root (which is also

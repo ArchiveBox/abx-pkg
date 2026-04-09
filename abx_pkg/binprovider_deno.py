@@ -12,6 +12,7 @@ from platformdirs import user_cache_path
 from pydantic import Field, TypeAdapter, computed_field, model_validator
 
 from .base_types import (
+    ABX_PKG_LIB_DIR,
     BinName,
     BinProviderName,
     HostBinPath,
@@ -61,7 +62,9 @@ class DenoProvider(BinProvider):
         repr=False,
     )
 
-    deno_root: Path | None = None  # mirrors $DENO_INSTALL_ROOT, defaults to ~/.deno
+    deno_root: Path | None = (
+        (ABX_PKG_LIB_DIR / "deno") if ABX_PKG_LIB_DIR else None
+    )  # mirrors $DENO_INSTALL_ROOT, defaults to ~/.deno
     deno_dir: Path | None = None  # mirrors $DENO_DIR for cache isolation
 
     cache_dir: Path = USER_CACHE_PATH

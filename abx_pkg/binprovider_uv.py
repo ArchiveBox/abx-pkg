@@ -12,6 +12,7 @@ from platformdirs import user_cache_path
 from pydantic import Field, TypeAdapter, computed_field, model_validator
 
 from .base_types import (
+    ABX_PKG_LIB_DIR,
     BinName,
     BinProviderName,
     HostBinPath,
@@ -69,7 +70,9 @@ class UvProvider(BinProvider):
         repr=False,
     )
 
-    uv_venv: Path | None = None  # None = global ``uv tool`` mode
+    uv_venv: Path | None = (
+        (ABX_PKG_LIB_DIR / "uv") if ABX_PKG_LIB_DIR else None
+    )  # None = global ``uv tool`` mode
     # Global-mode overrides (only used when uv_venv is None). Mirror
     # ``UV_TOOL_DIR`` / ``UV_TOOL_BIN_DIR`` respectively; default to uv's
     # own defaults (``~/.local/share/uv/tools`` / ``~/.local/bin``).

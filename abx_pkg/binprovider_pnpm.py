@@ -13,6 +13,7 @@ from platformdirs import user_cache_path
 from pydantic import Field, TypeAdapter, computed_field, model_validator
 
 from .base_types import (
+    ABX_PKG_LIB_DIR,
     BinName,
     BinProviderName,
     HostBinPath,
@@ -56,7 +57,9 @@ class PnpmProvider(BinProvider):
         repr=False,
     )
 
-    pnpm_prefix: Path | None = None  # None = -g global, otherwise it's a path
+    pnpm_prefix: Path | None = (
+        (ABX_PKG_LIB_DIR / "pnpm") if ABX_PKG_LIB_DIR else None
+    )  # None = -g global, otherwise it's a path
 
     cache_dir: Path = USER_CACHE_PATH
     cache_arg: str = ""  # re-derived per-instance from cache_dir in detect_cache_arg

@@ -11,6 +11,18 @@ from collections.abc import Callable
 from pydantic import TypeAdapter, AfterValidator, BeforeValidator, ValidationError
 
 
+# Read once at import time. When set, every provider with an
+# ``INSTALL_ROOT_FIELD`` defaults its install root to
+# ``ABX_PKG_LIB_DIR / <provider name>`` (e.g. ``<lib>/npm``,
+# ``<lib>/pip``, ``<lib>/gem``). Users can still override per-provider
+# by passing ``install_root=...`` or the provider-specific alias
+# explicitly at construction time.
+_lib_dir_env = os.environ.get("ABX_PKG_LIB_DIR", "").strip()
+ABX_PKG_LIB_DIR: Path | None = (
+    Path(_lib_dir_env).expanduser().resolve() if _lib_dir_env else None
+)
+
+
 def validate_binprovider_name(name: str) -> str:
     assert 1 < len(name) < 16, (
         "BinProvider names must be between 1 and 16 characters long"

@@ -10,6 +10,7 @@ from pydantic import model_validator, TypeAdapter, computed_field
 from typing import ClassVar, Self
 
 from .base_types import (
+    ABX_PKG_LIB_DIR,
     BinProviderName,
     PATHStr,
     BinName,
@@ -35,7 +36,9 @@ class NixProvider(BinProvider):
 
     PATH: PATHStr = ""
 
-    nix_profile: Path = DEFAULT_NIX_PROFILE
+    nix_profile: Path = (
+        (ABX_PKG_LIB_DIR / "nix") if ABX_PKG_LIB_DIR else DEFAULT_NIX_PROFILE
+    )
     nix_state_dir: Path | None = None
     nix_install_args: list[str] = [
         "--extra-experimental-features",

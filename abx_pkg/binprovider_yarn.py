@@ -13,6 +13,7 @@ from platformdirs import user_cache_path
 from pydantic import Field, TypeAdapter, computed_field, model_validator
 
 from .base_types import (
+    ABX_PKG_LIB_DIR,
     BinName,
     BinProviderName,
     HostBinPath,
@@ -71,7 +72,9 @@ class YarnProvider(BinProvider):
         repr=False,
     )
 
-    yarn_prefix: Path | None = None  # workspace dir; defaults to a managed cache dir
+    yarn_prefix: Path | None = (
+        (ABX_PKG_LIB_DIR / "yarn") if ABX_PKG_LIB_DIR else None
+    )  # workspace dir; defaults to a managed cache dir
 
     cache_dir: Path = USER_CACHE_PATH
 

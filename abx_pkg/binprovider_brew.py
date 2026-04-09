@@ -11,6 +11,7 @@ from typing import ClassVar
 from pydantic import Field, model_validator, TypeAdapter, computed_field
 
 from .base_types import (
+    ABX_PKG_LIB_DIR,
     BinProviderName,
     PATHStr,
     BinName,
@@ -47,7 +48,9 @@ class BrewProvider(BinProvider):
         repr=False,
     )
 
-    brew_prefix: Path = GUESSED_BREW_PREFIX
+    brew_prefix: Path = (
+        (ABX_PKG_LIB_DIR / "brew") if ABX_PKG_LIB_DIR else GUESSED_BREW_PREFIX
+    )
 
     @computed_field
     @property
