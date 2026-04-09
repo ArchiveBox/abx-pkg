@@ -1,4 +1,4 @@
-<h1><a href="https://github.com/ArchiveBox/abx-pkg"><code>abx-pkg</code></a> &nbsp; &nbsp; &nbsp; &nbsp; 📦  <small><code>apt</code>&nbsp; <code>brew</code>&nbsp; <code>pip</code>&nbsp; <code>npm</code>&nbsp; <code>cargo</code>&nbsp; <code>gem</code>&nbsp; <code>goget</code>&nbsp; <code>nix</code>&nbsp; <code>docker</code>&nbsp; <code>bash</code>&nbsp; <code>chromewebstore</code>&nbsp; <code>puppeteer</code></small><br/><sub>Simple Python interfaces for package managers + installed binaries.</sub></h1>
+<h1><a href="https://github.com/ArchiveBox/abx-pkg"><code>abx-pkg</code></a> &nbsp; &nbsp; &nbsp; &nbsp; 📦  <small><code>apt</code>&nbsp; <code>brew</code>&nbsp; <code>pip</code>&nbsp; <code>uv</code>&nbsp; <code>npm</code>&nbsp; <code>pnpm</code>&nbsp; <code>yarn</code>&nbsp; <code>bun</code>&nbsp; <code>deno</code>&nbsp; <code>cargo</code>&nbsp; <code>gem</code>&nbsp; <code>goget</code>&nbsp; <code>nix</code>&nbsp; <code>docker</code>&nbsp; <code>bash</code>&nbsp; <code>chromewebstore</code>&nbsp; <code>puppeteer</code></small><br/><sub>Simple Python interfaces for package managers + installed binaries.</sub></h1>
 <br/>
 
 [![PyPI][pypi-badge]][pypi]
@@ -104,7 +104,12 @@ curl.exec(cmd=['--version'])                                        # curl 8.4.0
 - `apt` (Ubuntu/Debian/etc.)
 - `brew` (macOS/Linux)
 - `pip` (Linux/macOS)
+- `uv` (Linux/macOS)
 - `npm` (Linux/macOS)
+- `pnpm` (Linux/macOS)
+- `yarn` (Linux/macOS, Yarn 4+ / Berry recommended)
+- `bun` (Linux/macOS)
+- `deno` (Linux/macOS)
 - `cargo` (Linux/macOS)
 - `gem` (Linux/macOS)
 - `goget` (Linux/macOS, via [`GoGetProvider`](./abx_pkg/binprovider_goget.py))
@@ -122,6 +127,8 @@ curl.exec(cmd=['--version'])                                        # curl 8.4.0
 `DockerProvider` expects image refs as install args, typically via overrides on a `Binary`. It writes a local wrapper script for the binary and executes it via `docker run ...`; the binary version is parsed from the image tag, so semver-like tags work best.
 
 `NpmProvider` prefers a real `npm` executable when both `npm` and `pnpm` are installed. If `npm` is unavailable, it can still drive installs and metadata lookups through `pnpm` using the same provider API.
+
+`PnpmProvider`, `YarnProvider`, `BunProvider`, and `DenoProvider` are dedicated wrappers around their respective package managers — pick one explicitly when you don't want `NpmProvider`'s auto-switching behavior, or when you want the security defaults of a specific tool. All four hydrate `min_release_age` from the latest supply-chain hardening flags shipped by their upstream CLIs.
 
 ---
 
@@ -170,7 +177,7 @@ Use `min_version=None` to explicitly disable version floor checks.
 
 ### [`BinProvider`](https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/binprovider.py#:~:text=class%20BinProvider)
 
-**Built-in implementations:** `EnvProvider`, `AptProvider`, `BrewProvider`, `PipProvider`, `NpmProvider`, `CargoProvider`, `GemProvider`, `GoGetProvider`, `NixProvider`, `DockerProvider`, `PyinfraProvider`, `AnsibleProvider`, `BashProvider`, `ChromeWebstoreProvider`, `PuppeteerProvider`
+**Built-in implementations:** `EnvProvider`, `AptProvider`, `BrewProvider`, `PipProvider`, `UvProvider`, `NpmProvider`, `PnpmProvider`, `YarnProvider`, `BunProvider`, `DenoProvider`, `CargoProvider`, `GemProvider`, `GoGetProvider`, `NixProvider`, `DockerProvider`, `PyinfraProvider`, `AnsibleProvider`, `BashProvider`, `ChromeWebstoreProvider`, `PuppeteerProvider`
 
 This type represents a provider of binaries, e.g. a package manager like `apt` / `pip` / `npm`, or `env` (which only resolves binaries already present in `$PATH`).
 
@@ -301,6 +308,29 @@ pip_bootstrap_packages = ["pip", "setuptools", "uv"]
 - Overrides: `install_args` is passed as pip requirement specs; unpinned specs get a `>=min_version` floor when `min_version` is supplied.
 - Notes: `ABX_PKG_POSTINSTALL_SCRIPTS` and `ABX_PKG_MIN_RELEASE_AGE` apply here by default. `postinstall_scripts=False` uses `uv pip --no-build` or plain `pip --only-binary :all:`. `min_release_age` is enforced with `uv --exclude-newer=<cutoff>` or plain `pip --uploaded-prior-to=<cutoff>` when the host pip is new enough. Explicit conflicting flags already present in `install_args` win over the derived defaults.
 
+#### 🚀 [`UvProvider`](./abx_pkg/binprovider_uv.py) (`uv`)
+
+Source: [`abx_pkg/binprovider_uv.py`](./abx_pkg/binprovider_uv.py) • Tests: [`tests/test_uvprovider.py`](./tests/test_uvprovider.py)
+
+```python
+INSTALLER_BIN = "uv"
+PATH = ""                            # prepends <uv_venv>/bin or uv_tool_bin_dir
+uv_venv = None                       # None = global uv tool mode, Path(...) = hermetic venv
+uv_tool_dir = None                   # mirrors $UV_TOOL_DIR (global mode only)
+uv_tool_bin_dir = None               # mirrors $UV_TOOL_BIN_DIR (global mode only)
+cache_dir = user_cache_path("uv", "abx-pkg") or <system temp>/uv-cache
+uv_install_args = []
+```
+
+- Install root: **two modes, picked by whether `uv_venv` is set.**
+  - *Hermetic venv mode (`uv_venv=Path(...)` or `install_root=Path(...)`)*: creates a real venv at the requested path via `uv venv` and installs packages into it with `uv pip install --python <venv>/bin/python ...`. Binaries land in `<uv_venv>/bin/<name>`. This is the idiomatic "install a Python library + its CLI entrypoints into an isolated environment" path and matches `PipProvider`'s `pip_venv` semantics.
+  - *Global tool mode (`uv_venv=None`)*: delegates to `uv tool install` which creates a fresh venv per tool under `UV_TOOL_DIR` (default `~/.local/share/uv/tools`) and writes shims into `UV_TOOL_BIN_DIR` (default `~/.local/bin`). Pass `uv_tool_dir=Path(...)` / `uv_tool_bin_dir=Path(...)` to override those dirs hermetically. This is the idiomatic "install a CLI tool globally" path.
+- Auto-switching: none. Honors `UV_BINARY=/abs/path/to/uv`. Unlike `PipProvider`, `UvProvider` never falls back to plain `pip` — if `uv` isn't on the host, the provider is unavailable.
+- `dry_run`: shared behavior.
+- Security: supports both `min_release_age` and `postinstall_scripts=False`, and hydrates their provider defaults from `ABX_PKG_MIN_RELEASE_AGE` and `ABX_PKG_POSTINSTALL_SCRIPTS`. In both modes, `postinstall_scripts=False` becomes `--no-build` (wheels-only, no arbitrary sdist build scripts) and `min_release_age` becomes `--exclude-newer=<ISO8601>` (uv 0.4+). Explicit conflicting flags already present in `install_args` win over the derived defaults.
+- Overrides: `install_args` is passed as requirement specs; unpinned specs get a `>=min_version` floor when `min_version` is supplied.
+- Notes: update in venv mode is `uv pip install --upgrade`; update in global mode is `uv tool install --force` (re-installs the tool's venv). Uninstall in venv mode uses `uv pip uninstall --python <venv>/bin/python`; in global mode it uses `uv tool uninstall <name>`.
+
 #### 📦 [`NpmProvider`](./abx_pkg/binprovider_npm.py) (`npm`)
 
 Source: [`abx_pkg/binprovider_npm.py`](./abx_pkg/binprovider_npm.py) • Tests: [`tests/test_npmprovider.py`](./tests/test_npmprovider.py), [`tests/test_security_controls.py`](./tests/test_security_controls.py)
@@ -319,6 +349,84 @@ npm_install_args = ["--force", "--no-audit", "--no-fund", "--loglevel=error"]
 - Security: supports both `min_release_age` and `postinstall_scripts=False`, and hydrates their provider defaults from `ABX_PKG_MIN_RELEASE_AGE` and `ABX_PKG_POSTINSTALL_SCRIPTS`.
 - Overrides: `install_args` is passed as npm package specs; unpinned specs get rewritten to `pkg@>=<min_version>` when `min_version` is supplied.
 - Notes: `ABX_PKG_POSTINSTALL_SCRIPTS` and `ABX_PKG_MIN_RELEASE_AGE` apply here by default. Direct npm mode uses `--ignore-scripts` and `--min-release-age=<days>` when the host npm supports it. pnpm mode writes `pnpm-workspace.yaml` with `minimumReleaseAge`; that is how release-age enforcement is configured there. Explicit conflicting flags already present in `install_args` win over the derived defaults.
+
+#### 📦 [`PnpmProvider`](./abx_pkg/binprovider_pnpm.py) (`pnpm`)
+
+Source: [`abx_pkg/binprovider_pnpm.py`](./abx_pkg/binprovider_pnpm.py) • Tests: [`tests/test_pnpmprovider.py`](./tests/test_pnpmprovider.py)
+
+```python
+INSTALLER_BIN = "pnpm"
+PATH = ""                            # auto-built from pnpm local + global bin dirs
+pnpm_prefix = None                   # None = global install, Path(...) = hermetic-ish prefix
+cache_dir = user_cache_path("pnpm", "abx-pkg") or <system temp>/pnpm-cache
+pnpm_install_args = ["--loglevel=error"]
+```
+
+- Install root: `pnpm_prefix=None` installs globally. Set `pnpm_prefix=Path(...)` or `install_root=Path(...)` to install under `<prefix>/node_modules/.bin`; that prefix bin dir becomes the provider's active executable search path.
+- Auto-switching: none. This provider always shells out to `pnpm` directly. Use `NpmProvider` for the auto-switching `npm`-or-`pnpm` behavior. Honors `PNPM_BINARY=/abs/path/to/pnpm`.
+- `dry_run`: shared behavior.
+- Security: supports both `min_release_age` and `postinstall_scripts=False`, and hydrates their provider defaults from `ABX_PKG_MIN_RELEASE_AGE` and `ABX_PKG_POSTINSTALL_SCRIPTS`. `min_release_age` requires pnpm 10.16+, and `supports_min_release_age()` returns `False` on older hosts (then it logs a warning and continues).
+- Overrides: `install_args` is passed as pnpm package specs; unpinned specs get rewritten to `pkg@>=<min_version>` when `min_version` is supplied.
+- Notes: pnpm has no `--min-release-age` CLI flag; this provider passes `--config.minimumReleaseAge=<minutes>` (the camelCase / kebab-case form pnpm exposes via its `--config.<key>=<value>` override). `PNPM_HOME` is auto-populated so `pnpm add -g` works without polluting the user's shell config.
+
+#### 🧶 [`YarnProvider`](./abx_pkg/binprovider_yarn.py) (`yarn`)
+
+Source: [`abx_pkg/binprovider_yarn.py`](./abx_pkg/binprovider_yarn.py) • Tests: [`tests/test_yarnprovider.py`](./tests/test_yarnprovider.py)
+
+```python
+INSTALLER_BIN = "yarn"
+PATH = ""                            # prepends <yarn_prefix>/node_modules/.bin
+yarn_prefix = None                   # workspace dir, defaults to ABX_PKG_YARN_ROOT or ~/.cache/abx-pkg/yarn
+cache_dir = user_cache_path("yarn", "abx-pkg") or <system temp>/yarn-cache
+yarn_install_args = []
+```
+
+- Install root: Yarn 4 / Yarn Berry is workspace-based, so the provider always operates inside a project directory. Set `yarn_prefix=Path(...)` or `install_root=Path(...)` for a hermetic workspace; the workspace is auto-initialized with a stub `package.json` and `.yarnrc.yml` (`nodeLinker: node-modules` so binaries land in `<workspace>/node_modules/.bin`). When unset, the provider uses `$ABX_PKG_YARN_ROOT` or `~/.cache/abx-pkg/yarn`.
+- Auto-switching: none. Honors `YARN_BINARY=/abs/path/to/yarn`. Both Yarn classic (1.x) and Yarn Berry (2+) work for basic install/update/uninstall, but only Yarn 4.10+ supports the security flags.
+- `dry_run`: shared behavior.
+- Security: supports both `min_release_age` and `postinstall_scripts=False`, and hydrates their provider defaults from `ABX_PKG_MIN_RELEASE_AGE` and `ABX_PKG_POSTINSTALL_SCRIPTS`. Both controls require Yarn 4.10+; on older hosts `supports_min_release_age()` / `supports_postinstall_disable()` return `False` and explicit values are logged-and-ignored.
+- Overrides: `install_args` is passed as Yarn package specs; unpinned specs get rewritten to `pkg@>=<min_version>` when `min_version` is supplied.
+- Notes: Yarn has no `--ignore-scripts` / `--minimum-release-age` CLI flags; the provider writes `npmMinimalAgeGate: 7d` (or whatever days value is configured) and `enableScripts: false` into `<yarn_prefix>/.yarnrc.yml` and additionally passes `--mode skip-build` to `yarn add` / `yarn up` when `postinstall_scripts=False`. Updates use `yarn up <pkg>` (Berry) or `yarn upgrade <pkg>` (classic). `YARN_GLOBAL_FOLDER` and `YARN_CACHE_FOLDER` are pointed at `cache_dir` so installs share a single cache across workspaces.
+
+#### 🥖 [`BunProvider`](./abx_pkg/binprovider_bun.py) (`bun`)
+
+Source: [`abx_pkg/binprovider_bun.py`](./abx_pkg/binprovider_bun.py) • Tests: [`tests/test_bunprovider.py`](./tests/test_bunprovider.py)
+
+```python
+INSTALLER_BIN = "bun"
+PATH = ""                            # prepends <bun_prefix>/bin
+bun_prefix = None                    # mirrors $BUN_INSTALL, None = ~/.bun (host-default)
+cache_dir = user_cache_path("bun", "abx-pkg") or <system temp>/bun-cache
+bun_install_args = []
+```
+
+- Install root: `bun_prefix=None` writes into the host `$BUN_INSTALL` (default `~/.bun`). Set `bun_prefix=Path(...)` or `install_root=Path(...)` to install under `<prefix>/bin`; the provider also creates `<prefix>/install/global` for the global `node_modules` dir, which is where bun puts the actual package state. The prefix bin dir becomes the provider's active executable search path.
+- Auto-switching: none. Honors `BUN_BINARY=/abs/path/to/bun`.
+- `dry_run`: shared behavior.
+- Security: supports both `min_release_age` and `postinstall_scripts=False`, and hydrates their provider defaults from `ABX_PKG_MIN_RELEASE_AGE` and `ABX_PKG_POSTINSTALL_SCRIPTS`. `min_release_age` requires Bun 1.3+, and `supports_min_release_age()` returns `False` on older hosts.
+- Overrides: `install_args` is passed as Bun package specs; unpinned specs get rewritten to `pkg@>=<min_version>` when `min_version` is supplied.
+- Notes: install/update use `bun add -g` (with `--force` as the update fallback). The provider passes `--ignore-scripts` for `postinstall_scripts=False` and `--minimum-release-age=<seconds>` (Bun's unit is seconds; this provider converts from days). Explicit conflicting flags already present in `install_args` win over the derived defaults.
+
+#### 🦕 [`DenoProvider`](./abx_pkg/binprovider_deno.py) (`deno`)
+
+Source: [`abx_pkg/binprovider_deno.py`](./abx_pkg/binprovider_deno.py) • Tests: [`tests/test_denoprovider.py`](./tests/test_denoprovider.py)
+
+```python
+INSTALLER_BIN = "deno"
+PATH = ""                            # prepends <deno_root>/bin
+deno_root = None                     # mirrors $DENO_INSTALL_ROOT, None = ~/.deno
+deno_dir = None                      # mirrors $DENO_DIR for cache isolation
+cache_dir = user_cache_path("deno", "abx-pkg") or <system temp>/deno-cache
+deno_install_args = ["--allow-all"]
+deno_default_scheme = "npm"          # 'npm' or 'jsr'
+```
+
+- Install root: `deno_root=None` writes into the host `$DENO_INSTALL_ROOT` (default `~/.deno`). Set `deno_root=Path(...)` or `install_root=Path(...)` for a hermetic root with executables under `<deno_root>/bin`. Set `deno_dir=Path(...)` to also isolate the module cache.
+- Auto-switching: none. Honors `DENO_BINARY=/abs/path/to/deno`.
+- `dry_run`: shared behavior.
+- Security: supports both `min_release_age` and `postinstall_scripts=False` / `True`, and hydrates their provider defaults from `ABX_PKG_MIN_RELEASE_AGE` and `ABX_PKG_POSTINSTALL_SCRIPTS`. `min_release_age` requires Deno 2.5+, and `supports_min_release_age()` returns `False` on older hosts.
+- Overrides: `install_args` is passed as `deno install` package specs and is auto-prefixed with `npm:` (or `jsr:` if `deno_default_scheme="jsr"`) when an unqualified bare name is supplied. Already-qualified specs (`npm:`, `jsr:`, `https://...`) are passed through verbatim. Unpinned specs get rewritten to `pkg@>=<min_version>` when `min_version` is supplied.
+- Notes: install / update both run `deno install -g --force --allow-all -n <bin_name> <pkg>` because Deno's idiomatic update path is just a fresh global install. Deno's npm lifecycle scripts are *opt-in* (the opposite of npm), so the provider only adds `--allow-scripts` when `postinstall_scripts=True`. `min_release_age` is passed as `--minimum-dependency-age=<minutes>` (Deno's preferred unit; this provider converts from days). `DENO_TLS_CA_STORE=system` is set so installs work on hosts with corporate / sandboxed CA bundles.
 
 #### 🧪 [`BashProvider`](./abx_pkg/binprovider_bash.py) (`bash`)
 

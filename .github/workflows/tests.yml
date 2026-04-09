@@ -113,6 +113,33 @@ jobs:
       with:
         node-version: '22'
 
+    - name: Setup Yarn (Berry / 4.x via corepack)
+      run: |
+        # github-hosted ubuntu runners ship a system-wide yarn 1.22 that
+        # shadows corepack's shim. Wipe it out before enabling corepack so
+        # `yarn` unambiguously resolves to the 4.x shim from node's bin dir.
+        sudo rm -f /usr/local/bin/yarn /usr/local/bin/yarnpkg /usr/bin/yarn /usr/bin/yarnpkg
+        corepack enable
+        corepack prepare yarn@4.13.0 --activate
+        # Pre-download pnpm via corepack so the very first ``pnpm --version``
+        # doesn't pollute logs with "Corepack is about to download ..."
+        # progress output.
+        corepack prepare pnpm@10.17.1 --activate || true
+        which yarn
+        yarn --version
+        yarn --version | grep -q '^4\.' || { echo "ERROR: yarn is not 4.x"; exit 1; }
+        pnpm --version || true
+
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: latest
+
+    - name: Setup Deno
+      uses: denoland/setup-deno@v2
+      with:
+        deno-version: v2.x
+
     - name: Setup Go
       uses: actions/setup-go@v6
       with:
@@ -132,12 +159,41 @@ jobs:
         echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
         if [ -d /nix/var/nix/profiles/default/bin ]; then echo "/nix/var/nix/profiles/default/bin" >> "$GITHUB_PATH"; fi
 
+    - name: Environment diagnostic
+      run: |
+        echo "=== OS ==="; uname -a
+        # Activate the uv-managed venv so ``.venv/bin`` (where
+        # ``uv sync --all-extras`` installs pyinfra / ansible / pip /
+        # etc.) is on PATH, matching what ``uv run pytest`` sees.
+        if [ -d .venv/bin ]; then
+          export PATH="$PWD/.venv/bin:$PATH"
+          echo "=== venv === $PWD/.venv"
+        fi
+        echo "=== PATH ==="; echo "$PATH" | tr ':' '\n'
+        for bin in python pip uv node npm pnpm yarn bun deno go gem cargo rustc brew apt-get dpkg docker nix nix-env ansible ansible-playbook pyinfra sh bash; do
+          path=$(command -v "$bin" 2>/dev/null || true)
+          if [ -z "$path" ]; then
+            echo "=== $bin === (not installed)"
+            continue
+          fi
+          case "$bin" in
+            # go uses the ``version`` subcommand, not a ``--version`` flag
+            go)       ver=$("$bin" version 2>/dev/null | head -1 || true) ;;
+            # some tools print corepack/network noise to stderr during the
+            # first version probe; capture stdout only.
+            pnpm|yarn|bun|deno|brew)
+                      ver=$("$bin" --version 2>/dev/null | head -1 || true) ;;
+            *)        ver=$("$bin" --version 2>&1 | head -1 || true) ;;
+          esac
+          echo "=== $bin === $path :: $ver"
+        done
+
     - name: Run standard test file
       run: |
         export PNPM_HOME="${RUNNER_TEMP}/pnpm"
         export PATH="$PNPM_HOME:$PATH"
         set +e
-        uv run pytest -m "not root_required and not docker_required" "${{ matrix.test.path }}"
+        uv run pytest -vv --tb=long -m "not root_required and not docker_required" "${{ matrix.test.path }}"
         status=$?
         set -e
         if [ "$status" -eq 0 ] || [ "$status" -eq 5 ]; then
@@ -219,6 +275,33 @@ jobs:
       uses: actions/setup-node@v6
       with:
         node-version: '22'
+
+    - name: Setup Yarn (Berry / 4.x via corepack)
+      run: |
+        # github-hosted ubuntu runners ship a system-wide yarn 1.22 that
+        # shadows corepack's shim. Wipe it out before enabling corepack so
+        # `yarn` unambiguously resolves to the 4.x shim from node's bin dir.
+        sudo rm -f /usr/local/bin/yarn /usr/local/bin/yarnpkg /usr/bin/yarn /usr/bin/yarnpkg
+        corepack enable
+        corepack prepare yarn@4.13.0 --activate
+        # Pre-download pnpm via corepack so the very first ``pnpm --version``
+        # doesn't pollute logs with "Corepack is about to download ..."
+        # progress output.
+        corepack prepare pnpm@10.17.1 --activate || true
+        which yarn
+        yarn --version
+        yarn --version | grep -q '^4\.' || { echo "ERROR: yarn is not 4.x"; exit 1; }
+        pnpm --version || true
+
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: latest
+
+    - name: Setup Deno
+      uses: denoland/setup-deno@v2
+      with:
+        deno-version: v2.x
 
     - name: Setup Go
       uses: actions/setup-go@v6

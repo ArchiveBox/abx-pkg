@@ -56,7 +56,12 @@ from .binprovider_goget import GoGetProvider
 from .binprovider_nix import NixProvider
 from .binprovider_docker import DockerProvider
 from .binprovider_pip import PipProvider
+from .binprovider_uv import UvProvider
 from .binprovider_npm import NpmProvider
+from .binprovider_pnpm import PnpmProvider
+from .binprovider_yarn import YarnProvider
+from .binprovider_bun import BunProvider
+from .binprovider_deno import DenoProvider
 from .binprovider_ansible import AnsibleProvider
 from .binprovider_pyinfra import PyinfraProvider
 from .binprovider_chromewebstore import ChromeWebstoreProvider
@@ -73,7 +78,12 @@ ALL_PROVIDERS = [
     NixProvider,
     DockerProvider,
     PipProvider,
+    UvProvider,
     NpmProvider,
+    PnpmProvider,
+    YarnProvider,
+    BunProvider,
+    DenoProvider,
     AnsibleProvider,
     PyinfraProvider,
     ChromeWebstoreProvider,
@@ -166,7 +176,12 @@ __all__ = [
     "NixProvider",
     "DockerProvider",
     "PipProvider",
+    "UvProvider",
     "NpmProvider",
+    "PnpmProvider",
+    "YarnProvider",
+    "BunProvider",
+    "DenoProvider",
     "AnsibleProvider",
     "PyinfraProvider",
     "ChromeWebstoreProvider",
@@ -175,5 +190,5 @@ __all__ = [
     # Note: provider singleton names (apt, pip, brew, etc.) are intentionally
     # excluded from __all__ so that `from abx_pkg import *` does not eagerly
     # instantiate every provider. Use explicit imports instead:
-    #   from abx_pkg import apt, pip, brew
+    #   from abx_pkg import apt, pip, brew, npm, pnpm, yarn, bun, deno
 ]
