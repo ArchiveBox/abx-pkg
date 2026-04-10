@@ -14,12 +14,11 @@ from typing import Any, cast
 import rich_click as click
 
 from . import ALL_PROVIDER_NAMES, ALL_PROVIDERS, Binary
+from .base_types import DEFAULT_LIB_DIR
 from .binprovider import BinProvider, env_flag_is_true
 from .exceptions import ABXPkgError, BinaryOperationError
 from .logging import configure_logging
 
-
-DEFAULT_LIB_DIR = Path("~/.config/abx/lib").expanduser()
 PROVIDER_CLASS_BY_NAME: dict[str, type[BinProvider]] = {
     cast(str, provider.model_fields["name"].default): provider
     for provider in ALL_PROVIDERS

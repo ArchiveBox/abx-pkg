@@ -17,6 +17,8 @@ from pydantic import TypeAdapter, AfterValidator, BeforeValidator, ValidationErr
 # ``<lib>/pip``, ``<lib>/gem``). Per-provider ``ABX_PKG_<NAME>_ROOT``
 # env vars override this for their own provider; explicit constructor
 # kwargs override both.
+DEFAULT_LIB_DIR: Path = Path("~/.config/abx/lib").expanduser()
+
 _lib_dir_env = os.environ.get("ABX_PKG_LIB_DIR", "").strip()
 ABX_PKG_LIB_DIR: Path | None = (
     Path(_lib_dir_env).expanduser().resolve() if _lib_dir_env else None

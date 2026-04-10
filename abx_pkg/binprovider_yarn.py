@@ -17,6 +17,7 @@ from .base_types import (
     BinProviderName,
     HostBinPath,
     InstallArgs,
+    DEFAULT_LIB_DIR,
     PATHStr,
     abx_pkg_install_root_default,
     bin_abspath,
@@ -38,7 +39,7 @@ except Exception:
 # Ultimate fallback when neither ``yarn_prefix=`` nor
 # ``ABX_PKG_YARN_ROOT`` nor ``ABX_PKG_LIB_DIR`` is set (those are
 # resolved via ``abx_pkg_install_root_default("yarn")``).
-_DEFAULT_YARN_ROOT = Path("~/.cache/abx-pkg/yarn").expanduser().absolute()
+_DEFAULT_YARN_ROOT = DEFAULT_LIB_DIR / "yarn"
 
 
 class YarnProvider(BinProvider):

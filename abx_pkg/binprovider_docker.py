@@ -11,6 +11,7 @@ from pydantic import model_validator, TypeAdapter, computed_field
 from typing import Self
 
 from .base_types import (
+    DEFAULT_LIB_DIR,
     BinProviderName,
     PATHStr,
     BinName,
@@ -25,7 +26,7 @@ from .logging import format_subprocess_output
 
 # Ultimate fallback when neither the constructor arg nor
 # ``ABX_PKG_DOCKER_ROOT`` nor ``ABX_PKG_LIB_DIR`` is set.
-DEFAULT_DOCKER_ROOT = Path("~/.cache/abx-pkg/docker").expanduser()
+DEFAULT_DOCKER_ROOT = DEFAULT_LIB_DIR / "docker"
 
 
 class DockerProvider(BinProvider):
