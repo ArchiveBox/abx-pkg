@@ -16,6 +16,7 @@ from pydantic import Field, computed_field, model_validator
 from .base_types import (
     BinName,
     BinProviderName,
+    DEFAULT_LIB_DIR,
     HostBinPath,
     InstallArgs,
     PATHStr,
@@ -34,9 +35,10 @@ CLAUDE_SANDBOX_NO_PROXY = (
     ".svc.cluster.local,.local"
 )
 
-# Ultimate fallback when neither the constructor arg nor
-# ``ABX_PKG_PUPPETEER_ROOT`` nor ``ABX_PKG_LIB_DIR`` is set.
-DEFAULT_PUPPETEER_ROOT = Path("~/.cache/abx-pkg/puppeteer").expanduser()
+# Puppeteer's provider bootstraps @puppeteer/browsers via a local npm
+# prefix and creates symlinks in bin_dir — it genuinely needs a managed
+# directory even when no explicit root is set.
+DEFAULT_PUPPETEER_ROOT = DEFAULT_LIB_DIR / "puppeteer"
 
 
 class PuppeteerProvider(BinProvider):

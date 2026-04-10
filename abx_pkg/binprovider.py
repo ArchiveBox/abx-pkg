@@ -286,10 +286,10 @@ class ShallowBinary(BaseModel):
         )
         cmd = [str(bin_name), *(str(arg) for arg in cmd)]
         logger.debug("Executing binary command: %s", format_command(cmd))
+        kwargs.setdefault("capture_output", True)
+        kwargs.setdefault("text", True)
         return subprocess.run(
             cmd,
-            capture_output=True,
-            text=True,
             cwd=str(cwd),
             **kwargs,
         )
@@ -368,17 +368,26 @@ class BinProvider(BaseModel):
 
         if install_root is not None:
             if not install_root_field:
-                raise TypeError(
-                    f"{self.__class__.__name__} does not support install_root",
+                # Warn and ignore so callers (e.g. the CLI) can pass a
+                # blanket install_root to every provider without having
+                # to know which subclasses actually support one.
+                logger.warning(
+                    "%s ignoring unsupported install_root=%s (no INSTALL_ROOT_FIELD)",
+                    self.__class__.__name__,
+                    install_root,
                 )
-            data.setdefault(install_root_field, install_root)
+            else:
+                data.setdefault(install_root_field, install_root)
 
         if bin_dir is not None:
             if not bin_dir_field:
-                raise TypeError(
-                    f"{self.__class__.__name__} does not support bin_dir",
+                logger.warning(
+                    "%s ignoring unsupported bin_dir=%s (no BIN_DIR_FIELD)",
+                    self.__class__.__name__,
+                    bin_dir,
                 )
-            data.setdefault(bin_dir_field, bin_dir)
+            else:
+                data.setdefault(bin_dir_field, bin_dir)
 
         super().__init__(**data)
 
@@ -992,6 +1001,9 @@ class BinProvider(BaseModel):
         if self.dry_run:
             return subprocess.CompletedProcess(cmd, 0, "", "skipped (dry run)")
 
+        kwargs.setdefault("capture_output", True)
+        kwargs.setdefault("text", True)
+
         sudo_failure_output = None
         if current_euid != 0 and run_as_uid != current_euid:
             sudo_abspath = shutil.which("sudo", path=env["PATH"]) or shutil.which(
@@ -1004,8 +1016,6 @@ class BinProvider(BaseModel):
                 sudo_cmd.extend(["--", *cmd])
                 sudo_proc = subprocess.run(
                     sudo_cmd,
-                    capture_output=True,
-                    text=True,
                     cwd=str(cwd_path),
                     env=env,
                     **kwargs,
@@ -1026,8 +1036,6 @@ class BinProvider(BaseModel):
 
         proc = subprocess.run(
             cmd,
-            capture_output=True,
-            text=True,
             cwd=str(cwd_path),
             env=env,
             preexec_fn=drop_privileges,

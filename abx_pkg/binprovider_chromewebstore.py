@@ -11,6 +11,7 @@ from typing import Any, ClassVar, Self
 from pydantic import Field, computed_field, model_validator
 
 from .base_types import (
+    DEFAULT_LIB_DIR,
     BinName,
     BinProviderName,
     PATHStr,
@@ -29,7 +30,7 @@ logger = get_logger(__name__)
 
 # Ultimate fallback when neither the constructor arg nor
 # ``ABX_PKG_CHROMEWEBSTORE_ROOT`` nor ``ABX_PKG_LIB_DIR`` is set.
-DEFAULT_CHROMEWEBSTORE_ROOT = Path("~/.cache/abx-pkg/chromewebstore").expanduser()
+DEFAULT_CHROMEWEBSTORE_ROOT = DEFAULT_LIB_DIR / "chromewebstore"
 CHROME_UTILS_PATH = Path(__file__).with_name("js") / "chrome" / "chrome_utils.js"
 
 

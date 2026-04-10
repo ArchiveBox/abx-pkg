@@ -205,9 +205,28 @@ class PlaywrightProvider(BinProvider):
         # ``playwright_root`` when one is pinned; otherwise leave
         # ``npm_prefix`` unset so ``NpmProvider`` falls back to the
         # host's own npm default.
+        #
+        # Security flags are propagated to the bootstrap install so
+        # ``--min-release-age`` / ``--postinstall-scripts`` apply to the
+        # ``playwright`` npm package too, not just the browser download.
+        effective_postinstall = (
+            self.postinstall_scripts
+            if postinstall_scripts is None
+            else postinstall_scripts
+        )
+        effective_min_release_age = (
+            self.min_release_age if min_release_age is None else min_release_age
+        )
+        # playwright's postinstall script downloads browsers — it must
+        # run for the CLI to work. Default to True only when the caller
+        # didn't express a preference.
+        if effective_postinstall is None:
+            effective_postinstall = True
+        effective_min_release_age = effective_min_release_age or 0
+
         npm_provider_kwargs: dict = {
-            "postinstall_scripts": True,
-            "min_release_age": 0,
+            "postinstall_scripts": effective_postinstall,
+            "min_release_age": effective_min_release_age,
         }
         if self.npm_prefix is not None:
             npm_provider_kwargs["npm_prefix"] = self.npm_prefix
@@ -215,8 +234,8 @@ class PlaywrightProvider(BinProvider):
             name="playwright",
             binproviders=[NpmProvider(**npm_provider_kwargs)],
             overrides={"npm": {"install_args": ["playwright"]}},
-            postinstall_scripts=True,
-            min_release_age=0,
+            postinstall_scripts=effective_postinstall,
+            min_release_age=effective_min_release_age,
         ).load_or_install()
         self._INSTALLER_BIN_ABSPATH = cli.abspath
         path_entries: list[Path] = []

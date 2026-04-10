@@ -49,6 +49,7 @@ dependencies = [
 
 [project.scripts]
 abx-pkg = "abx_pkg.cli:main"
+abx = "abx_pkg.cli:abx_main"
 
 [project.optional-dependencies]
 rich = [

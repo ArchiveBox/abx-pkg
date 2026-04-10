@@ -35,10 +35,8 @@ except Exception:
     pass
 
 
-# Ultimate fallback when neither ``yarn_prefix=`` nor
-# ``ABX_PKG_YARN_ROOT`` nor ``ABX_PKG_LIB_DIR`` is set (those are
-# resolved via ``abx_pkg_install_root_default("yarn")``).
-_DEFAULT_YARN_ROOT = Path("~/.cache/abx-pkg/yarn").expanduser().absolute()
+# No forced fallback — when no explicit prefix is set, yarn uses its
+# native global mode (yarn global add / yarn global bin / etc.).
 
 
 class YarnProvider(BinProvider):
@@ -155,8 +153,8 @@ class YarnProvider(BinProvider):
 
     @model_validator(mode="after")
     def load_PATH_from_yarn_prefix(self) -> Self:
-        prefix = self.yarn_prefix or _DEFAULT_YARN_ROOT
-        self.PATH = self._merge_PATH(prefix / "node_modules" / ".bin")
+        if self.yarn_prefix:
+            self.PATH = self._merge_PATH(self.yarn_prefix / "node_modules" / ".bin")
         return self
 
     def exec(self, bin_name, cmd=(), cwd: Path | str = ".", quiet=False, **kwargs):
@@ -168,10 +166,9 @@ class YarnProvider(BinProvider):
         env.setdefault("YARN_ENABLE_GLOBAL_CACHE", "1")
         env.setdefault("YARN_GLOBAL_FOLDER", str(self.cache_dir))
         env.setdefault("YARN_CACHE_FOLDER", str(self.cache_dir / "v6"))
-        if cwd == ".":
-            workspace = self.yarn_prefix or _DEFAULT_YARN_ROOT
-            workspace.mkdir(parents=True, exist_ok=True)
-            cwd = workspace
+        if cwd == "." and self.yarn_prefix:
+            self.yarn_prefix.mkdir(parents=True, exist_ok=True)
+            cwd = self.yarn_prefix
         return super().exec(
             bin_name=bin_name,
             cmd=cmd,
@@ -189,7 +186,12 @@ class YarnProvider(BinProvider):
         min_version: SemVer | None = None,
     ) -> None:
         self._ensure_writable_cache_dir(self.cache_dir)
-        prefix = self.yarn_prefix or _DEFAULT_YARN_ROOT
+        prefix = self.yarn_prefix
+        if not prefix:
+            raise TypeError(
+                "YarnProvider.setup requires yarn_prefix to be set "
+                "(pass install_root= or set ABX_PKG_YARN_ROOT / ABX_PKG_LIB_DIR)",
+            )
         prefix.mkdir(parents=True, exist_ok=True)
         package_json = prefix / "package.json"
         if not package_json.exists():
@@ -257,8 +259,8 @@ class YarnProvider(BinProvider):
 
         # Rewrite ``.yarnrc.yml`` (Yarn 2+ only) so npmMinimalAgeGate /
         # enableScripts always reflect the latest provider/binary defaults.
-        if is_berry and version is not None:
-            prefix = self.yarn_prefix or _DEFAULT_YARN_ROOT
+        if is_berry and version is not None and self.yarn_prefix:
+            prefix = self.yarn_prefix
             yarnrc = prefix / ".yarnrc.yml"
             existing = yarnrc.read_text() if yarnrc.exists() else ""
             kept = [
@@ -333,8 +335,8 @@ class YarnProvider(BinProvider):
             and version >= berry_threshold
         )
 
-        if is_berry and version is not None:
-            prefix = self.yarn_prefix or _DEFAULT_YARN_ROOT
+        if is_berry and version is not None and self.yarn_prefix:
+            prefix = self.yarn_prefix
             yarnrc = prefix / ".yarnrc.yml"
             existing = yarnrc.read_text() if yarnrc.exists() else ""
             kept = [
@@ -414,10 +416,10 @@ class YarnProvider(BinProvider):
         if not self.INSTALLER_BIN_ABSPATH:
             return None
 
-        prefix = self.yarn_prefix or _DEFAULT_YARN_ROOT
-        candidate = prefix / "node_modules" / ".bin" / str(bin_name)
-        if candidate.exists():
-            return TypeAdapter(HostBinPath).validate_python(candidate)
+        if self.yarn_prefix:
+            candidate = self.yarn_prefix / "node_modules" / ".bin" / str(bin_name)
+            if candidate.exists():
+                return TypeAdapter(HostBinPath).validate_python(candidate)
         return None
 
     def default_version_handler(
@@ -441,7 +443,8 @@ class YarnProvider(BinProvider):
         if not self.INSTALLER_BIN_ABSPATH:
             return None
 
-        prefix = self.yarn_prefix or _DEFAULT_YARN_ROOT
+        if not self.yarn_prefix:
+            return None
         install_args = self.get_install_args(str(bin_name), **context) or [
             str(bin_name),
         ]
@@ -451,7 +454,8 @@ class YarnProvider(BinProvider):
             if main_package.startswith("@")
             else main_package.split("@", 1)[0]
         )
-        package_json = prefix / "node_modules" / package / "package.json"
+        assert self.yarn_prefix is not None  # guarded by early return above
+        package_json = self.yarn_prefix / "node_modules" / package / "package.json"
         if package_json.exists():
             try:
                 return json.loads(package_json.read_text())["version"]
