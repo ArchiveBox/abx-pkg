@@ -14,3 +14,4 @@ venv/
 .env
 *.log
 .DS_Store
+uv.lock

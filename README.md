@@ -123,6 +123,36 @@ abx --binproviders=env,uv,pip,apt,brew yt-dlp   # restrict provider resolution
 
 Options before the binary name (`--lib`, `--binproviders`, `--dry-run`, `--debug`, `--no-cache`, `--update`) are forwarded to `abx-pkg`; everything after the binary name is forwarded to the binary itself.
 
+#### Shebang Line in Scripts
+
+Inspired by [`uv`'s inline script metadata](https://docs.astral.sh/uv/guides/scripts/#declaring-script-dependencies), `abx-pkg` lets you declare **arbitrary package dependencies** at the top of any script using a `/// script` metadata block.
+
+```javascript
+#!/usr/bin/env -S abx-pkg run --script node
+
+// /// script
+// dependencies = [
+//     {name = "node", binproviders = ["env", "apt", "brew"], min_version = "22.0.0"},
+//     {name = "playwright", binproviders = ["pnpm", "npm"]},
+//     {name = "chromium", binproviders = ["playwright", "puppeteer", "apt"], min_version = "131.0.0"},
+// ]
+// [tool.abx-pkg]
+// ABX_PKG_POSTINSTALL_SCRIPTS = true
+// ///
+
+const { chromium } = require('playwright');
+
+(async () => {
+    const browser = await chromium.launch();
+    const page = await browser.newPage();
+    await page.goto('https://example.com');
+    console.log(await page.title());
+    await browser.close();
+})();
+```
+
+The metadata parser is comment-syntax-agnostic — it looks for `/// script` and `///` delimiters and strips the first whitespace-delimited token from each line, so `#`, `//`, `--`, `;`, and any other single-token comment prefix all work.
+
 #### Per-`Binary` / per-`BinProvider` options as CLI flags
 
 Every [`Binary` / `BinProvider` configuration field](#configuration) is exposed as a CLI flag on the group and on subcommands (`install`, `update`, `uninstall`, `load`), and is also available to `run` / `abx` via group-level flags placed before the binary name. Providers that can't enforce a given option emit a warning to `stderr` and continue — no hard failure.
@@ -373,8 +403,9 @@ class CargoProvider(BinProvider):
         timeout: int | None = None,
     ) -> str:
         install_args = install_args or self.get_install_args(bin_name)
-        installer = self._require_installer_bin()
-        proc = self.exec(bin_name=installer, cmd=['install', *install_args], timeout=timeout)
+        installer = self.INSTALLER_BINARY()
+        assert installer and installer.loaded_abspath
+        proc = self.exec(bin_name=installer.loaded_abspath, cmd=['install', *install_args], timeout=timeout)
         if proc.returncode != 0:
             self._raise_proc_error('install', install_args, proc)
         return proc.stdout.strip() or proc.stderr.strip()

@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-
 __package__ = "abx_pkg"
-
 import os
 import shutil
 import re
@@ -9,10 +7,8 @@ import sys
 import tempfile
 from pathlib import Path
 from typing import Self
-
 from platformdirs import user_cache_path
 from pydantic import Field, TypeAdapter, computed_field, model_validator
-
 from .base_types import (
     BinName,
     BinProviderName,
@@ -26,7 +22,6 @@ from .binprovider import BinProvider, env_flag_is_true, remap_kwargs
 from .logging import format_subprocess_output
 from .semver import SemVer
 
-
 USER_CACHE_PATH = Path(tempfile.gettempdir()) / "uv-cache"
 try:
     _user_cache = user_cache_path("uv", "abx-pkg", ensure_exists=True)
@@ -38,21 +33,17 @@ except Exception:
 
 class UvProvider(BinProvider):
     """Standalone ``uv`` package manager provider.
-
     Has two modes, picked based on whether ``install_root`` is set:
-
     1. **Hermetic venv mode** (``install_root=Path(...)``): creates a dedicated
        venv at the requested path via ``uv venv`` and installs packages
        into it via ``uv pip install --python <venv>/bin/python``, the same
        way ``PipProvider`` does when configured with ``install_root``. This is
        the idiomatic "install a Python library + its CLI entrypoints into
        an isolated environment" path.
-
     2. **Global tool mode** (``install_root=None``): delegates to
        ``uv tool install`` which lays out a fresh venv under
        ``UV_TOOL_DIR`` per tool and writes shims into ``UV_TOOL_BIN_DIR``.
        This is the idiomatic "install a CLI tool globally" path.
-
     Security:
     - ``--no-build`` for ``postinstall_scripts=False`` (wheels only).
     - ``--exclude-newer=<ISO8601>`` for ``min_release_age``.
@@ -60,7 +51,6 @@ class UvProvider(BinProvider):
 
     name: BinProviderName = "uv"
     INSTALLER_BIN: BinName = "uv"
-
     PATH: PATHStr = ""
     postinstall_scripts: bool | None = Field(
         default_factory=lambda: env_flag_is_true("ABX_PKG_POSTINSTALL_SCRIPTS"),
@@ -70,7 +60,6 @@ class UvProvider(BinProvider):
         default_factory=lambda: float(os.environ.get("ABX_PKG_MIN_RELEASE_AGE", "7")),
         repr=False,
     )
-
     # None = global ``uv tool`` mode, otherwise a managed venv path.
     # Default: ABX_PKG_UV_ROOT > ABX_PKG_LIB_DIR/uv > None.
     install_root: Path | None = Field(
@@ -82,10 +71,8 @@ class UvProvider(BinProvider):
     # own defaults (``~/.local/share/uv/tools`` / ``~/.local/bin``).
     uv_tool_dir: Path | None = None
     bin_dir: Path | None = Field(default=None, validation_alias="uv_tool_bin_dir")
-
     cache_dir: Path = USER_CACHE_PATH
     cache_arg: str = ""  # re-derived per-instance from cache_dir in detect_cache_arg
-
     uv_install_args: list[str] = []
 
     @model_validator(mode="after")
@@ -93,6 +80,20 @@ class UvProvider(BinProvider):
         if not self.cache_arg:
             self.cache_arg = f"--cache-dir={self.cache_dir}"
         return self
+
+    @computed_field
+    @property
+    def ENV(self) -> "dict[str, str]":
+        env: dict[str, str] = {"UV_ACTIVE": "1"}
+        if not self.install_root:
+            return env
+        env["VIRTUAL_ENV"] = str(self.install_root)
+        for sp in sorted(
+            (self.install_root / "lib").glob("python*/site-packages"),
+        ):
+            env["PYTHONPATH"] = ":" + str(sp)
+            break
+        return env
 
     def supports_min_release_age(self, action) -> bool:
         return action in ("install", "update")
@@ -107,36 +108,10 @@ class UvProvider(BinProvider):
             venv_python = self.install_root / "bin" / "python"
             if not (venv_python.is_file() and os.access(venv_python, os.X_OK)):
                 return False
-        return bool(self.INSTALLER_BIN_ABSPATH)
-
-    @computed_field
-    @property
-    def INSTALLER_BIN_ABSPATH(self) -> HostBinPath | None:
-        """Resolve the uv executable, honoring ``UV_BINARY`` for explicit overrides."""
-        if self._INSTALLER_BIN_ABSPATH:
-            return self._INSTALLER_BIN_ABSPATH
-
-        manual_binary = os.environ.get("UV_BINARY")
-        if manual_binary and os.path.isabs(manual_binary):
-            try:
-                valid_abspath = TypeAdapter(HostBinPath).validate_python(
-                    Path(manual_binary).resolve(),
-                )
-                self._INSTALLER_BIN_ABSPATH = valid_abspath
-                return valid_abspath
-            except Exception:
-                return None
-
-        abspath = bin_abspath(self.INSTALLER_BIN, PATH=self.PATH) or bin_abspath(
-            self.INSTALLER_BIN,
+        return bool(
+            bin_abspath(self.INSTALLER_BIN, PATH=self.PATH)
+            or bin_abspath(self.INSTALLER_BIN),
         )
-        if not abspath:
-            return None
-
-        valid_abspath = TypeAdapter(HostBinPath).validate_python(abspath)
-        if valid_abspath:
-            self._INSTALLER_BIN_ABSPATH = valid_abspath
-        return valid_abspath
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
@@ -230,8 +205,10 @@ class UvProvider(BinProvider):
         if venv_python.is_file() and os.access(venv_python, os.X_OK):
             return
         self.install_root.parent.mkdir(parents=True, exist_ok=True)
+        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        assert installer_bin
         proc = self.exec(
-            bin_name=self._require_installer_bin(),
+            bin_name=installer_bin,
             cmd=[
                 "venv",
                 "--no-cache" if no_cache else self.cache_arg,
@@ -302,12 +279,14 @@ class UvProvider(BinProvider):
         package_name: str,
         timeout: int | None = None,
     ) -> SemVer | None:
-        if not self.INSTALLER_BIN_ABSPATH:
+        try:
+            uv_abspath = self.INSTALLER_BINARY().loaded_abspath
+            assert uv_abspath
+        except Exception:
             return None
-
         if self.install_root:
             proc = self.exec(
-                bin_name=self.INSTALLER_BIN_ABSPATH,
+                bin_name=uv_abspath,
                 cmd=[
                     "pip",
                     "show",
@@ -323,9 +302,8 @@ class UvProvider(BinProvider):
                     if line.startswith("Version: "):
                         return SemVer.parse(line.split("Version: ", 1)[1])
             return None
-
         proc = self.exec(
-            bin_name=self.INSTALLER_BIN_ABSPATH,
+            bin_name=uv_abspath,
             cmd=["tool", "list"],
             timeout=timeout,
             quiet=True,
@@ -353,7 +331,8 @@ class UvProvider(BinProvider):
         timeout: int | None = None,
     ) -> str:
         self.setup(no_cache=no_cache)
-        installer_bin = self._require_installer_bin()
+        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        assert installer_bin
         postinstall_scripts = bool(postinstall_scripts)
         install_args = install_args or self.get_install_args(bin_name)
         if min_version:
@@ -365,13 +344,11 @@ class UvProvider(BinProvider):
                 else arg
                 for arg in install_args
             ]
-
         flags = self._pip_flags(
             install_args=install_args,
             postinstall_scripts=postinstall_scripts,
             min_release_age=min_release_age,
         )
-
         cache_arg = "--no-cache" if no_cache else self.cache_arg
         if self.install_root:
             # ``--compile-bytecode`` tells uv to compile ``.pyc`` files at
@@ -401,7 +378,6 @@ class UvProvider(BinProvider):
                 *self.uv_install_args,
                 *install_args,
             ]
-
         proc = self.exec(bin_name=installer_bin, cmd=cmd, timeout=timeout)
         if proc.returncode != 0:
             self._raise_proc_error("install", install_args, proc)
@@ -419,7 +395,8 @@ class UvProvider(BinProvider):
         timeout: int | None = None,
     ) -> str:
         self.setup(no_cache=no_cache)
-        installer_bin = self._require_installer_bin()
+        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        assert installer_bin
         postinstall_scripts = bool(postinstall_scripts)
         install_args = install_args or self.get_install_args(bin_name)
         if min_version:
@@ -431,13 +408,11 @@ class UvProvider(BinProvider):
                 else arg
                 for arg in install_args
             ]
-
         flags = self._pip_flags(
             install_args=install_args,
             postinstall_scripts=postinstall_scripts,
             min_release_age=min_release_age,
         )
-
         cache_arg = "--no-cache" if no_cache else self.cache_arg
         if self.install_root:
             # Do an explicit uninstall + install cycle instead of
@@ -470,7 +445,6 @@ class UvProvider(BinProvider):
                 uninstall_proc.stderr or ""
             ):
                 self._raise_proc_error("update", tool_names, uninstall_proc)
-
             # Belt-and-suspenders: ``--compile-bytecode`` below makes uv
             # rewrite ``.pyc`` files at install time, but on older uv
             # releases (and on some wheel layouts where the source mtime
@@ -508,7 +482,6 @@ class UvProvider(BinProvider):
                 *self.uv_install_args,
                 *install_args,
             ]
-
         proc = self.exec(bin_name=installer_bin, cmd=cmd, timeout=timeout)
         if proc.returncode != 0:
             self._raise_proc_error("update", install_args, proc)
@@ -524,7 +497,8 @@ class UvProvider(BinProvider):
         min_version: SemVer | None = None,
         timeout: int | None = None,
     ) -> bool:
-        installer_bin = self._require_installer_bin()
+        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        assert installer_bin
         install_args = install_args or self.get_install_args(bin_name)
         # Strip version pins / extras from package specs so both
         # ``uv pip uninstall`` and ``uv tool uninstall`` get bare names.
@@ -533,7 +507,6 @@ class UvProvider(BinProvider):
             for arg in install_args
             if arg and not arg.startswith("-")
         ] or [bin_name]
-
         if self.install_root:
             cmd = [
                 "pip",
@@ -544,7 +517,6 @@ class UvProvider(BinProvider):
             ]
         else:
             cmd = ["tool", "uninstall", *tool_names]
-
         proc = self.exec(bin_name=installer_bin, cmd=cmd, timeout=timeout)
         if proc.returncode != 0:
             self._raise_proc_error("uninstall", tool_names, proc)
@@ -553,6 +525,7 @@ class UvProvider(BinProvider):
     def default_abspath_handler(
         self,
         bin_name: BinName | HostBinPath,
+        no_cache: bool = False,
         **context,
     ) -> HostBinPath | None:
         try:
@@ -561,15 +534,16 @@ class UvProvider(BinProvider):
                 return TypeAdapter(HostBinPath).validate_python(abspath)
         except Exception:
             pass
-
-        if not self.INSTALLER_BIN_ABSPATH:
+        try:
+            installer_binary = self.INSTALLER_BINARY(no_cache=no_cache)
+        except Exception:
             return None
-
         # Fallback: ``uv pip show`` for venv mode.
         if self.install_root:
             tool_name = self._package_name_for_bin(str(bin_name), **context)
+            assert installer_binary.loaded_abspath
             proc = self.exec(
-                bin_name=self.INSTALLER_BIN_ABSPATH,
+                bin_name=installer_binary.loaded_abspath,
                 cmd=[
                     "pip",
                     "show",
@@ -591,6 +565,7 @@ class UvProvider(BinProvider):
         bin_name: BinName,
         abspath: HostBinPath | None = None,
         timeout: int | None = None,
+        no_cache: bool = False,
         **context,
     ) -> SemVer | None:
         try:
@@ -603,7 +578,6 @@ class UvProvider(BinProvider):
                 return version
         except ValueError:
             pass
-
         tool_name = self._package_name_for_bin(str(bin_name), **context)
         return self._version_from_uv_metadata(tool_name, timeout=timeout)
 

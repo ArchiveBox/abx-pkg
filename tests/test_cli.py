@@ -110,12 +110,17 @@ class FakeProvider:
     def __init__(self, name: str, abspath: str | None, version: str | None):
         self.name = name
         self.INSTALLER_BIN = name
-        self.INSTALLER_BIN_ABSPATH = Path(abspath) if abspath else None
-        self.INSTALLER_BINARY = (
-            SimpleNamespace(loaded_version=SemVer(version))
+        self._installer_binary = (
+            SimpleNamespace(
+                loaded_version=SemVer(version),
+                loaded_abspath=Path(abspath) if abspath else None,
+            )
             if abspath and version
             else None
         )
+
+    def INSTALLER_BINARY(self, no_cache: bool = False) -> SimpleNamespace | None:
+        return self._installer_binary
 
 
 @pytest.fixture(autouse=True)
@@ -135,15 +140,15 @@ def restore_abx_pkg_logger():
         package_logger.propagate = original_propagate
 
 
-def test_build_providers_uses_managed_lib_layout(tmp_path):
+def test_build_providers_uses_managed_lib_layout(tmp_path, monkeypatch):
+    monkeypatch.setenv("ABX_PKG_LIB_DIR", str(tmp_path))
     providers = cli_module.build_providers(
         ["uv", "pip", "pnpm", "cargo", "env"],
-        tmp_path,
         dry_run=True,
     )
 
-    assert providers[0].install_root == tmp_path / "uv" / "venv"
-    assert providers[1].install_root == tmp_path / "pip" / "venv"
+    assert providers[0].install_root == tmp_path / "uv"
+    assert providers[1].install_root == tmp_path / "pip"
     assert providers[2].install_root == tmp_path / "pnpm"
     assert providers[3].install_root == tmp_path / "cargo"
     assert providers[4].name == "env"
@@ -257,8 +262,8 @@ def test_install_command_uses_no_cache_env_default(monkeypatch, tmp_path):
 
 
 def test_clear_command_removes_explicit_lib_dir(tmp_path):
-    (tmp_path / "pip" / "venv").mkdir(parents=True)
-    (tmp_path / "pip" / "venv" / "marker").write_text("x")
+    (tmp_path / "pip").mkdir(parents=True)
+    (tmp_path / "pip" / "marker").write_text("x")
 
     result = CliRunner().invoke(
         cli_module.cli,
@@ -541,6 +546,10 @@ def test_run_update_skips_env_for_the_update_step(monkeypatch, tmp_path):
             self.loaded_binprovider = FakeLoadedProvider("env")
             self.is_valid = True
 
+        def load(self, no_cache=None):
+            calls.append(("load", (no_cache,)))
+            return self
+
         def install(self, dry_run=None, no_cache=None):
             calls.append(("install", (dry_run, no_cache)))
             return self
@@ -570,7 +579,7 @@ def test_run_update_skips_env_for_the_update_step(monkeypatch, tmp_path):
 
     assert result.exit_code == 0
     assert calls == [
-        ("install", (False, False)),
+        ("load", (False,)),
         ("update", (("brew",), False, False)),
         ("exec", ("brew", "/tmp/fake-bin", ("--version",), False)),
     ]
@@ -674,9 +683,9 @@ def test_run_with_install_flag_installs_binary_before_executing(tmp_path):
     # stdout must contain *only* black's --version output
     assert proc.stdout.strip().startswith("black")
     # The binary must have actually been installed under our isolated lib dir.
-    installed = list((tmp_path / "pip" / "venv").rglob("black"))
+    installed = list((tmp_path / "pip").rglob("black"))
     assert installed, (
-        f"Expected black to be installed under {tmp_path}/pip/venv, "
+        f"Expected black to be installed under {tmp_path}/pip, "
         f"found nothing. stderr was:\n{proc.stderr}"
     )
 
@@ -696,7 +705,7 @@ def test_run_with_update_flag_installs_and_updates_before_executing(tmp_path):
 
     assert proc.returncode == 0, proc.stderr
     assert proc.stdout.strip().startswith("black")
-    installed = list((tmp_path / "pip" / "venv").rglob("black"))
+    installed = list((tmp_path / "pip").rglob("black"))
     assert installed
 
 
@@ -965,9 +974,9 @@ def test_abx_installs_missing_binary_via_selected_provider(tmp_path):
         assert "Installing" not in line
         assert "Loading" not in line
     # Ensure black was actually installed under the isolated lib dir.
-    installed = list((tmp_path / "pip" / "venv").rglob("black"))
+    installed = list((tmp_path / "pip").rglob("black"))
     assert installed, (
-        f"Expected black to be installed under {tmp_path}/pip/venv. "
+        f"Expected black to be installed under {tmp_path}/pip. "
         f"stderr was:\n{proc.stderr}"
     )
 
@@ -986,7 +995,7 @@ def test_abx_update_flag_is_forwarded_and_runs_after_update(tmp_path):
 
     assert proc.returncode == 0, proc.stderr
     assert proc.stdout.strip().startswith("black")
-    installed = list((tmp_path / "pip" / "venv").rglob("black"))
+    installed = list((tmp_path / "pip").rglob("black"))
     assert installed
 
 
@@ -1078,7 +1087,6 @@ def test_build_providers_passes_provider_level_flags_through(tmp_path):
 
     providers = cli_module.build_providers(
         ["pip", "env"],
-        tmp_path,
         dry_run=True,
         install_root=tmp_path / "custom-root",
         bin_dir=tmp_path / "custom-bin",
@@ -1107,7 +1115,6 @@ def test_build_providers_constructs_every_builtin_provider(tmp_path):
 
     providers = cli_module.build_providers(
         list(cli_module.ALL_PROVIDER_NAMES),
-        tmp_path,
         dry_run=True,
         install_root=tmp_path / "shared-root",
         bin_dir=tmp_path / "shared-bin",
@@ -1214,7 +1221,7 @@ def test_install_with_install_root_override_installs_there(tmp_path):
         f"Expected black under {custom_root}, stderr was:\n{proc.stderr}"
     )
     # And nothing under the lib_dir default location.
-    assert not list((tmp_path / "pip" / "venv").rglob("black"))
+    assert not list((tmp_path / "pip").rglob("black"))
 
 
 def test_install_with_overrides_json_uses_custom_install_args(tmp_path):
@@ -1520,3 +1527,418 @@ def test_abx_dry_run_value_form_is_forwarded_to_abx_pkg(tmp_path):
     # Dry-run short-circuits without execing the binary.
     assert proc.returncode == 0, proc.stderr
     assert "should-not-print" not in proc.stdout
+
+
+# ---------------------------------------------------------------------------
+# parse_script_metadata unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestParseScriptMetadata:
+    """Unit tests for ``parse_script_metadata``."""
+
+    def test_hash_comment_prefix(self, tmp_path):
+        script = tmp_path / "test.py"
+        script.write_text(
+            "#!/usr/bin/env python3\n"
+            "# /// script\n"
+            '# dependencies = ["requests"]\n'
+            "# ///\n"
+            'print("hello")\n',
+        )
+        meta = cli_module.parse_script_metadata(script)
+        assert meta is not None
+        assert meta["dependencies"] == ["requests"]
+
+    def test_double_slash_comment_prefix(self, tmp_path):
+        script = tmp_path / "test.js"
+        script.write_text(
+            "#!/usr/bin/env node\n"
+            "// /// script\n"
+            '// dependencies = ["node"]\n'
+            "// ///\n"
+            'console.log("hello");\n',
+        )
+        meta = cli_module.parse_script_metadata(script)
+        assert meta is not None
+        assert meta["dependencies"] == ["node"]
+
+    def test_dash_dash_comment_prefix(self, tmp_path):
+        script = tmp_path / "test.lua"
+        script.write_text(
+            '-- /// script\n-- dependencies = ["lua"]\n-- ///\n',
+        )
+        meta = cli_module.parse_script_metadata(script)
+        assert meta is not None
+        assert meta["dependencies"] == ["lua"]
+
+    def test_semicolon_comment_prefix(self, tmp_path):
+        script = tmp_path / "test.el"
+        script.write_text(
+            '; /// script\n; dependencies = ["emacs"]\n; ///\n',
+        )
+        meta = cli_module.parse_script_metadata(script)
+        assert meta is not None
+        assert meta["dependencies"] == ["emacs"]
+
+    def test_no_metadata_returns_none(self, tmp_path):
+        script = tmp_path / "plain.py"
+        script.write_text('print("no metadata here")\n')
+        assert cli_module.parse_script_metadata(script) is None
+
+    def test_unclosed_block_returns_none(self, tmp_path):
+        script = tmp_path / "bad.py"
+        script.write_text(
+            '# /// script\n# dependencies = ["x"]\n# no closing marker\n',
+        )
+        assert cli_module.parse_script_metadata(script) is None
+
+    def test_indentation_preserved(self, tmp_path):
+        script = tmp_path / "nested.py"
+        script.write_text(
+            "# /// script\n# [tool.abx-pkg]\n# postinstall_scripts = true\n# ///\n",
+        )
+        meta = cli_module.parse_script_metadata(script)
+        assert meta is not None
+        assert meta["tool"]["abx-pkg"]["postinstall_scripts"] is True
+
+    def test_tool_section(self, tmp_path):
+        script = tmp_path / "tool.py"
+        script.write_text(
+            "# /// script\n"
+            '# dependencies = ["python3"]\n'
+            "# [tool.abx-pkg]\n"
+            "# ABX_PKG_MIN_RELEASE_AGE = 14\n"
+            "# ABX_PKG_POSTINSTALL_SCRIPTS = true\n"
+            "# ///\n",
+        )
+        meta = cli_module.parse_script_metadata(script)
+        assert meta is not None
+        assert meta["tool"]["abx-pkg"]["ABX_PKG_MIN_RELEASE_AGE"] == 14
+        assert meta["tool"]["abx-pkg"]["ABX_PKG_POSTINSTALL_SCRIPTS"] is True
+
+    def test_dict_dependencies(self, tmp_path):
+        script = tmp_path / "deps.py"
+        script.write_text(
+            "# /// script\n"
+            "# [[dependencies]]\n"
+            '# name = "node"\n'
+            '# binproviders = ["env", "apt"]\n'
+            '# min_version = "22.0.0"\n'
+            "# ///\n",
+        )
+        meta = cli_module.parse_script_metadata(script)
+        assert meta is not None
+        assert meta["dependencies"][0]["name"] == "node"
+        assert meta["dependencies"][0]["binproviders"] == ["env", "apt"]
+
+    def test_max_lines_limit(self, tmp_path):
+        script = tmp_path / "late.py"
+        # Put the metadata beyond max_lines=5
+        lines = ["# line\n"] * 10 + [
+            "# /// script\n",
+            '# dependencies = ["x"]\n',
+            "# ///\n",
+        ]
+        script.write_text("".join(lines))
+        assert cli_module.parse_script_metadata(script, max_lines=5) is None
+        # But it works with a higher limit
+        meta = cli_module.parse_script_metadata(script, max_lines=15)
+        assert meta is not None
+
+    def test_blank_lines_in_block(self, tmp_path):
+        script = tmp_path / "blanks.py"
+        script.write_text(
+            '# /// script\n#\n# dependencies = ["x"]\n#\n# ///\n',
+        )
+        meta = cli_module.parse_script_metadata(script)
+        assert meta is not None
+        assert meta["dependencies"] == ["x"]
+
+
+# ---------------------------------------------------------------------------
+# --script integration tests
+# ---------------------------------------------------------------------------
+
+
+def test_run_script_with_interpreter_on_cli(tmp_path):
+    """abx-pkg run --script python3 <script> should parse metadata and run."""
+
+    script = tmp_path / "hello.py"
+    script.write_text(
+        '# /// script\n# dependencies = ["python3"]\n# ///\nprint("script-ok")\n',
+    )
+
+    proc = _run_abx_pkg_cli(
+        f"--lib={tmp_path / 'lib'}",
+        "--binproviders=env",
+        "run",
+        "--script",
+        "--install",
+        "python3",
+        str(script),
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "script-ok" in proc.stdout
+
+
+def test_run_script_passes_args_to_script(tmp_path):
+    """Arguments after the script path are forwarded to the script."""
+
+    script = tmp_path / "args.py"
+    script.write_text(
+        "# /// script\n"
+        '# dependencies = ["python3"]\n'
+        "# ///\n"
+        "import sys\n"
+        'print(" ".join(sys.argv[1:]))\n',
+    )
+
+    proc = _run_abx_pkg_cli(
+        f"--lib={tmp_path / 'lib'}",
+        "--binproviders=env",
+        "run",
+        "--script",
+        "--install",
+        "python3",
+        str(script),
+        "arg1",
+        "arg2",
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "arg1 arg2" in proc.stdout
+
+
+def test_run_script_no_metadata_exits_with_error(tmp_path):
+    """--script with no /// metadata should exit 1."""
+
+    script = tmp_path / "plain.py"
+    script.write_text('print("no metadata")\n')
+
+    proc = _run_abx_pkg_cli(
+        f"--lib={tmp_path / 'lib'}",
+        "--binproviders=env",
+        "run",
+        "--script",
+        "--install",
+        "python3",
+        str(script),
+    )
+    assert proc.returncode != 0
+    assert "no /// script metadata" in proc.stderr
+
+
+def test_run_script_missing_script_path_exits_with_error(tmp_path):
+    """--script with no script path arg should exit 1."""
+
+    proc = _run_abx_pkg_cli(
+        f"--lib={tmp_path / 'lib'}",
+        "--binproviders=env",
+        "run",
+        "--script",
+        "--install",
+        "python3",
+    )
+    assert proc.returncode != 0
+    assert "--script requires a script path" in proc.stderr
+
+
+def test_run_script_nonexistent_file_exits_with_error(tmp_path):
+    """--script pointing at a nonexistent file should exit 1."""
+
+    proc = _run_abx_pkg_cli(
+        f"--lib={tmp_path / 'lib'}",
+        "--binproviders=env",
+        "run",
+        "--script",
+        "--install",
+        "python3",
+        str(tmp_path / "does_not_exist.py"),
+    )
+    assert proc.returncode != 0
+    assert "script not found" in proc.stderr
+
+
+def test_run_script_cli_interpreter_overrides_metadata(tmp_path):
+    """The CLI binary name (python3) is used even if metadata names a different dep."""
+
+    script = tmp_path / "override.py"
+    script.write_text(
+        '# /// script\n# dependencies = ["python3"]\n# ///\nprint("override-ok")\n',
+    )
+
+    proc = _run_abx_pkg_cli(
+        f"--lib={tmp_path / 'lib'}",
+        "--binproviders=env",
+        "run",
+        "--script",
+        "--install",
+        "python3",
+        str(script),
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "override-ok" in proc.stdout
+
+
+def test_run_script_propagates_exit_code(tmp_path):
+    """The exit code from the script should propagate through."""
+
+    script = tmp_path / "exitcode.py"
+    script.write_text(
+        '# /// script\n# dependencies = ["python3"]\n# ///\nimport sys\nsys.exit(42)\n',
+    )
+
+    proc = _run_abx_pkg_cli(
+        f"--lib={tmp_path / 'lib'}",
+        "--binproviders=env",
+        "run",
+        "--script",
+        "--install",
+        "python3",
+        str(script),
+    )
+    assert proc.returncode == 42
+
+
+@pytest.fixture()
+def abx_e2e_lib():
+    """Provide a lib dir with playwright + chromium pre-installed.
+
+    Uses a shared cache at ``/tmp/abx-e2e-lib`` so the ~370 MB browser
+    download only happens once.
+
+    Install order matters: npm playwright first (provides the CLI),
+    then playwright provider installs the chromium browser.
+    """
+
+    lib = Path("/tmp/abx-e2e-lib")
+    npm_prefix = lib / "npm"
+    playwright_root = lib / "playwright"
+
+    # 1. install playwright npm package (provides the CLI + require('playwright'))
+    if not (npm_prefix / "node_modules" / "playwright").is_dir():
+        proc = _run_abx_pkg_cli(
+            f"--lib={lib}",
+            "--binproviders=npm",
+            "--postinstall-scripts=True",
+            "--min-release-age=0",
+            "install",
+            "playwright",
+            timeout=900,
+        )
+        assert proc.returncode == 0, (
+            f"failed to install playwright:\nSTDOUT: {proc.stdout}\nSTDERR: {proc.stderr}"
+        )
+
+    # 2. install chromium via the playwright binprovider
+    chromium_installed = (playwright_root / "bin" / "chromium").exists()
+    if not chromium_installed:
+        proc = _run_abx_pkg_cli(
+            f"--lib={lib}",
+            "--binproviders=playwright",
+            "--postinstall-scripts=True",
+            "--min-release-age=0",
+            "--install-timeout=600",
+            "install",
+            "chromium",
+            timeout=900,
+        )
+        assert proc.returncode == 0, (
+            f"failed to install chromium:\nSTDOUT: {proc.stdout}\nSTDERR: {proc.stderr}"
+        )
+        assert (playwright_root / "bin" / "chromium").exists(), (
+            "chromium symlink not found after install"
+        )
+
+    return lib
+
+
+def test_run_script_node_playwright_chromium_end_to_end(abx_e2e_lib, tmp_path):
+    """Full end-to-end: resolve node, playwright (npm), chromium (playwright),
+    launch a browser with explicit executablePath, and verify everything came
+    from abx-pkg's lib dir — not system binaries."""
+
+    script = tmp_path / "e2e.js"
+    script.write_text(
+        "#!/usr/bin/env -S abx-pkg run --script node\n"
+        "\n"
+        "// /// script\n"
+        "// dependencies = [\n"
+        '//     {name = "node", binproviders = ["env", "apt", "brew"], min_version = "22.0.0"},\n'
+        '//     {name = "playwright", binproviders = ["npm", "pnpm"]},\n'
+        '//     {name = "chromium", binproviders = ["playwright", "puppeteer", "apt"], min_version = "131.0.0"},\n'
+        "// ]\n"
+        "// [tool.abx-pkg]\n"
+        "// ABX_PKG_POSTINSTALL_SCRIPTS = true\n"
+        "// ///\n"
+        "\n"
+        "const path = require('path');\n"
+        "const { chromium } = require('playwright');\n"
+        "const { execSync } = require('child_process');\n"
+        "const fs = require('fs');\n"
+        "\n"
+        "const errors = [];\n"
+        "\n"
+        "// 1. node >= 22\n"
+        "const nodeMajor = parseInt(process.versions.node.split('.')[0], 10);\n"
+        "if (nodeMajor < 22) errors.push('node major ' + nodeMajor + ' < 22');\n"
+        "\n"
+        "// 2. playwright loaded from node_modules inside lib dir\n"
+        "const pwPath = require.resolve('playwright');\n"
+        "if (!pwPath.includes('node_modules'))\n"
+        "    errors.push('playwright not from node_modules: ' + pwPath);\n"
+        "\n"
+        "// 3. find chromium on PATH (provided by abx-pkg, not system)\n"
+        "const chromiumPath = execSync('which chromium', {encoding: 'utf-8'}).trim();\n"
+        "if (!chromiumPath || chromiumPath.startsWith('/usr/bin') || chromiumPath.startsWith('/usr/local/bin'))\n"
+        "    errors.push('chromium looks like system binary: ' + chromiumPath);\n"
+        "const chromiumReal = fs.realpathSync(chromiumPath);\n"
+        "if (!chromiumReal.includes('/playwright/'))\n"
+        "    errors.push('chromium does not resolve into LIB_DIR/playwright: ' + chromiumPath + ' -> ' + chromiumReal);\n"
+        "\n"
+        "// 4. chromium version >= 131\n"
+        "try {\n"
+        '    const ver = execSync(`"${chromiumPath}" --version`, {encoding: "utf-8"}).trim();\n'
+        "    const m = ver.match(/(\\d+)\\.\\d+\\.\\d+/);\n"
+        "    if (!m || parseInt(m[1], 10) < 131)\n"
+        "        errors.push('chromium version too low: ' + ver);\n"
+        "} catch(e) { errors.push('chromium --version failed: ' + e.message); }\n"
+        "\n"
+        "// 5. launch browser with the chromium binary from PATH\n"
+        "(async () => {\n"
+        "    const browser = await chromium.launch({headless: true, executablePath: chromiumPath});\n"
+        "    const page = await browser.newPage();\n"
+        "    await page.setContent('<html><head><title>Test</title></head>'\n"
+        "        + '<body><h1>Hello</h1><p>abx-pkg e2e</p></body></html>');\n"
+        "    const title = await page.title();\n"
+        "    if (title !== 'Test') errors.push('title was: ' + title);\n"
+        "    const h1 = await page.textContent('h1');\n"
+        "    if (h1 !== 'Hello') errors.push('h1 was: ' + h1);\n"
+        "    await browser.close();\n"
+        "\n"
+        "    if (errors.length) {\n"
+        "        errors.forEach(e => console.error(e));\n"
+        "        process.exit(1);\n"
+        "    }\n"
+        "    console.log('e2e-ok');\n"
+        "})();\n",
+    )
+
+    proc = _run_abx_pkg_cli(
+        f"--lib={abx_e2e_lib}",
+        "--binproviders=env,npm,playwright",
+        "--postinstall-scripts=True",
+        "--min-release-age=0",
+        "--install-timeout=600",
+        "--install",
+        "run",
+        "--script",
+        "node",
+        str(script),
+        timeout=900,
+    )
+
+    assert proc.returncode == 0, f"STDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
+    assert proc.stdout.strip().endswith("e2e-ok"), (
+        f"STDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
+    )

@@ -54,12 +54,13 @@ class TestBunProvider:
         cls,
         provider: BunProvider,
     ) -> None:
-        bun_binary = provider.INSTALLER_BIN_ABSPATH
+        installer_binary = provider.INSTALLER_BINARY()
+        bun_binary = installer_binary.loaded_abspath if installer_binary else None
         if not bun_binary:
             pytest.skip("bun is not available on this host")
 
         if not cls._bun_supports_trusted_global_postinstall(str(bun_binary)):
-            version = provider.INSTALLER_BINARY
+            version = installer_binary
             pytest.skip(
                 "bun "
                 f"{version.loaded_version if version else 'unknown'} "

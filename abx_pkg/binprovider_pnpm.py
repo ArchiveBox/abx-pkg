@@ -68,6 +68,15 @@ class PnpmProvider(BinProvider):
 
     pnpm_install_args: list[str] = ["--loglevel=error"]
 
+    @computed_field
+    @property
+    def ENV(self) -> "dict[str, str]":
+        if not self.install_root:
+            return {}
+        return {
+            "NODE_PATH": ":" + str(self.install_root / "node_modules"),
+        }
+
     @model_validator(mode="after")
     def detect_cache_arg(self) -> Self:
         # Re-derive cache_arg from the instance's cache_dir so that passing
@@ -82,7 +91,10 @@ class PnpmProvider(BinProvider):
         if action not in ("install", "update"):
             return False
         threshold = SemVer.parse("10.16.0")
-        installer = self.INSTALLER_BINARY
+        try:
+            installer = self.INSTALLER_BINARY()
+        except Exception:
+            return False
         version = installer.loaded_version if installer else None
         return bool(version and threshold and version >= threshold)
 
@@ -91,41 +103,15 @@ class PnpmProvider(BinProvider):
 
     @computed_field
     @property
-    def INSTALLER_BIN_ABSPATH(self) -> HostBinPath | None:
-        """Resolve the pnpm executable, honoring ``PNPM_BINARY`` for explicit overrides."""
-        if self._INSTALLER_BIN_ABSPATH:
-            return self._INSTALLER_BIN_ABSPATH
-
-        manual_binary = os.environ.get("PNPM_BINARY")
-        if manual_binary and os.path.isabs(manual_binary):
-            try:
-                valid_abspath = TypeAdapter(HostBinPath).validate_python(
-                    Path(manual_binary).resolve(),
-                )
-                self._INSTALLER_BIN_ABSPATH = valid_abspath
-                return valid_abspath
-            except Exception:
-                return None
-
-        abspath = bin_abspath(self.INSTALLER_BIN, PATH=self.PATH) or bin_abspath(
-            self.INSTALLER_BIN,
-        )
-        if not abspath:
-            return None
-
-        valid_abspath = TypeAdapter(HostBinPath).validate_python(abspath)
-        if valid_abspath:
-            self._INSTALLER_BIN_ABSPATH = valid_abspath
-        return valid_abspath
-
-    @computed_field
-    @property
     def is_valid(self) -> bool:
         if self.bin_dir and not (
             self.bin_dir.is_dir() and os.access(self.bin_dir, os.R_OK)
         ):
             return False
-        return bool(self.INSTALLER_BIN_ABSPATH)
+        return bool(
+            bin_abspath(self.INSTALLER_BIN, PATH=self.PATH)
+            or bin_abspath(self.INSTALLER_BIN),
+        )
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
@@ -235,7 +221,8 @@ class PnpmProvider(BinProvider):
         timeout: int | None = None,
     ) -> str:
         self.setup(no_cache=no_cache)
-        installer_bin = self._require_installer_bin()
+        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        assert installer_bin
         postinstall_scripts = bool(postinstall_scripts)
         install_args = install_args or self.get_install_args(bin_name)
         if min_version:
@@ -292,7 +279,8 @@ class PnpmProvider(BinProvider):
         timeout: int | None = None,
     ) -> str:
         self.setup(no_cache=no_cache)
-        installer_bin = self._require_installer_bin()
+        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        assert installer_bin
         postinstall_scripts = bool(postinstall_scripts)
         install_args = install_args or self.get_install_args(bin_name)
         if min_version:
@@ -350,7 +338,8 @@ class PnpmProvider(BinProvider):
         min_version: SemVer | None = None,
         timeout: int | None = None,
     ) -> bool:
-        installer_bin = self._require_installer_bin()
+        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        assert installer_bin
         install_args = install_args or self.get_install_args(bin_name)
 
         # pnpm remove rejects --ignore-scripts and --config.minimumReleaseAge,
@@ -367,6 +356,7 @@ class PnpmProvider(BinProvider):
     def default_abspath_handler(
         self,
         bin_name: BinName | HostBinPath,
+        no_cache: bool = False,
         **context,
     ) -> HostBinPath | None:
         try:
@@ -376,7 +366,10 @@ class PnpmProvider(BinProvider):
         except Exception:
             pass
 
-        if not self.INSTALLER_BIN_ABSPATH:
+        try:
+            pnpm_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+            assert pnpm_abspath
+        except Exception:
             return None
 
         # Fallback: ask `pnpm view` for the package's bin entries and look
@@ -385,7 +378,7 @@ class PnpmProvider(BinProvider):
             install_args = self.get_install_args(str(bin_name)) or [str(bin_name)]
             package_info = json.loads(
                 self.exec(
-                    bin_name=self.INSTALLER_BIN_ABSPATH,
+                    bin_name=pnpm_abspath,
                     cmd=["view", "--json", install_args[0], "bin"],
                     timeout=self.version_timeout,
                     quiet=True,
@@ -415,6 +408,7 @@ class PnpmProvider(BinProvider):
         bin_name: BinName,
         abspath: HostBinPath | None = None,
         timeout: int | None = None,
+        no_cache: bool = False,
         **context,
     ) -> SemVer | None:
         try:
@@ -428,7 +422,10 @@ class PnpmProvider(BinProvider):
         except ValueError:
             pass
 
-        if not self.INSTALLER_BIN_ABSPATH:
+        try:
+            pnpm_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+            assert pnpm_abspath
+        except Exception:
             return None
 
         # Fallback: ask `pnpm ls --json` for the installed version of the
@@ -444,7 +441,7 @@ class PnpmProvider(BinProvider):
         )
         try:
             json_output = self.exec(
-                bin_name=self.INSTALLER_BIN_ABSPATH,
+                bin_name=pnpm_abspath,
                 cmd=[
                     "ls",
                     f"--dir={self.install_root}" if self.install_root else "--global",
@@ -465,7 +462,7 @@ class PnpmProvider(BinProvider):
         try:
             modules_dir = Path(
                 self.exec(
-                    bin_name=self.INSTALLER_BIN_ABSPATH,
+                    bin_name=pnpm_abspath,
                     cmd=(
                         ["root", f"--dir={self.install_root}"]
                         if self.install_root

@@ -264,9 +264,17 @@ def log_subprocess_output(
         command_logger.log(level, "%s stderr: %s", action, trimmed_stderr)
 
 
-def format_subprocess_output(stdout: str | None, stderr: str | None) -> str:
+def format_subprocess_output(
+    stdout: str | bytes | None,
+    stderr: str | bytes | None,
+) -> str:
+    def _to_str(val: str | bytes | None) -> str:
+        if val is None:
+            return ""
+        return val.decode("utf-8", errors="replace") if isinstance(val, bytes) else val
+
     return "\n".join(
-        part for part in ((stdout or "").strip(), (stderr or "").strip()) if part
+        part for part in (_to_str(stdout).strip(), _to_str(stderr).strip()) if part
     )
 
 

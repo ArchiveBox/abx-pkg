@@ -79,12 +79,24 @@ class YarnProvider(BinProvider):
 
     yarn_install_args: list[str] = []
 
+    @computed_field
+    @property
+    def ENV(self) -> "dict[str, str]":
+        if not self.install_root:
+            return {}
+        return {
+            "NODE_PATH": ":" + str(self.install_root / "node_modules"),
+        }
+
     def supports_min_release_age(self, action) -> bool:
         if action not in ("install", "update"):
             return False
         # npmMinimalAgeGate landed in Yarn 4.10
         threshold = SemVer.parse("4.10.0")
-        installer = self.INSTALLER_BINARY
+        try:
+            installer = self.INSTALLER_BINARY()
+        except Exception:
+            return False
         version = installer.loaded_version if installer else None
         return bool(version and threshold and version >= threshold)
 
@@ -93,38 +105,12 @@ class YarnProvider(BinProvider):
             return False
         # Yarn 2+ supports the enableScripts setting and --mode skip-build
         threshold = SemVer.parse("2.0.0")
-        installer = self.INSTALLER_BINARY
+        try:
+            installer = self.INSTALLER_BINARY()
+        except Exception:
+            return False
         version = installer.loaded_version if installer else None
         return bool(version and threshold and version >= threshold)
-
-    @computed_field
-    @property
-    def INSTALLER_BIN_ABSPATH(self) -> HostBinPath | None:
-        """Resolve the yarn executable, honoring ``YARN_BINARY`` for explicit overrides."""
-        if self._INSTALLER_BIN_ABSPATH:
-            return self._INSTALLER_BIN_ABSPATH
-
-        manual_binary = os.environ.get("YARN_BINARY")
-        if manual_binary and os.path.isabs(manual_binary):
-            try:
-                valid_abspath = TypeAdapter(HostBinPath).validate_python(
-                    Path(manual_binary).resolve(),
-                )
-                self._INSTALLER_BIN_ABSPATH = valid_abspath
-                return valid_abspath
-            except Exception:
-                return None
-
-        abspath = bin_abspath(self.INSTALLER_BIN, PATH=self.PATH) or bin_abspath(
-            self.INSTALLER_BIN,
-        )
-        if not abspath:
-            return None
-
-        valid_abspath = TypeAdapter(HostBinPath).validate_python(abspath)
-        if valid_abspath:
-            self._INSTALLER_BIN_ABSPATH = valid_abspath
-        return valid_abspath
 
     @computed_field
     @property
@@ -133,7 +119,10 @@ class YarnProvider(BinProvider):
             self.bin_dir.is_dir() and os.access(self.bin_dir, os.R_OK)
         ):
             return False
-        return bool(self.INSTALLER_BIN_ABSPATH)
+        return bool(
+            bin_abspath(self.INSTALLER_BIN, PATH=self.PATH)
+            or bin_abspath(self.INSTALLER_BIN),
+        )
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
@@ -216,7 +205,7 @@ class YarnProvider(BinProvider):
             )
         # Yarn 2+ uses .yarnrc.yml; pin nodeLinker so binaries end up in
         # node_modules/.bin instead of the PnP store.
-        installer = self.INSTALLER_BINARY
+        installer = self.INSTALLER_BINARY(no_cache=no_cache)
         version = installer.loaded_version if installer else None
         berry_threshold = SemVer.parse("2.0.0")
         if version and berry_threshold and version >= berry_threshold:
@@ -240,7 +229,8 @@ class YarnProvider(BinProvider):
         timeout: int | None = None,
     ) -> str:
         self.setup(no_cache=no_cache)
-        installer_bin = self._require_installer_bin()
+        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        assert installer_bin
         postinstall_scripts = bool(postinstall_scripts)
         install_args = install_args or self.get_install_args(bin_name)
         if min_version:
@@ -254,7 +244,7 @@ class YarnProvider(BinProvider):
                 for arg in install_args
             ]
 
-        installer = self.INSTALLER_BINARY
+        installer = self.INSTALLER_BINARY(no_cache=no_cache)
         version = installer.loaded_version if installer else None
         berry_threshold = SemVer.parse("2.0.0")
         is_berry = (
@@ -293,7 +283,7 @@ class YarnProvider(BinProvider):
             yarnrc.write_text(content + "\n" if content else "")
 
         cmd = ["add", *self.yarn_install_args, *install_args]
-        if no_cache and "--force" not in cmd:
+        if no_cache and not is_berry and "--force" not in cmd:
             cmd.insert(1, "--force")
         if is_berry and not postinstall_scripts:
             cmd = [
@@ -330,7 +320,8 @@ class YarnProvider(BinProvider):
         timeout: int | None = None,
     ) -> str:
         self.setup(no_cache=no_cache)
-        installer_bin = self._require_installer_bin()
+        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        assert installer_bin
         postinstall_scripts = bool(postinstall_scripts)
         install_args = install_args or self.get_install_args(bin_name)
         if min_version:
@@ -344,7 +335,7 @@ class YarnProvider(BinProvider):
                 for arg in install_args
             ]
 
-        installer = self.INSTALLER_BINARY
+        installer = self.INSTALLER_BINARY(no_cache=no_cache)
         version = installer.loaded_version if installer else None
         berry_threshold = SemVer.parse("2.0.0")
         is_berry = (
@@ -382,17 +373,10 @@ class YarnProvider(BinProvider):
 
         if is_berry:
             cmd = ["up", *self.yarn_install_args, *install_args]
-            if no_cache and "--force" not in cmd:
-                cmd.insert(1, "--force")
             if not postinstall_scripts:
                 cmd = [
                     "up",
                     *self.yarn_install_args,
-                    *(
-                        ["--force"]
-                        if no_cache and "--force" not in self.yarn_install_args
-                        else []
-                    ),
                     "--mode",
                     "skip-build",
                     *install_args,
@@ -421,7 +405,8 @@ class YarnProvider(BinProvider):
         min_version: SemVer | None = None,
         timeout: int | None = None,
     ) -> bool:
-        installer_bin = self._require_installer_bin()
+        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        assert installer_bin
         install_args = install_args or self.get_install_args(bin_name)
 
         proc = self.exec(
@@ -436,6 +421,7 @@ class YarnProvider(BinProvider):
     def default_abspath_handler(
         self,
         bin_name: BinName | HostBinPath,
+        no_cache: bool = False,
         **context,
     ) -> HostBinPath | None:
         try:
@@ -445,7 +431,9 @@ class YarnProvider(BinProvider):
         except Exception:
             pass
 
-        if not self.INSTALLER_BIN_ABSPATH:
+        try:
+            self.INSTALLER_BINARY(no_cache=no_cache)
+        except Exception:
             return None
 
         if self.install_root:
@@ -459,6 +447,7 @@ class YarnProvider(BinProvider):
         bin_name: BinName,
         abspath: HostBinPath | None = None,
         timeout: int | None = None,
+        no_cache: bool = False,
         **context,
     ) -> SemVer | None:
         try:
@@ -472,7 +461,9 @@ class YarnProvider(BinProvider):
         except ValueError:
             pass
 
-        if not self.INSTALLER_BIN_ABSPATH:
+        try:
+            self.INSTALLER_BINARY(no_cache=no_cache)
+        except Exception:
             return None
 
         if not self.install_root:

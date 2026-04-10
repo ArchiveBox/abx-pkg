@@ -24,11 +24,12 @@ class TestUvProvider:
             assert installed is not None
             assert installed.loaded_abspath is not None
             assert installed.loaded_version is not None
-            assert provider.INSTALLER_BIN_ABSPATH is not None
+            installer_binary = provider.INSTALLER_BINARY()
+            assert installer_binary and installer_binary.loaded_abspath
             assert provider.install_root is not None
 
             metadata_proc = provider.exec(
-                bin_name=provider.INSTALLER_BIN_ABSPATH,
+                bin_name=installer_binary.loaded_abspath,
                 cmd=[
                     "pip",
                     "show",

@@ -27,24 +27,6 @@ PROVIDER_CLASS_BY_NAME: dict[str, type[BinProvider]] = {
     cast(str, provider.model_fields["name"].default): provider
     for provider in ALL_PROVIDERS
 }
-MANAGED_PROVIDER_ROOTS: dict[str, Path] = {
-    "pip": Path("pip/venv"),
-    "uv": Path("uv/venv"),
-    "npm": Path("npm"),
-    "pnpm": Path("pnpm"),
-    "yarn": Path("yarn"),
-    "bun": Path("bun"),
-    "deno": Path("deno"),
-    "cargo": Path("cargo"),
-    "gem": Path("gem"),
-    "goget": Path("goget"),
-    "nix": Path("nix"),
-    "docker": Path("docker"),
-    "chromewebstore": Path("chromewebstore"),
-    "puppeteer": Path("puppeteer"),
-    "playwright": Path("playwright"),
-    "bash": Path("bash"),
-}
 
 
 @dataclass(slots=True)
@@ -170,6 +152,66 @@ def _click_parse(parser: Callable[[str | None], Any]) -> Callable[..., Any]:
     return lambda _ctx, _param, value: parser(value)
 
 
+def parse_script_metadata(
+    script_path: Path,
+    max_lines: int = 50,
+) -> dict[str, Any] | None:
+    """Extract inline ``/// script`` metadata from a script file.
+
+    Scans the first *max_lines* lines for a ``/// script`` opening marker
+    and a closing ``///``.  Content lines between the markers are stripped
+    of their leading comment prefix (everything up to and including the
+    first whitespace) and the resulting text is parsed as TOML.
+
+    Works with any single-token comment prefix (``#``, ``//``, ``--``,
+    ``;``, ``/*``, …) — the prefix is never hard-coded; we simply discard
+    the first whitespace-delimited token on each content line.
+    """
+
+    try:
+        text = script_path.read_text(encoding="utf-8", errors="replace")
+    except OSError as err:
+        raise click.ClickException(f"cannot read script {script_path}: {err}") from err
+
+    lines = text.splitlines()
+    scan_limit = min(len(lines), max_lines)
+
+    block_start: int | None = None
+    for i in range(scan_limit):
+        if "/// script" in lines[i]:
+            block_start = i + 1
+            break
+
+    if block_start is None:
+        return None
+
+    block_end: int | None = None
+    for i in range(block_start, len(lines)):
+        stripped = lines[i].strip()
+        if stripped.endswith("///") and "/// script" not in stripped:
+            block_end = i
+            break
+
+    if block_end is None:
+        return None
+
+    toml_lines: list[str] = []
+    for i in range(block_start, block_end):
+        stripped = lines[i].strip()
+        parts = stripped.split(None, 1)
+        if len(parts) < 2:
+            toml_lines.append("")
+        else:
+            toml_lines.append(parts[1])
+
+    try:
+        return tomllib.loads("\n".join(toml_lines))
+    except Exception as err:
+        raise click.ClickException(
+            f"invalid TOML in /// script block of {script_path}: {err}",
+        ) from err
+
+
 def get_package_version() -> str:
     try:
         return metadata.version("abx-pkg")
@@ -182,7 +224,12 @@ def get_package_version() -> str:
 
 def resolve_lib_dir(raw_value: str | Path | None) -> Path:
     lib_dir = Path(raw_value or os.environ.get("ABX_PKG_LIB_DIR") or DEFAULT_LIB_DIR)
-    return lib_dir.expanduser().resolve()
+    resolved = lib_dir.expanduser().resolve()
+    # Only set ABX_PKG_LIB_DIR if the user explicitly provided --lib
+    # or the env var was already set. Don't force managed mode by default.
+    if raw_value or os.environ.get("ABX_PKG_LIB_DIR"):
+        os.environ["ABX_PKG_LIB_DIR"] = str(resolved)
+    return resolved
 
 
 def parse_provider_names(raw_value: str | None) -> list[str]:
@@ -235,7 +282,6 @@ def resolve_no_cache(flag_value: bool | None) -> bool:
 
 def build_providers(
     provider_names: list[str],
-    lib_dir: Path,
     *,
     dry_run: bool = False,
     install_root: Path | None = None,
@@ -254,15 +300,11 @@ def build_providers(
             provider_kwargs["install_timeout"] = install_timeout
         if version_timeout is not None:
             provider_kwargs["version_timeout"] = version_timeout
-        # User-supplied --install-root wins; otherwise use the managed
-        # ``<lib_dir>/<provider>/<suffix>`` layout for providers that
-        # have one in MANAGED_PROVIDER_ROOTS.
+        # User-supplied --install-root overrides the provider's default.
+        # Otherwise each provider resolves its own install_root from
+        # ABX_PKG_LIB_DIR (set by resolve_lib_dir) via default_factory.
         if install_root is not None:
             provider_kwargs["install_root"] = install_root
-        else:
-            suffix = MANAGED_PROVIDER_ROOTS.get(provider_name)
-            if suffix is not None:
-                provider_kwargs["install_root"] = lib_dir / suffix
         if bin_dir is not None:
             provider_kwargs["bin_dir"] = bin_dir
         providers.append(provider_class(**provider_kwargs))
@@ -274,7 +316,6 @@ def build_binary(binary_name: str, options: CliOptions, *, dry_run: bool) -> Bin
         "name": binary_name,
         "binproviders": build_providers(
             options.provider_names,
-            options.lib_dir,
             dry_run=dry_run,
             install_root=options.install_root,
             bin_dir=options.bin_dir,
@@ -487,17 +528,20 @@ def version_report(options: CliOptions) -> str:
     lines = [get_package_version()]
     for provider in build_providers(
         options.provider_names,
-        options.lib_dir,
         dry_run=False,
     ):
-        installer_binary = provider.INSTALLER_BINARY
-        if not installer_binary or not provider.INSTALLER_BIN_ABSPATH:
+        try:
+            installer_binary = provider.INSTALLER_BINARY()
+        except Exception:
             continue
-        version = installer_binary.loaded_version or "unknown"
+        version = str(installer_binary.loaded_version or "unknown")
+        abspath = installer_binary.loaded_abspath
+        if not abspath:
+            continue
         lines.append(
             format_loaded_binary_line(
                 version,
-                provider.INSTALLER_BIN_ABSPATH,
+                abspath,
                 provider.name,
             ),
         )
@@ -862,6 +906,13 @@ def load_command(
     default=False,
     help="Ensure the binary is available, then update it before executing it.",
 )
+@click.option(
+    "--script",
+    "script_mode",
+    is_flag=True,
+    default=False,
+    help="Parse inline /// script metadata from the script file and resolve dependencies before running.",
+)
 @click.argument("binary_name")
 @click.argument("binary_args", nargs=-1, type=click.UNPROCESSED)
 @click.pass_context
@@ -878,6 +929,7 @@ def run_command(
 
     command_install_before_run = bool(shared_kwargs.pop("command_install_before_run"))
     command_update_before_run = bool(shared_kwargs.pop("command_update_before_run"))
+    script_mode = bool(shared_kwargs.pop("script_mode"))
     binary_name = cast(str, shared_kwargs.pop("binary_name"))
     binary_args = cast(tuple[str, ...], shared_kwargs.pop("binary_args"))
 
@@ -890,6 +942,90 @@ def run_command(
     )
 
     configure_cli_logging(debug=run_options.debug)
+
+    extra_env: dict[str, str] = {}
+
+    # --script: the OS appends the script path as binary_args[0] via the
+    # shebang.  Parse its /// metadata and resolve deps before normal run.
+    if script_mode:
+        if not binary_args:
+            _echo("abx-pkg: --script requires a script path", err=True)
+            ctx.exit(1)
+            return
+
+        script_path = Path(binary_args[0])
+        if not script_path.is_file():
+            _echo(f"abx-pkg: script not found: {script_path}", err=True)
+            ctx.exit(1)
+            return
+
+        meta = parse_script_metadata(script_path)
+        if meta is None:
+            _echo(
+                f"abx-pkg: no /// script metadata found in {script_path}",
+                err=True,
+            )
+            ctx.exit(1)
+            return
+
+        # Apply [tool.abx-pkg] as env vars before resolving deps.
+        tool_section = meta.get("tool")
+        tool_config = (
+            tool_section.get("abx-pkg", {}) if isinstance(tool_section, dict) else {}
+        )
+        for key, value in tool_config.items():
+            os.environ.setdefault(key, str(value))
+
+        # Resolve all declared dependencies and collect ENV + PATH
+        for dep in meta.get("dependencies", []):
+            if isinstance(dep, str):
+                dep_name = dep
+                dep_options = run_options
+            elif isinstance(dep, dict):
+                if "name" not in dep:
+                    continue
+                dep_name = dep["name"]
+                dep_options = run_options
+                if "binproviders" in dep:
+                    dep_options = replace(
+                        dep_options,
+                        provider_names=dep["binproviders"],
+                    )
+                if "min_version" in dep:
+                    dep_options = replace(dep_options, min_version=dep["min_version"])
+            else:
+                continue
+
+            try:
+                dep_binary = build_binary(
+                    dep_name,
+                    dep_options,
+                    dry_run=run_options.dry_run,
+                )
+                dep_binary = dep_binary.install(
+                    dry_run=run_options.dry_run,
+                    no_cache=run_options.no_cache,
+                )
+                if dep_binary.loaded_binprovider:
+                    BinProvider.apply_env(
+                        dep_binary.loaded_binprovider.ENV,
+                        extra_env,
+                    )
+                    BinProvider.apply_env(
+                        {"PATH": dep_binary.loaded_binprovider.PATH + ":"},
+                        extra_env,
+                    )
+            except ABXPkgError as err:
+                _echo(
+                    f"abx-pkg: failed to resolve dependency {dep_name}: "
+                    f"{format_error(err)}",
+                    err=True,
+                )
+                ctx.exit(1)
+                return
+
+        # --script implies --install
+        install_before_run = True
 
     binary = build_binary(
         binary_name,
@@ -955,10 +1091,24 @@ def run_command(
     # binary.is_valid guarantees both fields are set; narrow for pyright.
     assert binary.loaded_binprovider is not None
     assert binary.loaded_abspath is not None
+    exec_kwargs: dict[str, Any] = {"capture_output": False}
+    if extra_env:
+        env = os.environ.copy()
+        extra_path = extra_env.pop("PATH", None)
+        env.update(extra_env)
+        if extra_path:
+            env["PATH"] = extra_path + ":" + env.get("PATH", "")
+        exec_kwargs["env"] = env
+        # Dep provider paths must take priority over the interpreter
+        # provider's own PATH. Inject into provider PATH.
+        if extra_path:
+            binary.loaded_binprovider.PATH = (
+                extra_path + ":" + binary.loaded_binprovider.PATH
+            )
     proc = binary.loaded_binprovider.exec(
         bin_name=binary.loaded_abspath,
         cmd=list(binary_args),
-        capture_output=False,
+        **exec_kwargs,
     )
     ctx.exit(proc.returncode)
 
@@ -1129,6 +1279,7 @@ __all__ = [
     "is_interactive_tty",
     "main",
     "parse_provider_names",
+    "parse_script_metadata",
     "resolve_debug",
     "resolve_dry_run",
     "resolve_no_cache",

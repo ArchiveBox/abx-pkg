@@ -46,8 +46,8 @@ class TestAbxPkgLibDir:
                 sys.executable,
                 "-c",
                 "import os; os.environ.pop('ABX_PKG_LIB_DIR', None);"
-                "from abx_pkg.base_types import ABX_PKG_LIB_DIR;"
-                "print(ABX_PKG_LIB_DIR)",
+                "from abx_pkg.base_types import abx_pkg_install_root_default;"
+                "print(abx_pkg_install_root_default('pip'))",
             ],
             capture_output=True,
             text=True,
@@ -58,7 +58,7 @@ class TestAbxPkgLibDir:
     def test_empty_string_is_treated_as_unset(self):
         proc = _run_with_lib_dir(
             "",
-            "from abx_pkg.base_types import ABX_PKG_LIB_DIR; print(ABX_PKG_LIB_DIR)",
+            "from abx_pkg.base_types import abx_pkg_install_root_default; print(abx_pkg_install_root_default('pip'))",
         )
         assert proc.returncode == 0, proc.stderr
         assert proc.stdout.strip() == "None"
@@ -74,12 +74,14 @@ class TestAbxPkgLibDir:
     ):
         script = textwrap.dedent(
             """
-            import json
+            import json, os
+            from pathlib import Path
             from abx_pkg import ALL_PROVIDERS
-            from abx_pkg.base_types import ABX_PKG_LIB_DIR
 
+            _lib = os.environ.get("ABX_PKG_LIB_DIR", "").strip()
+            lib_dir = Path(_lib).expanduser().resolve() if _lib else None
             payload = {
-                "lib_dir": str(ABX_PKG_LIB_DIR) if ABX_PKG_LIB_DIR else None,
+                "lib_dir": str(lib_dir) if lib_dir else None,
                 "fields": {},
             }
             for cls in ALL_PROVIDERS:
@@ -247,15 +249,16 @@ class TestAbxPkgLibDir:
             lib_dir = Path(tmp_dir) / "abx-lib"
             script = textwrap.dedent(
                 """
-                import json
+                import json, os
+                from pathlib import Path
                 from abx_pkg import (
                     BunProvider, CargoProvider, DenoProvider, GemProvider,
                     NpmProvider, PipProvider, PnpmProvider, UvProvider,
                     YarnProvider,
                 )
-                from abx_pkg.base_types import ABX_PKG_LIB_DIR
 
-                results = {"lib_dir": str(ABX_PKG_LIB_DIR)}
+                _lib = os.environ.get("ABX_PKG_LIB_DIR", "").strip()
+                results = {"lib_dir": str(Path(_lib).expanduser().resolve()) if _lib else "None"}
 
                 pip = PipProvider(postinstall_scripts=True, min_release_age=0)
                 results["pip"] = str(pip.install_root)

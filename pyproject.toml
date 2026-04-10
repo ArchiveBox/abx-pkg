@@ -141,6 +141,7 @@ markers = [
 [tool.ty.src]
 exclude = [
     "**/migrations/**",
+    "docs/**",
 ]
 
 

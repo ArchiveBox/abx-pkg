@@ -14,6 +14,7 @@ from .base_types import (
     BinName,
     InstallArgs,
     abx_pkg_install_root_default,
+    bin_abspath,
 )
 from .semver import SemVer
 from .binprovider import BinProvider, remap_kwargs
@@ -39,13 +40,29 @@ class CargoProvider(BinProvider):
 
     @computed_field
     @property
+    def ENV(self) -> "dict[str, str]":
+        if not self.install_root:
+            return {}
+        env: dict[str, str] = {
+            "CARGO_HOME": str(self.cargo_home),
+            "CARGO_TARGET_DIR": str(self.install_root / "target"),
+        }
+        if self.install_root != self.cargo_home:
+            env["CARGO_INSTALL_ROOT"] = str(self.install_root)
+        return env
+
+    @computed_field
+    @property
     def is_valid(self) -> bool:
         if self.install_root and self.install_root != self.cargo_home:
             cargo_bin_dir = self.install_root / "bin"
             if not (cargo_bin_dir.is_dir() and os.access(cargo_bin_dir, os.R_OK)):
                 return False
 
-        return bool(self.INSTALLER_BIN_ABSPATH)
+        return bool(
+            bin_abspath(self.INSTALLER_BIN, PATH=self.PATH)
+            or bin_abspath(self.INSTALLER_BIN),
+        )
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
@@ -147,26 +164,16 @@ class CargoProvider(BinProvider):
         install_args = install_args or self.get_install_args(bin_name)
         if min_version and not any(arg.startswith("--version") for arg in install_args):
             install_args = ["--version", f">={min_version}", *install_args]
-        installer_bin = self._require_installer_bin()
-        install_root = self.install_root
-        assert install_root is not None
+        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        assert installer_bin
+
         cargo_install_args = [*self.cargo_install_args]
-        if install_root != self.cargo_home:
-            cargo_install_args.extend(["--root", str(install_root)])
+        if self.install_root != self.cargo_home:
+            cargo_install_args.extend(["--root", str(self.install_root)])
 
         proc = self.exec(
             bin_name=installer_bin,
             cmd=["install", *cargo_install_args, *install_args],
-            env={
-                **os.environ,
-                "CARGO_HOME": str(self.cargo_home),
-                "CARGO_TARGET_DIR": str(install_root / "target"),
-                **(
-                    {"CARGO_INSTALL_ROOT": str(install_root)}
-                    if install_root != self.cargo_home
-                    else {}
-                ),
-            },
             timeout=timeout,
         )
         if proc.returncode != 0:
@@ -192,12 +199,12 @@ class CargoProvider(BinProvider):
         install_args = install_args or self.get_install_args(bin_name)
         if min_version and not any(arg.startswith("--version") for arg in install_args):
             install_args = ["--version", f">={min_version}", *install_args]
-        installer_bin = self._require_installer_bin()
-        install_root = self.install_root
-        assert install_root is not None
+        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        assert installer_bin
+
         cargo_install_args = [*self.cargo_install_args]
-        if install_root != self.cargo_home:
-            cargo_install_args.extend(["--root", str(install_root)])
+        if self.install_root != self.cargo_home:
+            cargo_install_args.extend(["--root", str(self.install_root)])
 
         proc = self.exec(
             bin_name=installer_bin,
@@ -207,16 +214,6 @@ class CargoProvider(BinProvider):
                 *cargo_install_args,
                 *install_args,
             ],
-            env={
-                **os.environ,
-                "CARGO_HOME": str(self.cargo_home),
-                "CARGO_TARGET_DIR": str(install_root / "target"),
-                **(
-                    {"CARGO_INSTALL_ROOT": str(install_root)}
-                    if install_root != self.cargo_home
-                    else {}
-                ),
-            },
             timeout=timeout,
         )
         if proc.returncode != 0:
@@ -238,31 +235,21 @@ class CargoProvider(BinProvider):
             bin_name,
             install_args=install_args,
         )
-        installer_bin = self._require_installer_bin()
-        install_root = self.install_root
-        assert install_root is not None
+        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        assert installer_bin
 
         proc = self.exec(
             bin_name=installer_bin,
             cmd=[
                 "uninstall",
                 *(
-                    ["--root", str(install_root)]
-                    if install_root != self.cargo_home
+                    ["--root", str(self.install_root)]
+                    if self.install_root is not None
+                    and self.install_root != self.cargo_home
                     else []
                 ),
                 *package_specs,
             ],
-            env={
-                **os.environ,
-                "CARGO_HOME": str(self.cargo_home),
-                "CARGO_TARGET_DIR": str(install_root / "target"),
-                **(
-                    {"CARGO_INSTALL_ROOT": str(install_root)}
-                    if install_root != self.cargo_home
-                    else {}
-                ),
-            },
             timeout=timeout,
         )
         if proc.returncode != 0 and "did not match any packages" not in proc.stderr:
