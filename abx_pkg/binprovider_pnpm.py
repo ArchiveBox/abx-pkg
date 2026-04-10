@@ -9,7 +9,6 @@ import tempfile
 from pathlib import Path
 from typing import Self
 
-from platformdirs import user_cache_path
 from pydantic import Field, TypeAdapter, computed_field, model_validator
 
 from .base_types import (
@@ -19,20 +18,12 @@ from .base_types import (
     InstallArgs,
     PATHStr,
     abx_pkg_install_root_default,
+    abx_pkg_cache_dir_default,
     bin_abspath,
 )
 from .binprovider import BinProvider, env_flag_is_true, remap_kwargs
 from .logging import format_subprocess_output
 from .semver import SemVer
-
-
-USER_CACHE_PATH = Path(tempfile.gettempdir()) / "pnpm-cache"
-try:
-    _user_cache = user_cache_path("pnpm", "abx-pkg", ensure_exists=True)
-    if os.access(_user_cache, os.W_OK):
-        USER_CACHE_PATH = _user_cache
-except Exception:
-    pass
 
 
 class PnpmProvider(BinProvider):
@@ -63,7 +54,13 @@ class PnpmProvider(BinProvider):
     )
     bin_dir: Path | None = None
 
-    cache_dir: Path = USER_CACHE_PATH
+    # pnpm's --store-dir is its content-addressable store (CAS). All
+    # packages are stored once by content hash and hardlinked into
+    # per-project node_modules. Sharing this across install_roots gives
+    # near-instant installs for previously-downloaded packages.
+    cache_dir: Path = Field(
+        default_factory=lambda: abx_pkg_cache_dir_default("pnpm"),
+    )
     cache_arg: str = ""  # re-derived per-instance from cache_dir in detect_cache_arg
 
     pnpm_install_args: list[str] = ["--loglevel=error"]

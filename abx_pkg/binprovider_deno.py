@@ -4,11 +4,9 @@ __package__ = "abx_pkg"
 
 import os
 import sys
-import tempfile
 from pathlib import Path
 from typing import Self
 
-from platformdirs import user_cache_path
 from pydantic import Field, TypeAdapter, computed_field, model_validator
 
 from .base_types import (
@@ -18,20 +16,12 @@ from .base_types import (
     InstallArgs,
     PATHStr,
     abx_pkg_install_root_default,
+    abx_pkg_cache_dir_default,
     bin_abspath,
 )
 from .binprovider import BinProvider, env_flag_is_true, remap_kwargs
 from .logging import format_subprocess_output
 from .semver import SemVer
-
-
-USER_CACHE_PATH = Path(tempfile.gettempdir()) / "deno-cache"
-try:
-    _user_cache = user_cache_path("deno", "abx-pkg", ensure_exists=True)
-    if os.access(_user_cache, os.W_OK):
-        USER_CACHE_PATH = _user_cache
-except Exception:
-    pass
 
 
 class DenoProvider(BinProvider):
@@ -70,7 +60,9 @@ class DenoProvider(BinProvider):
     bin_dir: Path | None = None
     deno_dir: Path | None = None  # mirrors $DENO_DIR for cache isolation
 
-    cache_dir: Path = USER_CACHE_PATH
+    cache_dir: Path = Field(
+        default_factory=lambda: abx_pkg_cache_dir_default("deno"),
+    )
 
     deno_install_args: list[str] = ["--allow-all"]
 

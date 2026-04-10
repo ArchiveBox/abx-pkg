@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Annotated
 from collections.abc import Callable
 
-from platformdirs import user_config_path
+from platformdirs import user_config_path, user_cache_path
 
 from pydantic import TypeAdapter, AfterValidator, BeforeValidator, ValidationError
 
@@ -45,6 +45,45 @@ def abx_pkg_install_root_default(provider_name: str) -> Path | None:
     if ABX_PKG_LIB_DIR is not None:
         return ABX_PKG_LIB_DIR / provider_name
     return None
+
+
+# Unified cache directory for all providers. Mirrors the LIB_DIR pattern
+# but for download caches / content-addressable stores instead of installed
+# artifacts. Each provider gets its own subdirectory (e.g. ``<cache>/pip``,
+# ``<cache>/npm``). This lets providers share the same underlying cache
+# across multiple install_roots — e.g. uv/pnpm will hardlink from their
+# global CAS into per-install_root directories, giving near-instant
+# installs for packages that were previously downloaded anywhere.
+#
+# Env var precedence:
+#   ABX_PKG_<PROVIDER>_CACHE_DIR  (most specific)
+#   ABX_PKG_CACHE_DIR / <provider>
+#   user_cache_path("abx-pkg") / <provider>  (fallback)
+DEFAULT_CACHE_DIR: Path = user_cache_path("abx-pkg")
+
+_cache_dir_env = os.environ.get("ABX_PKG_CACHE_DIR", "").strip()
+ABX_PKG_CACHE_DIR: Path = (
+    Path(_cache_dir_env).expanduser().resolve() if _cache_dir_env else DEFAULT_CACHE_DIR
+)
+
+
+def abx_pkg_cache_dir_default(provider_name: str) -> Path:
+    """Resolve a provider's default cache/store directory.
+
+    Precedence (most specific wins):
+    1. ``ABX_PKG_<PROVIDER>_CACHE_DIR`` (e.g. ``ABX_PKG_UV_CACHE_DIR``)
+    2. ``ABX_PKG_CACHE_DIR / <provider_name>``
+    3. ``user_cache_path("abx-pkg") / <provider_name>``
+
+    Explicit constructor kwargs (``cache_dir=``) always override
+    whatever this function returns.
+    """
+    specific = os.environ.get(
+        f"ABX_PKG_{provider_name.upper()}_CACHE_DIR", "",
+    ).strip()
+    if specific:
+        return Path(specific).expanduser().resolve()
+    return ABX_PKG_CACHE_DIR / provider_name
 
 
 def validate_binprovider_name(name: str) -> str:

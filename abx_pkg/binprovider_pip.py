@@ -8,8 +8,6 @@ import site
 import re
 import shutil
 import sysconfig
-import tempfile
-from platformdirs import user_cache_path
 
 from pathlib import Path
 from typing import Self
@@ -22,6 +20,7 @@ from .base_types import (
     InstallArgs,
     HostBinPath,
     abx_pkg_install_root_default,
+    abx_pkg_cache_dir_default,
     bin_abspath,
     bin_abspaths,
 )
@@ -36,19 +35,6 @@ from .logging import format_subprocess_output
 
 ACTIVE_VENV = os.getenv("VIRTUAL_ENV", None)
 _CACHED_GLOBAL_PIP_BIN_DIRS: set[str] | None = None
-
-
-USER_CACHE_PATH = Path(tempfile.gettempdir()) / "pip-cache"
-try:
-    pip_user_cache_path = user_cache_path(
-        appname="pip",
-        appauthor="abx-pkg",
-        ensure_exists=True,
-    )
-    if os.access(pip_user_cache_path, os.W_OK):
-        USER_CACHE_PATH = pip_user_cache_path
-except Exception:
-    pass
 
 
 # pip >= 26.0 is required for ``--uploaded-prior-to`` (see pypa/pip#13625).
@@ -77,8 +63,10 @@ class PipProvider(BinProvider):
     )
     bin_dir: Path | None = None
 
-    cache_dir: Path = USER_CACHE_PATH
-    cache_arg: str = f"--cache-dir={cache_dir}"
+    cache_dir: Path = Field(
+        default_factory=lambda: abx_pkg_cache_dir_default("pip"),
+    )
+    cache_arg: str = ""  # re-derived per-instance from cache_dir in detect_cache_arg
 
     pip_install_args: list[str] = [
         "--no-input",
@@ -93,6 +81,12 @@ class PipProvider(BinProvider):
     _INSTALLER_BIN_ABSPATH: HostBinPath | None = (
         None  # speed optimization only, faster to cache the abspath than to recompute it on every access
     )
+
+    @model_validator(mode="after")
+    def detect_cache_arg(self) -> Self:
+        if not self.cache_arg:
+            self.cache_arg = f"--cache-dir={self.cache_dir}"
+        return self
 
     def supports_min_release_age(self, action) -> bool:
         if action not in ("install", "update"):

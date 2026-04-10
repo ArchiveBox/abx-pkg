@@ -69,6 +69,7 @@ from .logging import (
     log_subprocess_output,
     log_method_call,
 )
+from .metadata_cache import metadata_cache
 from .exceptions import (
     BinProviderInstallError,
     BinProviderUnavailableError,
@@ -791,10 +792,10 @@ class BinProvider(BaseModel):
 
     @log_method_call()
     def invalidate_cache(self, bin_name: BinName) -> None:
-        if not self._cache:
-            return
-        for method_cache in self._cache.values():
-            method_cache.pop(bin_name, None)
+        if self._cache:
+            for method_cache in self._cache.values():
+                method_cache.pop(bin_name, None)
+        metadata_cache.invalidate(self.name, bin_name, self.install_root)
 
     @log_method_call()
     def setup_PATH(self) -> None:
@@ -1415,6 +1416,15 @@ class BinProvider(BaseModel):
                     "binproviders": [self],
                 },
             )
+            # Persist to on-disk cache for fast loading in future processes
+            metadata_cache.set(
+                self.name,
+                bin_name,
+                self.install_root,
+                installed_abspath,
+                str(installed_version),
+                sha256,
+            )
             logger.info(
                 format_loaded_binary(
                     "🆕 Installed",
@@ -1657,7 +1667,34 @@ class BinProvider(BaseModel):
         quiet: bool = True,
         no_cache: bool = False,
     ) -> ShallowBinary | None:
-        # logger.info("🔎 Loading %s via %s", bin_name, self.name)
+        # Fast path: check persistent on-disk metadata cache first.
+        # This avoids shelling out to ``binary --version`` (~100ms each)
+        # on repeated load() calls across process restarts.
+        if not no_cache:
+            cached = metadata_cache.get(self.name, bin_name, self.install_root)
+            if cached is not None:
+                cached_abspath, cached_version, cached_sha256 = cached
+                try:
+                    result = ShallowBinary.model_validate(
+                        {
+                            "name": bin_name,
+                            "binprovider": self,
+                            "abspath": cached_abspath,
+                            "version": SemVer.parse(cached_version),
+                            "sha256": cached_sha256,
+                            "binproviders": [self],
+                        },
+                    )
+                    if result.is_valid:
+                        logger.debug(
+                            "☑️ Loaded %s from metadata cache (%s)",
+                            bin_name,
+                            self.name,
+                        )
+                        return result
+                except Exception:
+                    pass
+
         installed_abspath = self.get_abspath(bin_name, quiet=quiet, no_cache=no_cache)
         if not installed_abspath:
             return None
@@ -1685,6 +1722,17 @@ class BinProvider(BaseModel):
                 "binproviders": [self],
             },
         )
+
+        # Persist to on-disk cache for fast loading in future processes
+        metadata_cache.set(
+            self.name,
+            bin_name,
+            self.install_root,
+            installed_abspath,
+            str(installed_version),
+            sha256,
+        )
+
         logger.info(
             format_loaded_binary(
                 "☑️ Loaded",

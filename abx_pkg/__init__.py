@@ -8,6 +8,9 @@ from .base_types import (
     HostExistsPath,
     BinDirPath,
     BinProviderName,
+    ABX_PKG_CACHE_DIR,
+    DEFAULT_CACHE_DIR,
+    abx_pkg_cache_dir_default,
     bin_name,
     bin_abspath,
     bin_abspaths,
@@ -15,6 +18,7 @@ from .base_types import (
 )
 from .semver import SemVer, bin_version
 from .shallowbinary import ShallowBinary
+from .metadata_cache import BinaryMetadataCache, metadata_cache
 from .logging import (
     logger,
     get_logger,
@@ -155,6 +159,12 @@ __all__ = [
     "HandlerValue",
     "HandlerDict",
     "HandlerReturnValue",
+    # Cache
+    "ABX_PKG_CACHE_DIR",
+    "DEFAULT_CACHE_DIR",
+    "abx_pkg_cache_dir_default",
+    "BinaryMetadataCache",
+    "metadata_cache",
     # Validator Functions
     "bin_version",
     "bin_name",

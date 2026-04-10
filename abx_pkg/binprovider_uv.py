@@ -6,11 +6,9 @@ import os
 import shutil
 import re
 import sys
-import tempfile
 from pathlib import Path
 from typing import Self
 
-from platformdirs import user_cache_path
 from pydantic import Field, TypeAdapter, computed_field, model_validator
 
 from .base_types import (
@@ -20,20 +18,12 @@ from .base_types import (
     InstallArgs,
     PATHStr,
     abx_pkg_install_root_default,
+    abx_pkg_cache_dir_default,
     bin_abspath,
 )
 from .binprovider import BinProvider, env_flag_is_true, remap_kwargs
 from .logging import format_subprocess_output
 from .semver import SemVer
-
-
-USER_CACHE_PATH = Path(tempfile.gettempdir()) / "uv-cache"
-try:
-    _user_cache = user_cache_path("uv", "abx-pkg", ensure_exists=True)
-    if os.access(_user_cache, os.W_OK):
-        USER_CACHE_PATH = _user_cache
-except Exception:
-    pass
 
 
 class UvProvider(BinProvider):
@@ -83,10 +73,16 @@ class UvProvider(BinProvider):
     uv_tool_dir: Path | None = None
     bin_dir: Path | None = Field(default=None, validation_alias="uv_tool_bin_dir")
 
-    cache_dir: Path = USER_CACHE_PATH
+    cache_dir: Path = Field(
+        default_factory=lambda: abx_pkg_cache_dir_default("uv"),
+    )
     cache_arg: str = ""  # re-derived per-instance from cache_dir in detect_cache_arg
 
-    uv_install_args: list[str] = []
+    # --link-mode=hardlink tells uv to hardlink files from its global
+    # content-addressable cache into per-venv site-packages instead of
+    # copying.  This makes installs near-instant when the wheel is
+    # already cached (even across different install_roots).
+    uv_install_args: list[str] = ["--link-mode=hardlink"]
 
     @model_validator(mode="after")
     def detect_cache_arg(self) -> Self:

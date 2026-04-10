@@ -5,13 +5,11 @@ __package__ = "abx_pkg"
 import os
 import sys
 import json
-import tempfile
 
 from pathlib import Path
 from typing import Self
 
 from pydantic import Field, model_validator, TypeAdapter, computed_field
-from platformdirs import user_cache_path
 
 from .base_types import (
     BinProviderName,
@@ -20,6 +18,7 @@ from .base_types import (
     InstallArgs,
     HostBinPath,
     abx_pkg_install_root_default,
+    abx_pkg_cache_dir_default,
     bin_abspath,
 )
 from .semver import SemVer
@@ -33,19 +32,6 @@ from .logging import format_subprocess_output
 # Cache these values globally because they never change at runtime
 _CACHED_GLOBAL_NPM_PREFIX: Path | None = None
 _CACHED_HOME_DIR: Path = Path("~").expanduser().absolute()
-
-
-USER_CACHE_PATH = Path(tempfile.gettempdir()) / "npm-cache"
-try:
-    npm_user_cache_path = user_cache_path(
-        appname="npm",
-        appauthor="abx-pkg",
-        ensure_exists=True,
-    )
-    if os.access(npm_user_cache_path, os.W_OK):
-        USER_CACHE_PATH = npm_user_cache_path
-except Exception:
-    pass
 
 
 class NpmProvider(BinProvider):
@@ -70,8 +56,10 @@ class NpmProvider(BinProvider):
     )
     bin_dir: Path | None = None
 
-    cache_dir: Path = USER_CACHE_PATH
-    cache_arg: str = f"--cache={cache_dir}"
+    cache_dir: Path = Field(
+        default_factory=lambda: abx_pkg_cache_dir_default("npm"),
+    )
+    cache_arg: str = ""  # re-derived per-instance from cache_dir in detect_cache_arg
 
     npm_install_args: list[str] = [
         "--force",
@@ -81,6 +69,12 @@ class NpmProvider(BinProvider):
     ]
 
     _CACHED_LOCAL_NPM_PREFIX: Path | None = None
+
+    @model_validator(mode="after")
+    def detect_cache_arg(self) -> Self:
+        if not self.cache_arg:
+            self.cache_arg = f"--cache={self.cache_dir}"
+        return self
 
     def supports_min_release_age(self, action) -> bool:
         if action not in ("install", "update"):
