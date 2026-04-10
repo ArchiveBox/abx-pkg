@@ -196,6 +196,8 @@ class ShallowBinary(BaseModel):
         for field, meta in type(self).model_fields.items():
             if meta.alias == item:
                 return getattr(self, field)
+            if meta.validation_alias == item:
+                return getattr(self, field)
         raise AttributeError(item)
 
     def __repr__(self) -> str:

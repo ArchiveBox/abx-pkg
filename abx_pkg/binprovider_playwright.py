@@ -233,7 +233,7 @@ class PlaywrightProvider(BinProvider):
             postinstall_scripts=effective_postinstall,
             min_release_age=effective_min_release_age,
         ).install(no_cache=no_cache)
-        self._INSTALLER_BIN_ABSPATH = cli.abspath
+        self._INSTALLER_BIN_ABSPATH = cli.loaded_abspath
         self._INSTALLER_BINARY = cli
         path_entries: list[Path] = []
         if self.bin_dir is not None:

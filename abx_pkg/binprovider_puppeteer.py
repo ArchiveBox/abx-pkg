@@ -178,7 +178,7 @@ class PuppeteerProvider(BinProvider):
             min_release_age=min_release_age,
             no_cache=no_cache,
         )
-        self._INSTALLER_BIN_ABSPATH = cli_binary.abspath
+        self._INSTALLER_BIN_ABSPATH = cli_binary.loaded_abspath
         self._INSTALLER_BINARY = cli_binary
         path_entries: list[Path] = []
         if self.bin_dir is not None:
@@ -527,7 +527,7 @@ class PuppeteerProvider(BinProvider):
 
         if proc.returncode != 0 and self._should_repair_cli_install(install_output):
             cli_binary = self._cli_binary(postinstall_scripts=True, min_release_age=0)
-            self._INSTALLER_BIN_ABSPATH = cli_binary.abspath
+            self._INSTALLER_BIN_ABSPATH = cli_binary.loaded_abspath
             self._INSTALLER_BINARY = cli_binary
             proc = self.exec(
                 bin_name=self._require_installer_bin(),
