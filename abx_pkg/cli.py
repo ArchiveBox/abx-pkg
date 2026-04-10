@@ -47,6 +47,7 @@ class CliOptions:
     lib_dir: Path
     provider_names: list[str]
     dry_run: bool
+    debug: bool
     # Binary-level fields forwarded verbatim to the Binary constructor.
     # Binary's own model validators propagate them to each provider via
     # the existing install/load_or_install/update kwarg path, which is
@@ -217,6 +218,12 @@ def resolve_dry_run(flag_value: bool | None) -> bool:
     return env_flag_is_true("ABX_PKG_DRY_RUN") or env_flag_is_true("DRY_RUN")
 
 
+def resolve_debug(flag_value: bool | None) -> bool:
+    if flag_value is not None:
+        return flag_value
+    return env_flag_is_true("ABX_PKG_DEBUG")
+
+
 def build_providers(
     provider_names: list[str],
     lib_dir: Path,
@@ -292,6 +299,7 @@ def build_cli_options(
     lib_dir: str | None,
     binproviders: str | None,
     dry_run: bool | None,
+    debug: bool | None,
     min_version: str | None,
     postinstall_scripts: bool | None,
     min_release_age: float | None,
@@ -333,6 +341,7 @@ def build_cli_options(
             lib_dir=resolve_lib_dir(lib_dir),
             provider_names=parse_provider_names(binproviders),
             dry_run=resolve_dry_run(dry_run),
+            debug=resolve_debug(debug),
             min_version=min_version,
             postinstall_scripts=postinstall_scripts,
             min_release_age=min_release_age,
@@ -351,6 +360,7 @@ def build_cli_options(
             else parse_provider_names(binproviders)
         ),
         dry_run=_override(dry_run, group.dry_run),
+        debug=_override(debug, group.debug),
         min_version=_override(min_version, group.min_version),
         postinstall_scripts=_override(postinstall_scripts, group.postinstall_scripts),
         min_release_age=_override(min_release_age, group.min_release_age),
@@ -370,9 +380,9 @@ def is_interactive_tty() -> bool:
     )
 
 
-def configure_cli_logging(*, dry_run: bool) -> None:
+def configure_cli_logging(*, debug: bool) -> None:
     configure_logging(
-        level="DEBUG" if is_interactive_tty() else ("INFO" if dry_run else "WARNING"),
+        level="DEBUG" if debug else "INFO",
         handler=py_logging.StreamHandler(sys.stderr),
         fmt="%(message)s",
         replace_handlers=True,
@@ -486,6 +496,13 @@ def shared_options(command):
             help="Show installer commands without executing them ('True'/'False'/'None' or bare `--dry-run` for implicit True).",
         ),
         click.option(
+            "--debug",
+            metavar="BOOL",
+            default=None,
+            callback=_click_parse(_parse_cli_bool),
+            help="Emit DEBUG logs to stderr ('True'/'False'/'None' or bare `--debug` for implicit True). Defaults to ABX_PKG_DEBUG or False.",
+        ),
+        click.option(
             "--binproviders",
             metavar="LIST",
             default=None,
@@ -511,6 +528,7 @@ _SHARED_OPTION_NAMES: tuple[str, ...] = (
     "lib_dir",
     "binproviders",
     "dry_run",
+    "debug",
     "min_version",
     "postinstall_scripts",
     "min_release_age",
@@ -538,7 +556,7 @@ def run_binary_command(
 ) -> None:
     binary = build_binary(binary_name, options, dry_run=options.dry_run)
     method = getattr(binary, action)
-    configure_cli_logging(dry_run=options.dry_run)
+    configure_cli_logging(debug=options.debug)
 
     try:
         if action == "load":
@@ -729,7 +747,7 @@ def run_command(
     install_before_run = bool(ctx.obj.get("install_before_run", False))
     update_before_run = bool(ctx.obj.get("update_before_run", False))
 
-    configure_cli_logging(dry_run=group_options.dry_run)
+    configure_cli_logging(debug=group_options.debug)
 
     binary = build_binary(
         binary_name,
@@ -780,7 +798,7 @@ def run_command(
 # occurrences to ``--flag=True`` so a single click string option can handle
 # both the bare and the value form. Callers pass ``--dry-run=False`` or
 # ``--dry-run=None`` to override the auto-True semantics.
-_BARE_TRUE_BOOL_FLAGS = frozenset({"--dry-run", "--postinstall-scripts"})
+_BARE_TRUE_BOOL_FLAGS = frozenset({"--dry-run", "--debug", "--postinstall-scripts"})
 
 
 def _expand_bare_bool_flags(argv: list[str]) -> list[str]:
@@ -850,6 +868,7 @@ _ABX_USAGE = (
     "Equivalent to `abx-pkg [OPTIONS] --install run BINARY_NAME [BINARY_ARGS]`.\n"
     "\n"
     "Options (forwarded to abx-pkg): --lib, --binproviders, --dry-run,\n"
+    "--debug, "
     "--update, --version, --help.\n"
 )
 
@@ -937,6 +956,7 @@ __all__ = [
     "is_interactive_tty",
     "main",
     "parse_provider_names",
+    "resolve_debug",
     "resolve_dry_run",
     "resolve_lib_dir",
     "version_report",

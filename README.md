@@ -121,7 +121,7 @@ abx --update yt-dlp --help                      # load_or_install + update befor
 abx --binproviders=env,uv,pip,apt,brew yt-dlp   # restrict provider resolution
 ```
 
-Options before the binary name (`--lib`, `--binproviders`, `--dry-run`, `--update`) are forwarded to `abx-pkg`; everything after the binary name is forwarded to the binary itself.
+Options before the binary name (`--lib`, `--binproviders`, `--dry-run`, `--debug`, `--update`) are forwarded to `abx-pkg`; everything after the binary name is forwarded to the binary itself.
 
 #### Per-`Binary` / per-`BinProvider` options as CLI flags
 
@@ -148,6 +148,7 @@ abx --min-version=2024.1.1 --min-release-age=0 yt-dlp --help
 | `--install-timeout=SECONDS` | `int` | Seconds to wait for install/update/uninstall subprocesses. |
 | `--version-timeout=SECONDS` | `int` | Seconds to wait for version/metadata probes. |
 | `--dry-run[=BOOL]` | `bool` | Show installer commands without executing them. Bare `--dry-run` = `True`. |
+| `--debug[=BOOL]` | `bool` | Emit DEBUG logs to `stderr`. Bare `--debug` = `True`. Defaults to `ABX_PKG_DEBUG` or `False`. |
 
 Every value-taking flag also accepts the literal string `None` / `null` / `nil` / `""` to reset to the provider's built-in default (or its env-var-backed default). The precedence is: explicit per-subcommand flag > group-level flag > environment variable > built-in default.
 
@@ -178,7 +179,7 @@ abx-pkg install --dry-run some-dangerous-package      # outputs commands that wo
 env ABX_PKG_DRY_RUN=1 abx-pkg install some-dangerous-package
 ```
 
-CLI result lines are written to `stdout`. Progress and debug logging are written to `stderr`, and interactive TTY sessions default to `DEBUG` logging.
+CLI result lines are written to `stdout`. Progress logging is written to `stderr` at `INFO` by default. Enable DEBUG logging with `ABX_PKG_DEBUG=1` or `--debug`.
 
 <br/>
 
@@ -544,6 +545,7 @@ All abx-pkg env vars are read once at import time and only apply when set. Expli
 | Variable | Default | Effect |
 | --- | --- | --- |
 | `ABX_PKG_DRY_RUN` / `DRY_RUN` | `0` | Flips the shared `dry_run` default. `ABX_PKG_DRY_RUN` wins if both are set. Provider subprocesses are logged and skipped, `install()` / `update()` return a placeholder, `uninstall()` returns `True`. |
+| `ABX_PKG_DEBUG` | `0` | Enables DEBUG-level CLI logging on `stderr` for `abx-pkg` / `abx`. The matching CLI flag is `--debug`. Default CLI logging level is `INFO`. |
 | `ABX_PKG_INSTALL_TIMEOUT` | `120` | Seconds to wait for `install()` / `update()` / `uninstall()` handler subprocesses. |
 | `ABX_PKG_VERSION_TIMEOUT` | `10` | Seconds to wait for version / metadata probes (`--version`, `npm show`, `pip show`, etc.). |
 | `ABX_PKG_POSTINSTALL_SCRIPTS` | unset | Hydrates the provider-level default for the `postinstall_scripts` kwarg on every provider that supports it (`pip`, `uv`, `npm`, `pnpm`, `yarn`, `bun`, `deno`, `brew`, `chromewebstore`, `puppeteer`). |

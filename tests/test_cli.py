@@ -177,8 +177,57 @@ def test_install_command_uses_env_defaults(monkeypatch, tmp_path):
     assert captured["options"].lib_dir == tmp_path.resolve()
     assert captured["options"].provider_names == ["pnpm", "uv"]
     assert captured["options"].dry_run is True
+    assert captured["options"].debug is False
     assert captured["provider_dry_run"] is True
     assert fake_binary.calls == [("install", True)]
+
+
+def test_install_command_uses_debug_env_default(monkeypatch, tmp_path):
+    captured = {}
+    fake_binary = FakeBinary()
+
+    def fake_build_binary(binary_name, options, *, dry_run):
+        captured["binary_name"] = binary_name
+        captured["options"] = options
+        captured["provider_dry_run"] = dry_run
+        return fake_binary
+
+    monkeypatch.setattr(cli_module, "build_binary", fake_build_binary)
+
+    result = CliRunner().invoke(
+        cli_module.cli,
+        ["install", "prettier"],
+        env={
+            "ABX_PKG_LIB_DIR": str(tmp_path),
+            "ABX_PKG_DEBUG": "1",
+        },
+    )
+
+    assert result.exit_code == 0
+    assert captured["binary_name"] == "prettier"
+    assert captured["options"].debug is True
+
+
+def test_install_command_uses_debug_flag(monkeypatch, tmp_path):
+    captured = {}
+    fake_binary = FakeBinary()
+
+    def fake_build_binary(binary_name, options, *, dry_run):
+        captured["binary_name"] = binary_name
+        captured["options"] = options
+        return fake_binary
+
+    monkeypatch.setattr(cli_module, "build_binary", fake_build_binary)
+
+    result = CliRunner().invoke(
+        cli_module.cli,
+        ["--debug=True", "install", "prettier"],
+        env={"ABX_PKG_LIB_DIR": str(tmp_path)},
+    )
+
+    assert result.exit_code == 0
+    assert captured["binary_name"] == "prettier"
+    assert captured["options"].debug is True
 
 
 def test_version_flag_and_command_render_same_report(monkeypatch, tmp_path):
@@ -214,22 +263,42 @@ def test_version_flag_and_command_render_same_report(monkeypatch, tmp_path):
     assert lines[2] == "uv uv /opt/homebrew/bin/uv 0.7.1"
 
 
-def test_configure_cli_logging_uses_debug_level_for_interactive_tty(monkeypatch):
+def test_configure_cli_logging_uses_info_by_default(monkeypatch):
     captured = {}
-
-    monkeypatch.setattr(cli_module, "is_interactive_tty", lambda: True)
 
     def fake_configure_logging(**kwargs):
         captured.update(kwargs)
 
     monkeypatch.setattr(cli_module, "configure_logging", fake_configure_logging)
 
-    cli_module.configure_cli_logging(dry_run=False)
+    cli_module.configure_cli_logging(debug=False)
+
+    assert captured["level"] == "INFO"
+    assert captured["handler"].stream is cli_module.sys.stderr
+    assert captured["fmt"] == "%(message)s"
+    assert captured["replace_handlers"] is True
+
+
+def test_configure_cli_logging_uses_debug_level_when_enabled(monkeypatch):
+    captured = {}
+
+    def fake_configure_logging(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(cli_module, "configure_logging", fake_configure_logging)
+
+    cli_module.configure_cli_logging(debug=True)
 
     assert captured["level"] == "DEBUG"
     assert captured["handler"].stream is cli_module.sys.stderr
     assert captured["fmt"] == "%(message)s"
     assert captured["replace_handlers"] is True
+
+
+def test_expand_bare_bool_flags_rewrites_debug_before_run():
+    assert cli_module._expand_bare_bool_flags(
+        ["--debug", "run", "python3", "--debug"],
+    ) == ["--debug=True", "run", "python3", "--debug"]
 
 
 # ---------------------------------------------------------------------------
@@ -255,7 +324,7 @@ def test_run_executes_preinstalled_binary_via_env_provider():
 
     assert proc.returncode == 0, proc.stderr
     assert proc.stdout.strip() == "abx-run-ok"
-    assert proc.stderr == ""
+    assert "Loading python3 binary" in proc.stderr
 
 
 def test_run_passes_flag_args_through_without_requiring_dash_dash():
@@ -269,7 +338,7 @@ def test_run_passes_flag_args_through_without_requiring_dash_dash():
 
     assert proc.returncode == 0, proc.stderr
     assert proc.stdout.strip().startswith("Python "), proc.stdout
-    assert proc.stderr == ""
+    assert "Loading python3 binary" in proc.stderr
 
 
 def test_run_propagates_nonzero_exit_code_from_underlying_binary():
@@ -609,7 +678,7 @@ def test_abx_passes_flag_args_through_to_underlying_binary():
 
     assert proc.returncode == 0, proc.stderr
     assert proc.stdout.strip().startswith("Python "), proc.stdout
-    assert proc.stderr == ""
+    assert "Loading or installing python3 binary" in proc.stderr
 
 
 def test_abx_propagates_underlying_exit_code():
@@ -719,6 +788,7 @@ def test_build_cli_options_passes_typed_values_through(tmp_path):
         lib_dir=str(tmp_path),
         binproviders="env,pip",
         dry_run=True,
+        debug=False,
         min_version="1.2.3",
         postinstall_scripts=False,
         min_release_age=14.0,
@@ -733,6 +803,7 @@ def test_build_cli_options_passes_typed_values_through(tmp_path):
     assert options.lib_dir == tmp_path.resolve()
     assert options.provider_names == ["env", "pip"]
     assert options.dry_run is True
+    assert options.debug is False
     assert options.min_version == "1.2.3"
     assert options.postinstall_scripts is False
     assert options.min_release_age == 14.0
@@ -753,6 +824,7 @@ def test_build_cli_options_nones_all_leave_fields_at_default(tmp_path):
         lib_dir=str(tmp_path),
         binproviders="env",
         dry_run=None,
+        debug=None,
         min_version=None,
         postinstall_scripts=None,
         min_release_age=None,
@@ -764,6 +836,7 @@ def test_build_cli_options_nones_all_leave_fields_at_default(tmp_path):
         version_timeout=None,
     )
 
+    assert options.debug is False
     assert options.min_version is None
     assert options.postinstall_scripts is None
     assert options.min_release_age is None
@@ -896,6 +969,7 @@ def test_build_binary_forwards_binary_level_fields(tmp_path):
         lib_dir=tmp_path,
         provider_names=["env", "pip"],
         dry_run=False,
+        debug=False,
         min_version="2.0.0",
         postinstall_scripts=False,
         min_release_age=30.0,
