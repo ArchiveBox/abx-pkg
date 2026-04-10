@@ -68,9 +68,9 @@ for binary in dependencies:
 > [!TIP]
 > **🔒 Stay safe from supply-chain attcaks with `abx-pkg`:** We default to safe behavior (when providers allow):
 > 
->  - `min_release_age=7` (we only installs packages that have been published for 7 days or longer)
+>  - `min_release_age=7` (we only install packages that have been published for 7 days or longer)
 >  - `postinstall_scripts=False` (we don't run post-install scripts for packages by default)
->  - `install_root=~/.config/abx/lib` (we install packages in a dedicated prefix so host system stays clean)
+>  - `install_root=~/.config/abx/lib` (CLI defaults to installing packages in a dedicated prefix so host system stays clean)
 >
 > You can customize these defaults on `Binary` or `BinProvider`, or with `ABX_PKG_MIN_RELEASE_AGE`/`ABX_PKG_POSTINSTALL_SCRIPTS=`/`ABX_PKG_LIB_DIR` (see [Configuration](#Configuration) below).
 
