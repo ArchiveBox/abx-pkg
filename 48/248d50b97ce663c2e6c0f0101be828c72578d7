@@ -1,0 +1,40 @@
+README.md
+  e0f7776e004f20b5 124,151,182,548
+tests/test_cli.py
+  e0f7776e004f20b5 180,185-232,266,269-272,274,276-283,290,298-301,327,341,681,791,806,827,839,972
+abx_pkg/cli.py
+  e0f7776e004f20b5 50,221-226,302,344,363,383,385,498-503,531,559,750,801,871,959
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.6",
+  "base_commit_sha": "48248d50b97ce663c2e6c0f0101be828c72578d7",
+  "prompts": {
+    "67a976da5825c26a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d717c-705b-75f1-8c2f-c652b4164be1",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 95,
+      "overriden_lines": 0
+    },
+    "e0f7776e004f20b5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d717d-0bd5-7192-b6c6-9afd3c4305b6",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 0,
+      "accepted_lines": 249,
+      "overriden_lines": 0
+    }
+  }
+}
