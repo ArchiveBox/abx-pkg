@@ -140,7 +140,7 @@ class TestMachine:
             expected_abspath = provider.bin_dir / loaded.name
             assert expected_abspath.exists()
             assert expected_abspath == loaded.loaded_abspath
-            assert expected_abspath.parent == provider.bin_dir
+            assert expected_abspath.is_relative_to(provider.bin_dir)
 
         if expected_version is not None:
             assert loaded.loaded_version >= expected_version

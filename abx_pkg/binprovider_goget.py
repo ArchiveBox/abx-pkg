@@ -2,6 +2,7 @@
 __package__ = "abx_pkg"
 
 import os
+import shutil
 
 from pathlib import Path
 
@@ -169,11 +170,25 @@ class GoGetProvider(BinProvider):
         min_version: SemVer | None = None,
         timeout: int | None = None,
     ) -> bool:
-        abspath = self.get_abspath(bin_name, quiet=True, no_cache=True)
-        if not abspath:
-            return True
+        install_args = list(install_args or self.get_install_args(bin_name))
+        install_target = install_args[0] if install_args else bin_name
+        candidate_name = (
+            Path(str(install_target).split("@", 1)[0].rstrip("/")).name or bin_name
+        )
 
-        Path(abspath).unlink(missing_ok=True)
+        bin_dir = self.bin_dir
+        assert bin_dir is not None
+        paths_to_remove: list[Path] = []
+        requested_path = bin_dir / bin_name
+        paths_to_remove.append(requested_path)
+        if candidate_name != bin_name:
+            paths_to_remove.append(bin_dir / candidate_name)
+
+        for path in paths_to_remove:
+            if path.is_dir():
+                shutil.rmtree(path, ignore_errors=True)
+            else:
+                path.unlink(missing_ok=True)
         return True
 
     def default_abspath_handler(
