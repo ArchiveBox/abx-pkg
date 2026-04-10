@@ -9,6 +9,20 @@ from abx_pkg.exceptions import BinaryInstallError, BinProviderInstallError
 
 
 class TestYarnProvider:
+    @staticmethod
+    def _require_yarn_min_release_age_support(provider: YarnProvider) -> None:
+        if not provider.supports_min_release_age("install"):
+            pytest.skip(
+                "yarn on this host does not support npmMinimalAgeGate",
+            )
+
+    @staticmethod
+    def _require_yarn_postinstall_disable_support(provider: YarnProvider) -> None:
+        if not provider.supports_postinstall_disable("install"):
+            pytest.skip(
+                "yarn on this host does not support disabling postinstall scripts",
+            )
+
     def test_install_root_alias_installs_into_the_requested_prefix(self, test_machine):
         with tempfile.TemporaryDirectory() as temp_dir:
             install_root = Path(temp_dir) / "yarn-root"
@@ -137,9 +151,7 @@ class TestYarnProvider:
                 postinstall_scripts=True,
                 min_release_age=36500,
             )
-            # The CI matrix installs Yarn 4.x via corepack, which supports
-            # npmMinimalAgeGate.
-            assert strict_provider.supports_min_release_age("install") is True
+            self._require_yarn_min_release_age_support(strict_provider)
 
             with pytest.raises(BinProviderInstallError):
                 strict_provider.install("zx")
@@ -180,7 +192,7 @@ class TestYarnProvider:
                 postinstall_scripts=True,
                 min_release_age=365,
             )
-            assert strict_provider.supports_min_release_age("install") is True
+            self._require_yarn_min_release_age_support(strict_provider)
             installed = strict_provider.install("zx")
             assert installed is not None
             assert installed.loaded_version is not None
@@ -204,7 +216,7 @@ class TestYarnProvider:
             ).get_provider_with_overrides(
                 overrides={"optipng": {"install_args": ["optipng-bin"]}},
             )
-            assert strict_provider.supports_postinstall_disable("install") is True
+            self._require_yarn_postinstall_disable_support(strict_provider)
 
             strict_installed = strict_provider.install("optipng")
             assert strict_installed is not None
@@ -298,6 +310,7 @@ class TestYarnProvider:
                 postinstall_scripts=True,
                 min_release_age=0,
             )
+            self._require_yarn_postinstall_disable_support(provider)
             provider.setup()
             yarnrc = yarn_prefix / ".yarnrc.yml"
             assert yarnrc.exists()
@@ -320,7 +333,10 @@ class TestYarnProvider:
                 )
                 installed = provider.install("zx")
                 assert installed is not None
-            assert "ignoring unsupported postinstall_scripts" not in caplog.text
+            if provider.supports_postinstall_disable("install"):
+                assert "ignoring unsupported postinstall_scripts" not in caplog.text
+            else:
+                assert "ignoring unsupported postinstall_scripts=False" in caplog.text
             assert "ignoring unsupported min_release_age" not in caplog.text
 
     def test_binary_install_failure_propagates_as_BinaryInstallError(self):
@@ -337,5 +353,8 @@ class TestYarnProvider:
                 postinstall_scripts=True,
                 min_release_age=36500,
             )
+            failing_provider = failing_binary.binproviders[0]
+            assert isinstance(failing_provider, YarnProvider)
+            self._require_yarn_min_release_age_support(failing_provider)
             with pytest.raises(BinaryInstallError):
                 failing_binary.install()

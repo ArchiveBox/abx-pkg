@@ -91,6 +91,12 @@ class BunProvider(BinProvider):
     def supports_postinstall_disable(self, action) -> bool:
         return action in ("install", "update")
 
+    @staticmethod
+    def _has_cli_flag(args: InstallArgs, *flags: str) -> bool:
+        return any(
+            arg == flag or arg.startswith(f"{flag}=") for arg in args for flag in flags
+        )
+
     @computed_field
     @property
     def is_valid(self) -> bool:
@@ -225,13 +231,20 @@ class BunProvider(BinProvider):
         cmd: list[str] = ["add", *self.bun_install_args, self.cache_arg, "-g"]
         if not postinstall_scripts:
             cmd.append("--ignore-scripts")
+        elif not self._has_cli_flag(
+            [*self.bun_install_args, *install_args],
+            "--trust",
+        ):
+            # Bun does not run dependency lifecycle scripts by default.
+            # ``--trust`` is required for packages like ``optipng-bin`` whose
+            # executable is materialized by an install script.
+            cmd.append("--trust")
         if (
             min_release_age is not None
             and min_release_age > 0
-            and not any(
-                arg == "--minimum-release-age"
-                or arg.startswith("--minimum-release-age=")
-                for arg in (*self.bun_install_args, *install_args)
+            and not self._has_cli_flag(
+                [*self.bun_install_args, *install_args],
+                "--minimum-release-age",
             )
         ):
             cmd.append(
@@ -276,13 +289,17 @@ class BunProvider(BinProvider):
         cmd: list[str] = ["update", *self.bun_install_args, self.cache_arg, "-g"]
         if not postinstall_scripts:
             cmd.append("--ignore-scripts")
+        elif not self._has_cli_flag(
+            [*self.bun_install_args, *install_args],
+            "--trust",
+        ):
+            cmd.append("--trust")
         if (
             min_release_age is not None
             and min_release_age > 0
-            and not any(
-                arg == "--minimum-release-age"
-                or arg.startswith("--minimum-release-age=")
-                for arg in (*self.bun_install_args, *install_args)
+            and not self._has_cli_flag(
+                [*self.bun_install_args, *install_args],
+                "--minimum-release-age",
             )
         ):
             cmd.append(
@@ -297,13 +314,17 @@ class BunProvider(BinProvider):
             cmd = ["add", *self.bun_install_args, self.cache_arg, "-g", "--force"]
             if not postinstall_scripts:
                 cmd.append("--ignore-scripts")
+            elif not self._has_cli_flag(
+                [*self.bun_install_args, *install_args],
+                "--trust",
+            ):
+                cmd.append("--trust")
             if (
                 min_release_age is not None
                 and min_release_age > 0
-                and not any(
-                    arg == "--minimum-release-age"
-                    or arg.startswith("--minimum-release-age=")
-                    for arg in (*self.bun_install_args, *install_args)
+                and not self._has_cli_flag(
+                    [*self.bun_install_args, *install_args],
+                    "--minimum-release-age",
                 )
             ):
                 cmd.append(

@@ -4,6 +4,7 @@ import os
 import shutil
 import subprocess
 import sys
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -115,6 +116,23 @@ class FakeProvider:
             if abspath and version
             else None
         )
+
+
+@pytest.fixture(autouse=True)
+def restore_abx_pkg_logger():
+    package_logger = logging.getLogger("abx_pkg")
+    original_level = package_logger.level
+    original_handlers = list(package_logger.handlers)
+    original_propagate = package_logger.propagate
+
+    try:
+        yield
+    finally:
+        package_logger.handlers.clear()
+        for handler in original_handlers:
+            package_logger.addHandler(handler)
+        package_logger.setLevel(original_level)
+        package_logger.propagate = original_propagate
 
 
 def test_build_providers_uses_managed_lib_layout(tmp_path):

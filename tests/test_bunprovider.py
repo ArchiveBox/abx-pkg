@@ -1,4 +1,7 @@
+import functools
 import logging
+import os
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -9,6 +12,61 @@ from abx_pkg.exceptions import BinaryInstallError, BinProviderInstallError
 
 
 class TestBunProvider:
+    @staticmethod
+    def _require_bun_min_release_age_support(provider: BunProvider) -> None:
+        if not provider.supports_min_release_age("install"):
+            pytest.skip(
+                "bun on this host does not support --minimum-release-age",
+            )
+
+    @staticmethod
+    @functools.cache
+    def _bun_supports_trusted_global_postinstall(bun_binary: str) -> bool:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bun_prefix = Path(tmpdir) / "bun"
+            env = os.environ.copy()
+            env["BUN_INSTALL"] = str(bun_prefix)
+            env["PATH"] = f"{bun_prefix / 'bin'}:{env.get('PATH', '')}"
+
+            install_proc = subprocess.run(
+                [bun_binary, "add", "-g", "optipng-bin", "--trust"],
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+            if install_proc.returncode != 0:
+                return False
+
+            optipng = bun_prefix / "bin" / "optipng"
+            if not optipng.exists():
+                return False
+
+            version_proc = subprocess.run(
+                [str(optipng), "--version"],
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+            return version_proc.returncode == 0
+
+    @classmethod
+    def _require_bun_trusted_global_postinstall_support(
+        cls,
+        provider: BunProvider,
+    ) -> None:
+        bun_binary = provider.INSTALLER_BIN_ABSPATH
+        if not bun_binary:
+            pytest.skip("bun is not available on this host")
+
+        if not cls._bun_supports_trusted_global_postinstall(str(bun_binary)):
+            version = provider.INSTALLER_BINARY
+            pytest.skip(
+                "bun "
+                f"{version.loaded_version if version else 'unknown'} "
+                "on this host cannot materialize working trusted global "
+                "postinstall binaries",
+            )
+
     def test_install_args_win_for_ignore_scripts_and_min_release_age(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             bun_prefix = Path(temp_dir) / "bun"
@@ -192,7 +250,7 @@ class TestBunProvider:
                 postinstall_scripts=True,
                 min_release_age=36500,
             )
-            assert strict_provider.supports_min_release_age("install") is True
+            self._require_bun_min_release_age_support(strict_provider)
 
             with pytest.raises(BinProviderInstallError):
                 strict_provider.install("zx")
@@ -224,6 +282,7 @@ class TestBunProvider:
                 postinstall_scripts=True,
                 min_release_age=365,
             )
+            self._require_bun_min_release_age_support(strict_provider)
             installed = strict_provider.install("zx")
             assert installed is not None
             assert installed.loaded_version is not None
@@ -231,7 +290,10 @@ class TestBunProvider:
             assert ceiling is not None
             assert installed.loaded_version < ceiling
 
-    def test_provider_defaults_and_binary_overrides_enforce_postinstall_scripts(self):
+    def test_provider_defaults_and_binary_overrides_enforce_postinstall_scripts(
+        self,
+        caplog,
+    ):
         with tempfile.TemporaryDirectory() as tmpdir:
             strict_provider = BunProvider(
                 bun_prefix=Path(tmpdir) / "strict-bun",
@@ -240,6 +302,7 @@ class TestBunProvider:
             ).get_provider_with_overrides(
                 overrides={"optipng": {"install_args": ["optipng-bin"]}},
             )
+            assert strict_provider.supports_postinstall_disable("install") is True
             strict_installed = strict_provider.install("optipng")
             assert strict_installed is not None
             assert strict_installed.loaded_abspath is not None
@@ -253,6 +316,19 @@ class TestBunProvider:
             ).get_provider_with_overrides(
                 overrides={"optipng": {"install_args": ["optipng-bin"]}},
             )
+            caplog.clear()
+            with caplog.at_level(logging.INFO, logger="abx_pkg.binprovider"):
+                dry_run_override = override_provider.install(
+                    "optipng",
+                    postinstall_scripts=True,
+                    dry_run=True,
+                )
+            assert dry_run_override is not None
+            assert "--trust" in caplog.text
+            assert "--ignore-scripts" not in caplog.text
+
+            self._require_bun_trusted_global_postinstall_support(override_provider)
+
             direct_override = override_provider.install(
                 "optipng",
                 postinstall_scripts=True,
@@ -343,5 +419,8 @@ class TestBunProvider:
                 postinstall_scripts=True,
                 min_release_age=36500,
             )
+            failing_provider = failing_binary.binproviders[0]
+            assert isinstance(failing_provider, BunProvider)
+            self._require_bun_min_release_age_support(failing_provider)
             with pytest.raises(BinaryInstallError):
                 failing_binary.install()

@@ -1,6 +1,7 @@
 import tempfile
 from pathlib import Path
 import logging
+import subprocess
 
 import pytest
 
@@ -206,6 +207,61 @@ class TestDockerProvider:
             test_machine.assert_shallow_binary_loaded(installed)
             assert installed is not None
             assert installed.loaded_version is not None
+
+    def test_install_repairs_snapshot_collision_by_repulling_image(
+        self,
+        monkeypatch,
+    ):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            provider = DockerProvider(
+                docker_shim_dir=Path(temp_dir) / "docker/bin",
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+            image_ref = "koalaman/shellcheck:latest"
+            calls: list[list[str]] = []
+
+            def fake_exec(self, bin_name, cmd=(), quiet=False, **kwargs):
+                cmd_list = [str(part) for part in cmd]
+                calls.append(cmd_list)
+                if cmd_list == ["pull", image_ref]:
+                    if calls.count(cmd_list) == 1:
+                        return subprocess.CompletedProcess(
+                            [str(bin_name), *cmd_list],
+                            1,
+                            "latest: Pulling from koalaman/shellcheck\n",
+                            "unable to prepare extraction snapshot: "
+                            'AlreadyExists: target snapshot "sha256:test": '
+                            "already exists\n",
+                        )
+                    return subprocess.CompletedProcess(
+                        [str(bin_name), *cmd_list],
+                        0,
+                        "Status: Downloaded newer image for koalaman/shellcheck:latest\n",
+                        "",
+                    )
+                if cmd_list == ["image", "rm", "--force", image_ref]:
+                    return subprocess.CompletedProcess(
+                        [str(bin_name), *cmd_list],
+                        0,
+                        "Deleted: sha256:test\n",
+                        "",
+                    )
+                raise AssertionError(f"unexpected docker exec: {cmd_list}")
+
+            monkeypatch.setattr(DockerProvider, "exec", fake_exec)
+
+            output = provider.default_install_handler(
+                "shellcheck",
+                install_args=[image_ref],
+            )
+
+            assert ["pull", image_ref] in calls
+            assert calls.count(["pull", image_ref]) == 2
+            assert ["image", "rm", "--force", image_ref] in calls
+            assert "already exists" in output
+            assert provider.metadata_path("shellcheck").is_file()
+            assert (provider.bin_dir / "shellcheck").is_file()
 
     def test_unsupported_security_controls_warn_and_continue(
         self,
