@@ -1,0 +1,29 @@
+abx_pkg/binprovider_cargo.py
+  e70cd952a6bbb531 85,151-155,159-169,196-200,207,210-219,242-243,250-251,256-265
+abx_pkg/binprovider_gem.py
+  e70cd952a6bbb531 147-151,155-168,197-201,205-218,239-241,251-252,255-259
+abx_pkg/binprovider_nix.py
+  e70cd952a6bbb531 157-160,172,195-198,210,233-236,248
+abx_pkg/binprovider_goget.py
+  e70cd952a6bbb531 122-125,130-134,237-240,245-249
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "0c2358e8771d578c7d64717f0f43184bef212c16",
+  "prompts": {
+    "e70cd952a6bbb531": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d7727-a5fd-7393-88fa-41b81a88502f",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 128,
+      "total_deletions": 90,
+      "accepted_lines": 128,
+      "overriden_lines": 0
+    }
+  }
+}
