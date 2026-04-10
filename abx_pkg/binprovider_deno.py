@@ -6,7 +6,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from typing import ClassVar, Self
+from typing import Self
 
 from platformdirs import user_cache_path
 from pydantic import Field, TypeAdapter, computed_field, model_validator
@@ -50,7 +50,6 @@ class DenoProvider(BinProvider):
 
     name: BinProviderName = "deno"
     INSTALLER_BIN: BinName = "deno"
-    INSTALL_ROOT_FIELD: ClassVar[str | None] = "deno_root"
 
     PATH: PATHStr = ""
     postinstall_scripts: bool | None = Field(
@@ -64,7 +63,11 @@ class DenoProvider(BinProvider):
 
     # Mirrors $DENO_INSTALL_ROOT, defaults to ~/.deno when None.
     # Default: ABX_PKG_DENO_ROOT > ABX_PKG_LIB_DIR/deno > None.
-    deno_root: Path | None = abx_pkg_install_root_default("deno")
+    install_root: Path | None = Field(
+        default_factory=lambda: abx_pkg_install_root_default("deno"),
+        validation_alias="deno_root",
+    )
+    bin_dir: Path | None = None
     deno_dir: Path | None = None  # mirrors $DENO_DIR for cache isolation
 
     cache_dir: Path = USER_CACHE_PATH
@@ -87,21 +90,11 @@ class DenoProvider(BinProvider):
     @computed_field
     @property
     def is_valid(self) -> bool:
-        if self.deno_root:
-            bin_dir = self.deno_root / "bin"
-            if not (bin_dir.is_dir() and os.access(bin_dir, os.R_OK)):
-                return False
+        if self.bin_dir and not (
+            self.bin_dir.is_dir() and os.access(self.bin_dir, os.R_OK)
+        ):
+            return False
         return bool(self.INSTALLER_BIN_ABSPATH)
-
-    @computed_field
-    @property
-    def install_root(self) -> Path | None:
-        return self.deno_root
-
-    @computed_field
-    @property
-    def bin_dir(self) -> Path | None:
-        return self.deno_root / "bin" if self.deno_root else None
 
     @computed_field
     @property
@@ -134,17 +127,19 @@ class DenoProvider(BinProvider):
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
+        if self.bin_dir is None and self.install_root is not None:
+            self.bin_dir = self.install_root / "bin"
         if self.euid is None:
             self.euid = self.detect_euid(
-                owner_paths=(self.deno_root,),
+                owner_paths=(self.install_root,),
                 preserve_root=True,
             )
         return self
 
     @model_validator(mode="after")
     def load_PATH_from_deno_root(self) -> Self:
-        if self.deno_root:
-            self.PATH = self._merge_PATH(self.deno_root / "bin")
+        if self.bin_dir:
+            self.PATH = self._merge_PATH(self.bin_dir)
         else:
             default_root = (
                 Path(
@@ -156,16 +151,25 @@ class DenoProvider(BinProvider):
             self.PATH = self._merge_PATH(default_root, PATH=self.PATH)
         return self
 
-    def exec(self, bin_name, cmd=(), cwd: Path | str = ".", quiet=False, **kwargs):
+    def exec(
+        self,
+        bin_name,
+        cmd=(),
+        cwd: Path | str = ".",
+        quiet=False,
+        should_log_command: bool = True,
+        **kwargs,
+    ):
         # Inject DENO_INSTALL_ROOT / DENO_DIR / DENO_TLS_CA_STORE.
         env = (kwargs.pop("env", None) or os.environ.copy()).copy()
         # Use the system trust store so jsr/npm registry TLS works on hosts
         # that ship corporate / sandboxed CA bundles.
         env.setdefault("DENO_TLS_CA_STORE", "system")
-        if self.deno_root:
-            self.deno_root.mkdir(parents=True, exist_ok=True)
-            (self.deno_root / "bin").mkdir(parents=True, exist_ok=True)
-            env["DENO_INSTALL_ROOT"] = str(self.deno_root)
+        if self.install_root:
+            self.install_root.mkdir(parents=True, exist_ok=True)
+            assert self.bin_dir is not None
+            self.bin_dir.mkdir(parents=True, exist_ok=True)
+            env["DENO_INSTALL_ROOT"] = str(self.install_root)
         if self.deno_dir:
             self.deno_dir.mkdir(parents=True, exist_ok=True)
             env["DENO_DIR"] = str(self.deno_dir)
@@ -174,6 +178,7 @@ class DenoProvider(BinProvider):
             cmd=cmd,
             cwd=cwd,
             quiet=quiet,
+            should_log_command=should_log_command,
             env=env,
             **kwargs,
         )
@@ -184,10 +189,11 @@ class DenoProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
     ) -> None:
         self._ensure_writable_cache_dir(self.cache_dir)
-        if self.deno_root:
-            (self.deno_root / "bin").mkdir(parents=True, exist_ok=True)
+        if self.bin_dir:
+            self.bin_dir.mkdir(parents=True, exist_ok=True)
 
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(
@@ -197,9 +203,10 @@ class DenoProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        self.setup()
+        self.setup(no_cache=no_cache)
         installer_bin = self._require_installer_bin()
         postinstall_scripts = bool(postinstall_scripts)
         install_args = install_args or self.get_install_args(bin_name)
@@ -214,7 +221,10 @@ class DenoProvider(BinProvider):
                 for arg in install_args
             ]
 
-        cmd: list[str] = ["install", *self.deno_install_args, "-g"]
+        cmd: list[str] = ["install"]
+        if no_cache:
+            cmd.append("--reload")
+        cmd.extend([*self.deno_install_args, "-g"])
         if not any(arg in ("-f", "--force") for arg in install_args):
             cmd.append("--force")
         if not any(
@@ -262,6 +272,7 @@ class DenoProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
         # ``deno install -gf`` re-installs from scratch, which is the
@@ -272,6 +283,7 @@ class DenoProvider(BinProvider):
             postinstall_scripts=postinstall_scripts,
             min_release_age=min_release_age,
             min_version=min_version,
+            no_cache=no_cache,
             timeout=timeout,
         )
 

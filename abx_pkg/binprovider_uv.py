@@ -8,7 +8,7 @@ import re
 import sys
 import tempfile
 from pathlib import Path
-from typing import ClassVar, Self
+from typing import Self
 
 from platformdirs import user_cache_path
 from pydantic import Field, TypeAdapter, computed_field, model_validator
@@ -39,16 +39,16 @@ except Exception:
 class UvProvider(BinProvider):
     """Standalone ``uv`` package manager provider.
 
-    Has two modes, picked based on whether ``uv_venv`` is set:
+    Has two modes, picked based on whether ``install_root`` is set:
 
-    1. **Hermetic venv mode** (``uv_venv=Path(...)``): creates a dedicated
+    1. **Hermetic venv mode** (``install_root=Path(...)``): creates a dedicated
        venv at the requested path via ``uv venv`` and installs packages
        into it via ``uv pip install --python <venv>/bin/python``, the same
-       way ``PipProvider`` does when configured with ``pip_venv``. This is
+       way ``PipProvider`` does when configured with ``install_root``. This is
        the idiomatic "install a Python library + its CLI entrypoints into
        an isolated environment" path.
 
-    2. **Global tool mode** (``uv_venv=None``): delegates to
+    2. **Global tool mode** (``install_root=None``): delegates to
        ``uv tool install`` which lays out a fresh venv under
        ``UV_TOOL_DIR`` per tool and writes shims into ``UV_TOOL_BIN_DIR``.
        This is the idiomatic "install a CLI tool globally" path.
@@ -60,7 +60,6 @@ class UvProvider(BinProvider):
 
     name: BinProviderName = "uv"
     INSTALLER_BIN: BinName = "uv"
-    INSTALL_ROOT_FIELD: ClassVar[str | None] = "uv_venv"
 
     PATH: PATHStr = ""
     postinstall_scripts: bool | None = Field(
@@ -74,12 +73,15 @@ class UvProvider(BinProvider):
 
     # None = global ``uv tool`` mode, otherwise a managed venv path.
     # Default: ABX_PKG_UV_ROOT > ABX_PKG_LIB_DIR/uv > None.
-    uv_venv: Path | None = abx_pkg_install_root_default("uv")
-    # Global-mode overrides (only used when uv_venv is None). Mirror
+    install_root: Path | None = Field(
+        default_factory=lambda: abx_pkg_install_root_default("uv"),
+        validation_alias="uv_venv",
+    )
+    # Global-mode overrides (only used when install_root is None). Mirror
     # ``UV_TOOL_DIR`` / ``UV_TOOL_BIN_DIR`` respectively; default to uv's
     # own defaults (``~/.local/share/uv/tools`` / ``~/.local/bin``).
     uv_tool_dir: Path | None = None
-    uv_tool_bin_dir: Path | None = None
+    bin_dir: Path | None = Field(default=None, validation_alias="uv_tool_bin_dir")
 
     cache_dir: Path = USER_CACHE_PATH
     cache_arg: str = ""  # re-derived per-instance from cache_dir in detect_cache_arg
@@ -101,23 +103,11 @@ class UvProvider(BinProvider):
     @computed_field
     @property
     def is_valid(self) -> bool:
-        if self.uv_venv:
-            venv_python = self.uv_venv / "bin" / "python"
+        if self.install_root:
+            venv_python = self.install_root / "bin" / "python"
             if not (venv_python.is_file() and os.access(venv_python, os.X_OK)):
                 return False
         return bool(self.INSTALLER_BIN_ABSPATH)
-
-    @computed_field
-    @property
-    def install_root(self) -> Path | None:
-        return self.uv_venv
-
-    @computed_field
-    @property
-    def bin_dir(self) -> Path | None:
-        if self.uv_venv:
-            return self.uv_venv / "bin"
-        return self.uv_tool_bin_dir
 
     @computed_field
     @property
@@ -150,24 +140,28 @@ class UvProvider(BinProvider):
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
+        if self.bin_dir is None and self.install_root is not None:
+            self.bin_dir = self.install_root / "bin"
         if self.euid is None:
             self.euid = self.detect_euid(
-                owner_paths=(self.uv_venv, self.uv_tool_dir, self.uv_tool_bin_dir),
+                owner_paths=(self.install_root, self.uv_tool_dir, self.bin_dir),
                 preserve_root=True,
             )
         return self
 
     @model_validator(mode="after")
     def load_PATH_from_uv_venv(self) -> Self:
-        if self.uv_venv:
+        if self.install_root:
+            bin_dir = self.bin_dir
+            assert bin_dir is not None
             self.PATH = self._merge_PATH(
-                self.uv_venv / "bin",
+                bin_dir,
                 PATH=self.PATH,
                 prepend=True,
             )
-        elif self.uv_tool_bin_dir:
+        elif self.bin_dir:
             self.PATH = self._merge_PATH(
-                self.uv_tool_bin_dir,
+                self.bin_dir,
                 PATH=self.PATH,
                 prepend=True,
             )
@@ -179,19 +173,27 @@ class UvProvider(BinProvider):
             self.PATH = self._merge_PATH(default_bin, PATH=self.PATH, prepend=True)
         return self
 
-    def exec(self, bin_name, cmd=(), cwd: Path | str = ".", quiet=False, **kwargs):
+    def exec(
+        self,
+        bin_name,
+        cmd=(),
+        cwd: Path | str = ".",
+        quiet=False,
+        should_log_command: bool = True,
+        **kwargs,
+    ):
         # In global ``uv tool`` mode, inject UV_TOOL_DIR / UV_TOOL_BIN_DIR
         # when the user gave us custom values, so ``uv tool install`` lays
         # everything out under our managed dirs.
         env = (kwargs.pop("env", None) or os.environ.copy()).copy()
         env.setdefault("UV_CACHE_DIR", str(self.cache_dir))
-        if self.uv_venv is None:
+        if self.install_root is None:
             if self.uv_tool_dir:
                 env["UV_TOOL_DIR"] = str(self.uv_tool_dir)
-            if self.uv_tool_bin_dir:
-                env["UV_TOOL_BIN_DIR"] = str(self.uv_tool_bin_dir)
+            if self.bin_dir:
+                env["UV_TOOL_BIN_DIR"] = str(self.bin_dir)
                 path_entries = [e for e in env.get("PATH", "").split(":") if e]
-                bin_str = str(self.uv_tool_bin_dir)
+                bin_str = str(self.bin_dir)
                 if bin_str not in path_entries:
                     env["PATH"] = ":".join([bin_str, *path_entries])
         return super().exec(
@@ -199,6 +201,7 @@ class UvProvider(BinProvider):
             cmd=cmd,
             cwd=cwd,
             quiet=quiet,
+            should_log_command=should_log_command,
             env=env,
             **kwargs,
         )
@@ -209,26 +212,31 @@ class UvProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
     ) -> None:
         if not self._ensure_writable_cache_dir(self.cache_dir):
             self.cache_arg = "--no-cache"
-        if self.uv_venv:
-            self._ensure_venv()
+        if self.install_root:
+            self._ensure_venv(no_cache=no_cache)
         else:
             if self.uv_tool_dir:
                 self.uv_tool_dir.mkdir(parents=True, exist_ok=True)
-            if self.uv_tool_bin_dir:
-                self.uv_tool_bin_dir.mkdir(parents=True, exist_ok=True)
+            if self.bin_dir:
+                self.bin_dir.mkdir(parents=True, exist_ok=True)
 
-    def _ensure_venv(self) -> None:
-        assert self.uv_venv is not None
-        venv_python = self.uv_venv / "bin" / "python"
+    def _ensure_venv(self, *, no_cache: bool = False) -> None:
+        assert self.install_root is not None
+        venv_python = self.install_root / "bin" / "python"
         if venv_python.is_file() and os.access(venv_python, os.X_OK):
             return
-        self.uv_venv.parent.mkdir(parents=True, exist_ok=True)
+        self.install_root.parent.mkdir(parents=True, exist_ok=True)
         proc = self.exec(
             bin_name=self._require_installer_bin(),
-            cmd=["venv", self.cache_arg, str(self.uv_venv)],
+            cmd=[
+                "venv",
+                "--no-cache" if no_cache else self.cache_arg,
+                str(self.install_root),
+            ],
             quiet=True,
             timeout=self.install_timeout,
         )
@@ -297,14 +305,14 @@ class UvProvider(BinProvider):
         if not self.INSTALLER_BIN_ABSPATH:
             return None
 
-        if self.uv_venv:
+        if self.install_root:
             proc = self.exec(
                 bin_name=self.INSTALLER_BIN_ABSPATH,
                 cmd=[
                     "pip",
                     "show",
                     "--python",
-                    str(self.uv_venv / "bin" / "python"),
+                    str(self.install_root / "bin" / "python"),
                     package_name,
                 ],
                 timeout=timeout,
@@ -341,9 +349,10 @@ class UvProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        self.setup()
+        self.setup(no_cache=no_cache)
         installer_bin = self._require_installer_bin()
         postinstall_scripts = bool(postinstall_scripts)
         install_args = install_args or self.get_install_args(bin_name)
@@ -363,7 +372,8 @@ class UvProvider(BinProvider):
             min_release_age=min_release_age,
         )
 
-        if self.uv_venv:
+        cache_arg = "--no-cache" if no_cache else self.cache_arg
+        if self.install_root:
             # ``--compile-bytecode`` tells uv to compile ``.pyc`` files at
             # install time, overwriting any stale bytecode that Python may
             # have previously auto-generated for an older version of the
@@ -374,9 +384,9 @@ class UvProvider(BinProvider):
                 "pip",
                 "install",
                 "--python",
-                str(self.uv_venv / "bin" / "python"),
+                str(self.install_root / "bin" / "python"),
                 "--compile-bytecode",
-                self.cache_arg,
+                cache_arg,
                 *flags,
                 *self.uv_install_args,
                 *install_args,
@@ -386,7 +396,7 @@ class UvProvider(BinProvider):
                 "tool",
                 "install",
                 "--force",
-                self.cache_arg,
+                cache_arg,
                 *flags,
                 *self.uv_install_args,
                 *install_args,
@@ -405,9 +415,10 @@ class UvProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        self.setup()
+        self.setup(no_cache=no_cache)
         installer_bin = self._require_installer_bin()
         postinstall_scripts = bool(postinstall_scripts)
         install_args = install_args or self.get_install_args(bin_name)
@@ -427,7 +438,8 @@ class UvProvider(BinProvider):
             min_release_age=min_release_age,
         )
 
-        if self.uv_venv:
+        cache_arg = "--no-cache" if no_cache else self.cache_arg
+        if self.install_root:
             # Do an explicit uninstall + install cycle instead of
             # ``uv pip install --upgrade --reinstall`` so the venv's
             # site-packages is fully repopulated from scratch (uv's
@@ -448,7 +460,7 @@ class UvProvider(BinProvider):
                     "pip",
                     "uninstall",
                     "--python",
-                    str(self.uv_venv / "bin" / "python"),
+                    str(self.install_root / "bin" / "python"),
                     *tool_names,
                 ],
                 timeout=timeout,
@@ -468,16 +480,18 @@ class UvProvider(BinProvider):
             # venv's site-packages between the uninstall and the install
             # so Python is forced to recompile from the freshly-written
             # source. Targeted, not the whole venv.
-            for site_packages in (self.uv_venv / "lib").glob("python*/site-packages"):
+            for site_packages in (self.install_root / "lib").glob(
+                "python*/site-packages",
+            ):
                 for pycache_dir in site_packages.rglob("__pycache__"):
                     shutil.rmtree(pycache_dir, ignore_errors=True)
             cmd = [
                 "pip",
                 "install",
                 "--python",
-                str(self.uv_venv / "bin" / "python"),
+                str(self.install_root / "bin" / "python"),
                 "--compile-bytecode",
-                self.cache_arg,
+                cache_arg,
                 *flags,
                 *self.uv_install_args,
                 *install_args,
@@ -489,7 +503,7 @@ class UvProvider(BinProvider):
                 "tool",
                 "install",
                 "--force",
-                self.cache_arg,
+                cache_arg,
                 *flags,
                 *self.uv_install_args,
                 *install_args,
@@ -520,12 +534,12 @@ class UvProvider(BinProvider):
             if arg and not arg.startswith("-")
         ] or [bin_name]
 
-        if self.uv_venv:
+        if self.install_root:
             cmd = [
                 "pip",
                 "uninstall",
                 "--python",
-                str(self.uv_venv / "bin" / "python"),
+                str(self.install_root / "bin" / "python"),
                 *tool_names,
             ]
         else:
@@ -552,7 +566,7 @@ class UvProvider(BinProvider):
             return None
 
         # Fallback: ``uv pip show`` for venv mode.
-        if self.uv_venv:
+        if self.install_root:
             tool_name = self._package_name_for_bin(str(bin_name), **context)
             proc = self.exec(
                 bin_name=self.INSTALLER_BIN_ABSPATH,
@@ -560,14 +574,14 @@ class UvProvider(BinProvider):
                     "pip",
                     "show",
                     "--python",
-                    str(self.uv_venv / "bin" / "python"),
+                    str(self.install_root / "bin" / "python"),
                     tool_name,
                 ],
                 timeout=self.version_timeout,
                 quiet=True,
             )
             if proc.returncode == 0:
-                candidate = self.uv_venv / "bin" / str(bin_name)
+                candidate = self.install_root / "bin" / str(bin_name)
                 if candidate.exists():
                     return TypeAdapter(HostBinPath).validate_python(candidate)
         return None

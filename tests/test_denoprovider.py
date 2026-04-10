@@ -41,7 +41,7 @@ class TestDenoProvider:
     def test_provider_direct_methods_exercise_real_lifecycle(self, test_machine):
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = DenoProvider(
-                deno_root=Path(temp_dir) / "deno",
+                install_root=Path(temp_dir) / "deno",
                 deno_dir=Path(temp_dir) / "deno-cache",
                 postinstall_scripts=False,
                 min_release_age=0,
@@ -60,7 +60,7 @@ class TestDenoProvider:
     ):
         with tempfile.TemporaryDirectory() as tmpdir:
             strict_provider = DenoProvider(
-                deno_root=Path(tmpdir) / "strict-deno",
+                install_root=Path(tmpdir) / "strict-deno",
                 deno_dir=Path(tmpdir) / "strict-cache",
                 postinstall_scripts=False,
                 min_release_age=36500,
@@ -82,8 +82,8 @@ class TestDenoProvider:
                 assert_version_command=False,
             )
             assert (
-                strict_provider.deno_root is not None
-                and (strict_provider.deno_root / "bin" / "cowsay").exists()
+                strict_provider.install_root is not None
+                and (strict_provider.install_root / "bin" / "cowsay").exists()
             )
             assert strict_provider.uninstall("cowsay", min_release_age=0)
 
@@ -91,7 +91,7 @@ class TestDenoProvider:
                 name="cowsay",
                 binproviders=[
                     DenoProvider(
-                        deno_root=Path(tmpdir) / "binary-deno",
+                        install_root=Path(tmpdir) / "binary-deno",
                         deno_dir=Path(tmpdir) / "binary-cache",
                         postinstall_scripts=False,
                         min_release_age=36500,
@@ -109,7 +109,7 @@ class TestDenoProvider:
     def test_min_release_age_extreme_value_blocks_install(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             strict_provider = DenoProvider(
-                deno_root=Path(tmpdir) / "deno",
+                install_root=Path(tmpdir) / "deno",
                 deno_dir=Path(tmpdir) / "cache",
                 postinstall_scripts=False,
                 min_release_age=36500,  # 100 years
@@ -117,8 +117,8 @@ class TestDenoProvider:
             assert strict_provider.supports_min_release_age("install") is True
             with pytest.raises(BinProviderInstallError):
                 strict_provider.install("cowsay")
-            assert strict_provider.deno_root is not None
-            assert not (strict_provider.deno_root / "bin" / "cowsay").exists()
+            assert strict_provider.install_root is not None
+            assert not (strict_provider.install_root / "bin" / "cowsay").exists()
 
     def test_postinstall_scripts_default_off_does_not_block_simple_packages(
         self,
@@ -126,7 +126,7 @@ class TestDenoProvider:
     ):
         with tempfile.TemporaryDirectory() as tmpdir:
             provider = DenoProvider(
-                deno_root=Path(tmpdir) / "deno",
+                install_root=Path(tmpdir) / "deno",
                 deno_dir=Path(tmpdir) / "cache",
                 postinstall_scripts=False,
                 min_release_age=0,
@@ -143,7 +143,7 @@ class TestDenoProvider:
     def test_jsr_scheme_is_honored_for_jsr_packages(self, test_machine):
         with tempfile.TemporaryDirectory() as tmpdir:
             provider = DenoProvider(
-                deno_root=Path(tmpdir) / "deno",
+                install_root=Path(tmpdir) / "deno",
                 deno_dir=Path(tmpdir) / "cache",
                 postinstall_scripts=False,
                 min_release_age=0,
@@ -162,8 +162,10 @@ class TestDenoProvider:
             )
             assert installed is not None
             assert installed.loaded_abspath is not None
-            assert provider.deno_root is not None
-            assert installed.loaded_abspath == provider.deno_root / "bin" / "fileserver"
+            assert provider.install_root is not None
+            assert (
+                installed.loaded_abspath == provider.install_root / "bin" / "fileserver"
+            )
 
     def test_binary_direct_methods_exercise_real_lifecycle(self, test_machine):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -171,7 +173,7 @@ class TestDenoProvider:
                 name="cowsay",
                 binproviders=[
                     DenoProvider(
-                        deno_root=Path(temp_dir) / "deno",
+                        install_root=Path(temp_dir) / "deno",
                         deno_dir=Path(temp_dir) / "cache",
                         postinstall_scripts=False,
                         min_release_age=0,
@@ -188,7 +190,7 @@ class TestDenoProvider:
     def test_provider_dry_run_does_not_install_cowsay(self, test_machine):
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = DenoProvider(
-                deno_root=Path(temp_dir) / "deno",
+                install_root=Path(temp_dir) / "deno",
                 deno_dir=Path(temp_dir) / "cache",
                 postinstall_scripts=False,
                 min_release_age=0,
@@ -201,7 +203,7 @@ class TestDenoProvider:
         with tempfile.TemporaryDirectory() as tmpdir:
             with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
                 provider = DenoProvider(
-                    deno_root=Path(tmpdir) / "deno",
+                    install_root=Path(tmpdir) / "deno",
                     deno_dir=Path(tmpdir) / "cache",
                     postinstall_scripts=False,
                     min_release_age=0,
@@ -217,7 +219,7 @@ class TestDenoProvider:
                 name="cowsay",
                 binproviders=[
                     DenoProvider(
-                        deno_root=Path(tmpdir) / "deno",
+                        install_root=Path(tmpdir) / "deno",
                         deno_dir=Path(tmpdir) / "cache",
                         postinstall_scripts=False,
                         min_release_age=36500,

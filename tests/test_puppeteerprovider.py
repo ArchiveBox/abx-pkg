@@ -15,15 +15,15 @@ class TestPuppeteerProvider:
         with tempfile.TemporaryDirectory() as temp_dir:
             puppeteer_root = Path(temp_dir) / "puppeteer-root"
             provider = PuppeteerProvider(
-                puppeteer_root=puppeteer_root,
-                browser_bin_dir=puppeteer_root / "bin",
+                install_root=puppeteer_root,
+                bin_dir=puppeteer_root / "bin",
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
                 overrides={"chrome": {"install_args": ["chromium@latest"]}},
             )
 
-            installed = provider.install("chrome", nocache=True)
+            installed = provider.install("chrome", no_cache=True)
             assert installed is not None
             test_machine.assert_shallow_binary_loaded(installed)
             assert installed.name == "chrome"
@@ -31,17 +31,21 @@ class TestPuppeteerProvider:
             assert installed.loaded_abspath.exists()
             assert "@latest" not in installed.name
             assert "@" not in installed.loaded_abspath.name
-            assert installed.loaded_abspath.parent == provider.bin_dir
-            assert installed.loaded_abspath == provider.bin_dir / "chrome"
-            assert (provider.cache_dir / "chromium").exists()
+            bin_dir = provider.bin_dir
+            cache_dir = provider.cache_dir
+            assert bin_dir is not None
+            assert cache_dir is not None
+            assert installed.loaded_abspath.parent == bin_dir
+            assert installed.loaded_abspath == bin_dir / "chrome"
+            assert (cache_dir / "chromium").exists()
 
-            loaded = provider.load("chrome", nocache=True)
+            loaded = provider.load("chrome", no_cache=True)
             test_machine.assert_shallow_binary_loaded(loaded)
             assert loaded is not None
             assert loaded.loaded_abspath is not None
             assert loaded.loaded_abspath.resolve() == installed.loaded_abspath.resolve()
 
-            loaded_or_installed = provider.load_or_install("chrome", nocache=True)
+            loaded_or_installed = provider.install("chrome", no_cache=True)
             test_machine.assert_shallow_binary_loaded(loaded_or_installed)
             assert loaded_or_installed is not None
             assert loaded_or_installed.loaded_abspath is not None
@@ -112,7 +116,7 @@ class TestPuppeteerProvider:
             assert installed.loaded_abspath is not None
             assert installed.loaded_abspath.parent == provider.bin_dir
 
-    def test_explicit_browser_bin_dir_takes_precedence_over_existing_PATH_entries(
+    def test_explicit_bin_dir_takes_precedence_over_existing_PATH_entries(
         self,
         test_machine,
     ):
@@ -122,8 +126,8 @@ class TestPuppeteerProvider:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_dir_path = Path(temp_dir)
             ambient_provider = PuppeteerProvider(
-                puppeteer_root=temp_dir_path / "ambient-root",
-                browser_bin_dir=temp_dir_path / "ambient-root/bin",
+                install_root=temp_dir_path / "ambient-root",
+                bin_dir=temp_dir_path / "ambient-root/bin",
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -136,8 +140,8 @@ class TestPuppeteerProvider:
 
             provider = PuppeteerProvider(
                 PATH=str(ambient_provider.bin_dir),
-                puppeteer_root=temp_dir_path / "puppeteer-root",
-                browser_bin_dir=temp_dir_path / "custom-bin",
+                install_root=temp_dir_path / "puppeteer-root",
+                bin_dir=temp_dir_path / "custom-bin",
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -162,8 +166,8 @@ class TestPuppeteerProvider:
 
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = PuppeteerProvider(
-                puppeteer_root=Path(temp_dir) / "puppeteer-root",
-                browser_bin_dir=Path(temp_dir) / "puppeteer-root/bin",
+                install_root=Path(temp_dir) / "puppeteer-root",
+                bin_dir=Path(temp_dir) / "puppeteer-root/bin",
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -183,8 +187,8 @@ class TestPuppeteerProvider:
                 name="chromedriver",
                 binproviders=[
                     PuppeteerProvider(
-                        puppeteer_root=Path(temp_dir) / "puppeteer-root",
-                        browser_bin_dir=Path(temp_dir) / "puppeteer-root/bin",
+                        install_root=Path(temp_dir) / "puppeteer-root",
+                        bin_dir=Path(temp_dir) / "puppeteer-root/bin",
                         postinstall_scripts=True,
                         min_release_age=0,
                     ),

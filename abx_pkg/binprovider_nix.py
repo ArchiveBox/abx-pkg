@@ -6,8 +6,8 @@ import shutil
 
 from pathlib import Path
 
-from pydantic import model_validator, TypeAdapter, computed_field
-from typing import ClassVar, Self
+from pydantic import Field, model_validator, TypeAdapter, computed_field
+from typing import Self
 
 from .base_types import (
     BinProviderName,
@@ -32,13 +32,17 @@ DEFAULT_NIX_BIN_DIR = Path("/nix/var/nix/profiles/default/bin")
 class NixProvider(BinProvider):
     name: BinProviderName = "nix"
     INSTALLER_BIN: BinName = "nix"
-    INSTALL_ROOT_FIELD: ClassVar[str | None] = "nix_profile"
 
     PATH: PATHStr = ""
 
-    # Default: ABX_PKG_NIX_ROOT > ABX_PKG_LIB_DIR/nix > ~/.nix-profile.
-    nix_profile: Path = abx_pkg_install_root_default("nix") or DEFAULT_NIX_PROFILE
+    install_root: Path | None = Field(
+        default_factory=lambda: (
+            abx_pkg_install_root_default("nix") or DEFAULT_NIX_PROFILE
+        ),
+        validation_alias="nix_profile",
+    )
     nix_state_dir: Path | None = None
+    bin_dir: Path | None = None
     nix_install_args: list[str] = [
         "--extra-experimental-features",
         "nix-command",
@@ -66,27 +70,23 @@ class NixProvider(BinProvider):
     @computed_field
     @property
     def is_valid(self) -> bool:
-        profile_bin_dir = self.nix_profile / "bin"
+        install_root = self.install_root
+        assert install_root is not None
+        profile_bin_dir = install_root / "bin"
         if profile_bin_dir.exists() and not os.access(profile_bin_dir, os.R_OK):
             return False
 
         return bool(self.INSTALLER_BIN_ABSPATH)
 
-    @computed_field
-    @property
-    def install_root(self) -> Path:
-        return self.nix_profile
-
-    @computed_field
-    @property
-    def bin_dir(self) -> Path:
-        return self.nix_profile / "bin"
-
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
+        install_root = self.install_root
+        assert install_root is not None
+        if self.bin_dir is None:
+            self.bin_dir = install_root / "bin"
         if self.euid is None:
             self.euid = self.detect_euid(
-                owner_paths=(self.nix_profile.parent,),
+                owner_paths=(install_root.parent,),
                 preserve_root=True,
             )
 
@@ -94,8 +94,10 @@ class NixProvider(BinProvider):
 
     @model_validator(mode="after")
     def load_PATH_from_nix_profile(self) -> Self:
+        install_root = self.install_root
+        assert install_root is not None
         self.PATH = self._merge_PATH(
-            self.nix_profile / "bin",
+            install_root / "bin",
             PATH=self.PATH,
             prepend=True,
         )
@@ -107,14 +109,17 @@ class NixProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
     ) -> None:
-        self.nix_profile.parent.mkdir(parents=True, exist_ok=True)
+        install_root = self.install_root
+        assert install_root is not None
+        install_root.parent.mkdir(parents=True, exist_ok=True)
         if (
-            self.nix_profile.exists()
-            and self.nix_profile.is_dir()
-            and not self.nix_profile.is_symlink()
+            install_root.exists()
+            and install_root.is_dir()
+            and not install_root.is_symlink()
         ):
-            shutil.rmtree(self.nix_profile)
+            shutil.rmtree(install_root)
         if self.nix_state_dir:
             self.nix_state_dir.mkdir(parents=True, exist_ok=True)
 
@@ -164,7 +169,7 @@ class NixProvider(BinProvider):
                 "install",
                 *self.nix_install_args,
                 "--profile",
-                str(self.nix_profile),
+                str(self.install_root),
                 *install_args,
             ],
             env=self._nix_env(),
@@ -198,7 +203,7 @@ class NixProvider(BinProvider):
                 "upgrade",
                 *self.nix_install_args,
                 "--profile",
-                str(self.nix_profile),
+                str(self.install_root),
                 profile_element,
             ],
             env=self._nix_env(),
@@ -232,7 +237,7 @@ class NixProvider(BinProvider):
                 "remove",
                 *self.nix_install_args,
                 "--profile",
-                str(self.nix_profile),
+                str(self.install_root),
                 profile_element,
             ],
             env=self._nix_env(),

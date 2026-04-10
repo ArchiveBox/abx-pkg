@@ -1608,7 +1608,6 @@ abx-pkg install yt-dlp
 abx-pkg update yt-dlp
 abx-pkg uninstall yt-dlp
 abx-pkg load yt-dlp
-abx-pkg load-or-install yt-dlp
 
 # Select specific providers / re-order provider precedence
 abx-pkg install --binproviders=env,uv,pip,apt,brew prettier
@@ -1656,7 +1655,7 @@ env ABX_PKG_DRY_RUN=1 abx-pkg install some-package</code></pre>
             data-search="{{ provider.search_text }}"
             data-hero-plugin="{{ provider.short_name }}"
             data-hero-cli-command="abx-pkg --binproviders={{ provider.short_name }} install {{ provider.example_binary }}"
-            data-hero-python-command="from abx_pkg import Binary, {{ provider.short_name }}&#10;bin = Binary(name={{ provider.example_binary|tojson|forceescape }}, binproviders=[{{ provider.short_name }}]).load_or_install()"
+            data-hero-python-command="from abx_pkg import Binary, {{ provider.short_name }}&#10;bin = Binary(name={{ provider.example_binary|tojson|forceescape }}, binproviders=[{{ provider.short_name }}]).install()"
           >
             <summary>
               <div class="plugin-main">

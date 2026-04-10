@@ -6,7 +6,7 @@ import pytest
 
 from abx_pkg import Binary, SemVer
 from abx_pkg.binprovider_ansible import AnsibleProvider
-from abx_pkg.exceptions import BinaryLoadOrInstallError
+from abx_pkg.exceptions import BinaryInstallError
 
 
 def _ansible_provider_for_host(test_machine):
@@ -124,7 +124,7 @@ class TestAnsibleProvider:
             assert "ignoring unsupported min_release_age=1" in caplog.text
             assert "ignoring unsupported postinstall_scripts=False" in caplog.text
         finally:
-            cleanup_provider.uninstall(package, quiet=True, nocache=True)
+            cleanup_provider.uninstall(package, quiet=True, no_cache=True)
 
     def test_min_version_enforced_in_provider_and_binary_paths(
         self,
@@ -143,7 +143,7 @@ class TestAnsibleProvider:
                 package,
                 postinstall_scripts=True,
                 min_release_age=0,
-                nocache=True,
+                no_cache=True,
             )
             test_machine.assert_shallow_binary_loaded(installed)
 
@@ -153,7 +153,7 @@ class TestAnsibleProvider:
                     postinstall_scripts=True,
                     min_release_age=0,
                     min_version=SemVer("999.0.0"),
-                    nocache=True,
+                    no_cache=True,
                 )
 
             too_new = Binary(
@@ -163,10 +163,10 @@ class TestAnsibleProvider:
                 min_release_age=0,
                 min_version=SemVer("999.0.0"),
             )
-            with pytest.raises(BinaryLoadOrInstallError):
-                too_new.load_or_install(nocache=True)
+            with pytest.raises(BinaryInstallError):
+                too_new.install(no_cache=True)
         finally:
-            cleanup_provider.uninstall(package, quiet=True, nocache=True)
+            cleanup_provider.uninstall(package, quiet=True, no_cache=True)
 
     def test_binary_direct_methods_exercise_real_lifecycle(
         self,

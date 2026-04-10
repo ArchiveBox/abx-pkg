@@ -22,7 +22,7 @@ class TestBinProvider:
         )
         assert provider.get_sha256("python") == loaded_python.loaded_sha256
 
-        loaded_or_installed = provider.load_or_install(
+        loaded_or_installed = provider.install(
             "python",
             min_version=SemVer("3.0.0"),
         )
@@ -34,7 +34,7 @@ class TestBinProvider:
     ):
         with tempfile.TemporaryDirectory() as tmpdir:
             base_provider = PipProvider(
-                pip_venv=Path(tmpdir) / "venv",
+                install_root=Path(tmpdir) / "venv",
                 postinstall_scripts=True,
                 min_release_age=0,
             )
@@ -53,7 +53,7 @@ class TestBinProvider:
     def test_exec_uses_provider_PATH_for_nested_subprocesses(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             provider = PipProvider(
-                pip_venv=Path(tmpdir) / "venv",
+                install_root=Path(tmpdir) / "venv",
                 postinstall_scripts=True,
                 min_release_age=0,
             )
@@ -77,7 +77,7 @@ class TestBinProvider:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmpdir_path = Path(tmpdir)
             ambient_provider = PipProvider(
-                pip_venv=tmpdir_path / "ambient-venv",
+                install_root=tmpdir_path / "ambient-venv",
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -90,7 +90,7 @@ class TestBinProvider:
             assert ambient_installed is not None
 
             provider = PipProvider(
-                pip_venv=tmpdir_path / "provider-venv",
+                install_root=tmpdir_path / "provider-venv",
                 postinstall_scripts=True,
                 min_release_age=0,
             )

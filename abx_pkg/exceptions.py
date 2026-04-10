@@ -80,10 +80,6 @@ class BinaryLoadError(BinaryOperationError):
     action = "load"
 
 
-class BinaryLoadOrInstallError(BinaryOperationError):
-    action = "load or install"
-
-
 class BinaryUpdateError(BinaryOperationError):
     action = "update"
 

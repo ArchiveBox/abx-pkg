@@ -77,7 +77,7 @@ class TestSecurityControls:
     ):
         with tempfile.TemporaryDirectory() as tmpdir:
             provider = PipProvider(
-                pip_venv=Path(tmpdir) / "venv",
+                install_root=Path(tmpdir) / "venv",
                 postinstall_scripts=False,
                 min_release_age=36500,
             )
@@ -96,7 +96,7 @@ class TestSecurityControls:
     def test_npm_provider_default_security_settings_are_overridden_by_binary(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             provider = NpmProvider(
-                npm_prefix=Path(tmpdir) / "npm",
+                install_root=Path(tmpdir) / "npm",
                 postinstall_scripts=False,
                 min_release_age=36500,
             ).get_provider_with_overrides(

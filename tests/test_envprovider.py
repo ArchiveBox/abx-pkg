@@ -26,7 +26,7 @@ class TestEnvProvider:
 
         installed = provider.install("python", min_version=SemVer("3.0.0"))
         updated = provider.update("python", min_version=SemVer("3.0.0"))
-        loaded_or_installed = provider.load_or_install(
+        loaded_or_installed = provider.install(
             "python",
             min_version=SemVer("3.0.0"),
         )
@@ -61,7 +61,7 @@ class TestEnvProvider:
         )
 
         installed = binary.install()
-        loaded = test_machine.unloaded_binary(binary).load_or_install()
+        loaded = test_machine.unloaded_binary(binary).install()
 
         test_machine.assert_shallow_binary_loaded(installed)
         test_machine.assert_shallow_binary_loaded(loaded)

@@ -12,7 +12,7 @@ import tempfile
 from platformdirs import user_cache_path
 
 from pathlib import Path
-from typing import ClassVar, Self
+from typing import Self
 from pydantic import Field, model_validator, TypeAdapter, computed_field
 
 from .base_types import (
@@ -58,7 +58,6 @@ _PIP_MIN_RELEASE_AGE_VERSION = SemVer((26, 0, 0))
 class PipProvider(BinProvider):
     name: BinProviderName = "pip"
     INSTALLER_BIN: BinName = "pip"
-    INSTALL_ROOT_FIELD: ClassVar[str | None] = "pip_venv"
 
     PATH: PATHStr = ""
     postinstall_scripts: bool | None = Field(
@@ -72,7 +71,11 @@ class PipProvider(BinProvider):
 
     # None = system site-packages (user or global), otherwise a path.
     # Default: ABX_PKG_PIP_ROOT > ABX_PKG_LIB_DIR/pip > None.
-    pip_venv: Path | None = abx_pkg_install_root_default("pip")
+    install_root: Path | None = Field(
+        default_factory=lambda: abx_pkg_install_root_default("pip"),
+        validation_alias="pip_venv",
+    )
+    bin_dir: Path | None = None
 
     cache_dir: Path = USER_CACHE_PATH
     cache_arg: str = f"--cache-dir={cache_dir}"
@@ -85,7 +88,7 @@ class PipProvider(BinProvider):
     pip_bootstrap_packages: list[str] = [
         "pip",
         "setuptools",
-    ]  # packages installed into newly created pip_venv environments
+    ]  # packages installed into newly created install_root environments
 
     _INSTALLER_BIN_ABSPATH: HostBinPath | None = (
         None  # speed optimization only, faster to cache the abspath than to recompute it on every access
@@ -94,13 +97,13 @@ class PipProvider(BinProvider):
     def supports_min_release_age(self, action) -> bool:
         if action not in ("install", "update"):
             return False
-        # When ``pip_venv`` is set, ``setup()`` bootstraps the venv with the
+        # When ``install_root`` is set, ``setup()`` bootstraps the venv with the
         # latest pip from PyPI (via ``pip install --upgrade pip``), so we can
         # assume ``--uploaded-prior-to`` support regardless of what the host
         # system pip looks like right now. This check runs before ``setup()``
         # on the first install, so inspecting ``INSTALLER_BINARY`` here would
         # otherwise see ``None``.
-        if self.pip_venv and "pip" in self.pip_bootstrap_packages:
+        if self.install_root and "pip" in self.pip_bootstrap_packages:
             return True
         installer = self.INSTALLER_BINARY
         version = installer.loaded_version if installer else None
@@ -122,9 +125,9 @@ class PipProvider(BinProvider):
     @computed_field
     @property
     def is_valid(self) -> bool:
-        """False if pip_venv is not created yet or if pip binary is not found in PATH"""
-        if self.pip_venv:
-            venv_pip_path = self.pip_venv / "bin" / "python"
+        """False if install_root is not created yet or if pip binary is not found in PATH"""
+        if self.install_root:
+            venv_pip_path = self.install_root / "bin" / "python"
             venv_pip_binary_exists = os.path.isfile(venv_pip_path) and os.access(
                 venv_pip_path,
                 os.X_OK,
@@ -133,16 +136,6 @@ class PipProvider(BinProvider):
                 return False
 
         return bool(self.INSTALLER_BIN_ABSPATH)
-
-    @computed_field
-    @property
-    def install_root(self) -> Path | None:
-        return self.pip_venv
-
-    @computed_field
-    @property
-    def bin_dir(self) -> Path | None:
-        return self.install_root / "bin" if self.install_root else None
 
     @computed_field
     @property
@@ -157,9 +150,9 @@ class PipProvider(BinProvider):
 
         if pip_binary and Path(pip_binary).expanduser().is_absolute():
             abspath = Path(pip_binary).expanduser()
-        elif self.pip_venv:
+        elif self.install_root:
             # use venv pip
-            venv_pip_path = self.pip_venv / "bin" / self.INSTALLER_BIN
+            venv_pip_path = self.install_root / "bin" / self.INSTALLER_BIN
             if (
                 os.path.isfile(venv_pip_path)
                 and os.access(venv_pip_path, os.R_OK)
@@ -188,10 +181,12 @@ class PipProvider(BinProvider):
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
         """Detect the user (UID) to run as when executing pip."""
+        if self.bin_dir is None and self.install_root is not None:
+            self.bin_dir = self.install_root / "bin"
 
         if self.euid is None:
             self.euid = self.detect_euid(
-                owner_paths=(self.pip_venv,),
+                owner_paths=(self.install_root,),
                 preserve_root=True,
             )
 
@@ -199,14 +194,14 @@ class PipProvider(BinProvider):
 
     @model_validator(mode="after")
     def load_PATH_from_pip_sitepackages(self) -> Self:
-        """Assemble PATH from pip_venv or autodetected global python system site-packages and user site-packages"""
+        """Assemble PATH from install_root or autodetected global python system site-packages and user site-packages"""
         global _CACHED_GLOBAL_PIP_BIN_DIRS
         PATH = self.PATH
 
         pip_bin_dirs = set()
 
-        if self.pip_venv:
-            self.PATH = self._merge_PATH(self.pip_venv / "bin")
+        if self.bin_dir:
+            self.PATH = self._merge_PATH(self.bin_dir)
             return self
         else:
             # autodetect global system python paths
@@ -257,15 +252,16 @@ class PipProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
     ) -> None:
         """create pip venv dir if needed"""
         if not self._ensure_writable_cache_dir(self.cache_dir):
             self.cache_arg = "--no-cache-dir"
 
-        if self.pip_venv:
-            self._setup_venv(self.pip_venv)
+        if self.install_root:
+            self._setup_venv(self.install_root, no_cache=no_cache)
 
-    def _setup_venv(self, pip_venv: Path) -> None:
+    def _setup_venv(self, pip_venv: Path, *, no_cache: bool = False) -> None:
         pip_venv.parent.mkdir(parents=True, exist_ok=True)
 
         # create new venv in pip_venv if it doesn't exist
@@ -300,7 +296,7 @@ class PipProvider(BinProvider):
             bin_name=pip_abspath,
             cmd=[
                 "install",
-                self.cache_arg,
+                "--no-cache-dir" if no_cache else self.cache_arg,
                 "--no-input",
                 "--disable-pip-version-check",
                 "--quiet",
@@ -369,10 +365,11 @@ class PipProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        if self.pip_venv:
-            self.setup()
+        if self.install_root:
+            self.setup(no_cache=no_cache)
 
         pip_abspath = self._require_installer_bin()
         install_args = install_args or self.get_install_args(bin_name)
@@ -395,12 +392,13 @@ class PipProvider(BinProvider):
             postinstall_scripts=postinstall_scripts,
             min_release_age=min_release_age,
         )
+        cache_arg = "--no-cache-dir" if no_cache else self.cache_arg
 
         proc = self.exec(
             bin_name=pip_abspath,
             cmd=[
                 "install",
-                self.cache_arg,
+                cache_arg,
                 *self.pip_install_args,
                 *security_flags,
                 *install_args,
@@ -420,10 +418,11 @@ class PipProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        if self.pip_venv:
-            self.setup()
+        if self.install_root:
+            self.setup(no_cache=no_cache)
 
         pip_abspath = self._require_installer_bin()
         install_args = install_args or self.get_install_args(bin_name)
@@ -447,11 +446,12 @@ class PipProvider(BinProvider):
             min_release_age=min_release_age,
         )
 
+        cache_arg = "--no-cache-dir" if no_cache else self.cache_arg
         proc = self.exec(
             bin_name=pip_abspath,
             cmd=[
                 "install",
-                self.cache_arg,
+                cache_arg,
                 *self.pip_install_args,
                 "--upgrade",
                 *security_flags,

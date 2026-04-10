@@ -1307,11 +1307,15 @@ function getExtensionId(unpacked_path) {
  * @param {string} extension.unpacked_path - Path to extract the extension
  * @returns {Promise<boolean>} - True if installation succeeded
  */
-async function installExtension(extension) {
+async function installExtension(extension, options = {}) {
+    const {
+        forceInstall = false,
+    } = options;
     const manifest_path = path.join(extension.unpacked_path, 'manifest.json');
 
-    // Download CRX file if not already downloaded
-    if (!fs.existsSync(manifest_path) && !fs.existsSync(extension.crx_path)) {
+    // Re-fetch the CRX when explicitly forcing a refresh; otherwise reuse the
+    // existing archive if we've already downloaded it locally.
+    if (forceInstall || (!fs.existsSync(manifest_path) && !fs.existsSync(extension.crx_path))) {
         console.log(`[🛠️] Downloading missing extension ${extension.name} ${extension.webstore_id} -> ${extension.crx_path}`);
 
         try {
@@ -1385,7 +1389,7 @@ async function installExtension(extension) {
  * @param {string} [extensions_dir] - Directory to store extensions
  * @returns {Promise<Object>} - Complete extension metadata object
  */
-async function loadOrInstallExtension(ext, extensions_dir = null) {
+async function loadOrInstallExtension(ext, extensions_dir = null, force_install = false) {
     if (!(ext.webstore_id || ext.unpacked_path)) {
         throw new Error('Extension must have either {webstore_id} or {unpacked_path}');
     }
@@ -1407,8 +1411,8 @@ async function loadOrInstallExtension(ext, extensions_dir = null) {
     ext.read_version = () => fs.existsSync(manifest_path) && ext.read_manifest()?.version || null;
 
     // If extension is not installed, download and unpack it
-    if (!ext.read_version()) {
-        await installExtension(ext);
+    if (force_install || !ext.read_version()) {
+        await installExtension(ext, { forceInstall: force_install });
     }
 
     // Autodetect ID from filesystem path (unpacked extensions don't have stable IDs)
@@ -2168,6 +2172,7 @@ function getTestEnv() {
  * @param {string} extension.name - Human-readable extension name (used for cache file)
  * @param {Object} [options] - Options
  * @param {string} [options.extensionsDir] - Override extensions directory
+ * @param {boolean} [options.noCache=false] - Ignore existing cached metadata
  * @param {boolean} [options.quiet=false] - Suppress info logging
  * @returns {Promise<Object|null>} - Installed extension metadata or null on failure
  */
@@ -2175,12 +2180,13 @@ async function installExtensionWithCache(extension, options = {}) {
     const {
         extensionsDir = getExtensionsDir(),
         quiet = false,
+        noCache = false,
     } = options;
 
     const cacheFile = path.join(extensionsDir, `${extension.name}.extension.json`);
 
     // Check if extension is already cached and valid
-    if (fs.existsSync(cacheFile)) {
+    if (!noCache && fs.existsSync(cacheFile)) {
         try {
             const cached = JSON.parse(fs.readFileSync(cacheFile, 'utf-8'));
             const manifestPath = path.join(cached.unpacked_path, 'manifest.json');
@@ -2202,7 +2208,7 @@ async function installExtensionWithCache(extension, options = {}) {
         console.log(`[*] Installing ${extension.name} extension...`);
     }
 
-    const installedExt = await loadOrInstallExtension(extension, extensionsDir);
+    const installedExt = await loadOrInstallExtension(extension, extensionsDir, noCache);
 
     if (!installedExt?.version) {
         console.error(`[❌] Failed to install ${extension.name} extension`);
@@ -4112,12 +4118,15 @@ if (require.main === module) {
                 }
 
                 case 'installExtensionWithCache': {
-                    const [webstore_id, name] = commandArgs;
+                    const [webstore_id, name, maybeNoCache] = commandArgs;
                     if (!webstore_id || !name) {
-                        console.error('Usage: installExtensionWithCache <webstore_id> <name>');
+                        console.error('Usage: installExtensionWithCache <webstore_id> <name> [--no-cache]');
                         process.exit(1);
                     }
-                    const ext = await installExtensionWithCache({ webstore_id, name });
+                    const ext = await installExtensionWithCache(
+                        { webstore_id, name },
+                        { noCache: maybeNoCache === '--no-cache' },
+                    );
                     if (ext) {
                         console.log(JSON.stringify(ext, null, 2));
                     } else {

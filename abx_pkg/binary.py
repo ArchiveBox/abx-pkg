@@ -21,7 +21,6 @@ from .logging import format_exception_with_output, get_logger, log_method_call
 from .exceptions import (
     BinaryInstallError,
     BinaryLoadError,
-    BinaryLoadOrInstallError,
     BinaryUpdateError,
     BinaryUninstallError,
 )
@@ -244,7 +243,7 @@ class Binary(ShallowBinary):
 
         Providers can legitimately resolve a binary that still fails this
         Binary's declared version floor. Keeping the final validation here makes
-        install/load/load_or_install/update all share one consistent check.
+        install/load/update all share one consistent check.
         """
         result = self.model_copy(
             deep=True,
@@ -266,12 +265,20 @@ class Binary(ShallowBinary):
     def install(
         self,
         binproviders: list[BinProviderName] | None = None,
+        no_cache: bool = False,
         dry_run: bool | None = None,
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         **extra_overrides,
     ) -> Self:
         assert self.name, f"No binary name was provided! {self}"
+
+        if self.is_valid and not no_cache:
+            logger.debug(
+                "Skipping install for %s because it is already valid",
+                self.name,
+            )
+            return self
 
         if binproviders is not None and len(list(binproviders)) == 0:
             logger.debug(
@@ -280,7 +287,7 @@ class Binary(ShallowBinary):
             )
             return self
 
-        logger.info("Installing %s binary", self.name)
+        # logger.info("Installing %s binary", self.name)
         inner_exc: Exception | None = None
         errors = {}
         postinstall_scripts = (
@@ -304,6 +311,7 @@ class Binary(ShallowBinary):
                 )
                 installed_bin = provider.install(
                     self.name,
+                    no_cache=no_cache,
                     dry_run=dry_run,
                     postinstall_scripts=postinstall_scripts,
                     min_release_age=min_release_age,
@@ -332,7 +340,7 @@ class Binary(ShallowBinary):
     def load(
         self,
         binproviders: list[BinProviderName] | None = None,
-        nocache=False,
+        no_cache=False,
         **extra_overrides,
     ) -> Self:
         assert self.name, f"No binary name was provided! {self}"
@@ -350,7 +358,7 @@ class Binary(ShallowBinary):
             )
             return self
 
-        logger.info("Loading %s binary", self.name)
+        # logger.info("Loading %s binary", self.name)
         inner_exc: Exception | None = None
         errors = {}
         for binprovider in self.binproviders:
@@ -363,7 +371,7 @@ class Binary(ShallowBinary):
                     binprovider_name=binprovider.name,
                     **extra_overrides,
                 )
-                installed_bin = provider.load(self.name, nocache=nocache)
+                installed_bin = provider.load(self.name, no_cache=no_cache)
                 if installed_bin is not None and installed_bin.loaded_abspath:
                     # print('LOADED', binprovider, self.name, installed_bin)
                     return self._validated_loaded_copy(
@@ -386,87 +394,10 @@ class Binary(ShallowBinary):
 
     @validate_call
     @log_method_call(include_result=True)
-    def load_or_install(
-        self,
-        binproviders: list[BinProviderName] | None = None,
-        nocache: bool = False,
-        dry_run: bool | None = None,
-        postinstall_scripts: bool | None = None,
-        min_release_age: float | None = None,
-        **extra_overrides,
-    ) -> Self:
-        assert self.name, f"No binary name was provided! {self}"
-
-        if self.is_valid:
-            logger.debug(
-                "Skipping load_or_install for %s because it is already valid",
-                self.name,
-            )
-            return self
-
-        if binproviders is not None and len(list(binproviders)) == 0:
-            logger.debug(
-                "Skipping load_or_install for %s because binproviders list was empty",
-                self.name,
-            )
-            return self
-
-        logger.info("Loading or installing %s binary", self.name)
-        inner_exc: Exception | None = None
-        errors = {}
-        postinstall_scripts = (
-            self.postinstall_scripts
-            if postinstall_scripts is None
-            else postinstall_scripts
-        )
-        min_release_age = (
-            self.min_release_age if min_release_age is None else min_release_age
-        )
-        for binprovider in self.binproviders:
-            if binproviders and binprovider.name not in binproviders:
-                continue
-
-            provider = binprovider
-            try:
-                provider = self.get_binprovider(
-                    binprovider_name=binprovider.name,
-                    dry_run=dry_run,
-                    **extra_overrides,
-                )
-                installed_bin = provider.load_or_install(
-                    self.name,
-                    nocache=nocache,
-                    dry_run=dry_run,
-                    postinstall_scripts=postinstall_scripts,
-                    min_release_age=min_release_age,
-                    min_version=self.min_version,
-                )
-                if installed_bin is not None and installed_bin.loaded_abspath:
-                    # print('LOADED_OR_INSTALLED', self.name, installed_bin)
-                    return self._validated_loaded_copy(
-                        provider,
-                        abspath=installed_bin.loaded_abspath,
-                        version=installed_bin.loaded_version,
-                        sha256=installed_bin.loaded_sha256,
-                    )
-                else:
-                    continue
-            except Exception as err:
-                inner_exc = err
-                errors[binprovider.name] = format_exception_with_output(err)
-                self._debug_provider_failure("load_or_install", provider, err)
-                continue
-
-        provider_names = ", ".join(
-            binproviders or [p.name for p in self.binproviders],
-        )
-        raise BinaryLoadOrInstallError(self.name, provider_names, errors) from inner_exc
-
-    @validate_call
-    @log_method_call(include_result=True)
     def update(
         self,
         binproviders: list[BinProviderName] | None = None,
+        no_cache: bool = False,
         dry_run: bool | None = None,
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
@@ -481,7 +412,7 @@ class Binary(ShallowBinary):
             )
             return self
 
-        logger.info("Updating %s binary", self.name)
+        # logger.info("Updating %s binary", self.name)
         inner_exc: Exception | None = None
         errors = {}
         postinstall_scripts = (
@@ -505,6 +436,7 @@ class Binary(ShallowBinary):
                 )
                 updated_bin = provider.update(
                     self.name,
+                    no_cache=no_cache,
                     dry_run=dry_run,
                     postinstall_scripts=postinstall_scripts,
                     min_release_age=min_release_age,
@@ -532,6 +464,7 @@ class Binary(ShallowBinary):
     def uninstall(
         self,
         binproviders: list[BinProviderName] | None = None,
+        no_cache: bool = False,
         dry_run: bool | None = None,
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
@@ -546,7 +479,7 @@ class Binary(ShallowBinary):
             )
             return self
 
-        logger.info("Uninstalling %s binary", self.name)
+        # logger.info("Uninstalling %s binary", self.name)
         inner_exc: Exception | None = None
         errors = {}
         postinstall_scripts = (
@@ -570,6 +503,7 @@ class Binary(ShallowBinary):
                 )
                 uninstalled = provider.uninstall(
                     self.name,
+                    no_cache=no_cache,
                     dry_run=dry_run,
                     postinstall_scripts=postinstall_scripts,
                     min_release_age=min_release_age,

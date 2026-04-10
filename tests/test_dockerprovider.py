@@ -10,7 +10,7 @@ from abx_pkg import Binary, DockerProvider, SemVer
 
 @pytest.mark.docker_required
 class TestDockerProvider:
-    def test_bin_dir_alias_without_explicit_install_root_uses_parent_as_root(
+    def test_bin_dir_alias_without_explicit_install_root_keeps_default_root(
         self,
         test_machine,
     ):
@@ -35,11 +35,13 @@ class TestDockerProvider:
             test_machine.assert_shallow_binary_loaded(installed)
             assert installed is not None
             assert installed.loaded_abspath is not None
-            assert provider.install_root == bin_dir.parent
+            assert provider.install_root is not None
+            assert provider.install_root != bin_dir.parent
             assert provider.bin_dir == bin_dir
             assert installed.loaded_abspath.parent == provider.bin_dir
-            assert provider.metadata_dir() == bin_dir.parent / "metadata"
-            assert provider.metadata_path("shellcheck").is_file()
+            metadata_dir = provider.install_root / "metadata"
+            assert metadata_dir == provider.install_root / "metadata"
+            assert (metadata_dir / "shellcheck.json").is_file()
 
     def test_install_root_alias_without_explicit_bin_dir_uses_root_bin(
         self,
@@ -69,8 +71,9 @@ class TestDockerProvider:
             assert provider.install_root == install_root
             assert provider.bin_dir == install_root / "bin"
             assert installed.loaded_abspath.parent == provider.bin_dir
-            assert provider.metadata_dir() == install_root / "metadata"
-            assert provider.metadata_path("shellcheck").is_file()
+            metadata_dir = install_root / "metadata"
+            assert metadata_dir.is_dir()
+            assert (metadata_dir / "shellcheck.json").is_file()
 
     def test_install_root_and_bin_dir_aliases_install_the_shim_in_the_requested_location(
         self,
@@ -102,8 +105,9 @@ class TestDockerProvider:
             assert provider.install_root == install_root
             assert provider.bin_dir == bin_dir
             assert installed.loaded_abspath.parent == provider.bin_dir
-            assert provider.metadata_dir() == install_root / "metadata"
-            assert provider.metadata_path("shellcheck").is_file()
+            metadata_dir = install_root / "metadata"
+            assert metadata_dir.is_dir()
+            assert (metadata_dir / "shellcheck.json").is_file()
 
     def test_explicit_docker_shim_dir_takes_precedence_over_existing_PATH_entries(
         self,
@@ -114,7 +118,7 @@ class TestDockerProvider:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_dir_path = Path(temp_dir)
             ambient_provider = DockerProvider(
-                docker_shim_dir=temp_dir_path / "ambient-docker/bin",
+                bin_dir=temp_dir_path / "ambient-docker/bin",
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -128,7 +132,7 @@ class TestDockerProvider:
             docker_shim_dir = temp_dir_path / "docker/bin"
             provider = DockerProvider(
                 PATH=str(ambient_provider.bin_dir),
-                docker_shim_dir=docker_shim_dir,
+                bin_dir=docker_shim_dir,
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -142,7 +146,8 @@ class TestDockerProvider:
             test_machine.assert_shallow_binary_loaded(installed)
             assert installed is not None
             assert installed.loaded_abspath is not None
-            assert provider.install_root == docker_shim_dir.parent
+            assert provider.install_root is not None
+            assert provider.install_root != docker_shim_dir.parent
             assert provider.bin_dir == docker_shim_dir
             assert installed.loaded_abspath.parent == provider.bin_dir
             assert ambient_installed.loaded_abspath is not None
@@ -154,7 +159,7 @@ class TestDockerProvider:
 
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = DockerProvider(
-                docker_shim_dir=Path(temp_dir) / "docker/bin",
+                bin_dir=Path(temp_dir) / "docker/bin",
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -172,7 +177,7 @@ class TestDockerProvider:
 
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = DockerProvider(
-                docker_shim_dir=Path(temp_dir) / "docker/bin",
+                bin_dir=Path(temp_dir) / "docker/bin",
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -183,7 +188,7 @@ class TestDockerProvider:
             with pytest.raises(ValueError):
                 provider.install("shellcheck", min_version=SemVer("999.0.0"))
 
-            loaded = provider.load("shellcheck", quiet=True, nocache=True)
+            loaded = provider.load("shellcheck", quiet=True, no_cache=True)
             test_machine.assert_shallow_binary_loaded(loaded)
             assert loaded is not None
             assert loaded.loaded_version == SemVer("0.10.0")
@@ -193,7 +198,7 @@ class TestDockerProvider:
 
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = DockerProvider(
-                docker_shim_dir=Path(temp_dir) / "docker/bin",
+                bin_dir=Path(temp_dir) / "docker/bin",
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -214,7 +219,7 @@ class TestDockerProvider:
     ):
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = DockerProvider(
-                docker_shim_dir=Path(temp_dir) / "docker/bin",
+                bin_dir=Path(temp_dir) / "docker/bin",
                 postinstall_scripts=True,
                 min_release_age=0,
             )
@@ -260,7 +265,9 @@ class TestDockerProvider:
             assert calls.count(["pull", image_ref]) == 2
             assert ["image", "rm", "--force", image_ref] in calls
             assert "already exists" in output
-            assert provider.metadata_path("shellcheck").is_file()
+            assert provider.install_root is not None
+            assert provider.bin_dir is not None
+            assert (provider.install_root / "metadata" / "shellcheck.json").is_file()
             assert (provider.bin_dir / "shellcheck").is_file()
 
     def test_unsupported_security_controls_warn_and_continue(
@@ -274,7 +281,7 @@ class TestDockerProvider:
             with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
                 installed = (
                     DockerProvider(
-                        docker_shim_dir=Path(temp_dir) / "bad/bin",
+                        bin_dir=Path(temp_dir) / "bad/bin",
                         postinstall_scripts=False,
                         min_release_age=1,
                     )
@@ -296,7 +303,7 @@ class TestDockerProvider:
                 name="shellcheck",
                 binproviders=[
                     DockerProvider(
-                        docker_shim_dir=Path(temp_dir) / "ok/bin",
+                        bin_dir=Path(temp_dir) / "ok/bin",
                         postinstall_scripts=False,
                         min_release_age=1,
                     ),
@@ -321,7 +328,7 @@ class TestDockerProvider:
                 name="shellcheck",
                 binproviders=[
                     DockerProvider(
-                        docker_shim_dir=Path(temp_dir) / "docker/bin",
+                        bin_dir=Path(temp_dir) / "docker/bin",
                         postinstall_scripts=True,
                         min_release_age=0,
                     ),
@@ -339,7 +346,7 @@ class TestDockerProvider:
 
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = DockerProvider(
-                docker_shim_dir=Path(temp_dir) / "docker/bin",
+                bin_dir=Path(temp_dir) / "docker/bin",
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(

@@ -5,8 +5,8 @@ import os
 
 from pathlib import Path
 
-from pydantic import TypeAdapter, model_validator, computed_field
-from typing import ClassVar, Self
+from pydantic import Field, TypeAdapter, model_validator, computed_field
+from typing import Self
 
 from .base_types import (
     BinProviderName,
@@ -15,6 +15,7 @@ from .base_types import (
     InstallArgs,
     HostBinPath,
     abx_pkg_install_root_default,
+    bin_abspath,
 )
 from .semver import SemVer
 from .binprovider import BinProvider, DEFAULT_ENV_PATH, remap_kwargs
@@ -27,39 +28,37 @@ DEFAULT_GOPATH = Path(os.environ.get("GOPATH", "~/go")).expanduser()
 class GoGetProvider(BinProvider):
     name: BinProviderName = "goget"
     INSTALLER_BIN: BinName = "go"
-    INSTALL_ROOT_FIELD: ClassVar[str | None] = "gopath"
-    BIN_DIR_FIELD: ClassVar[str | None] = "gobin"
 
     PATH: PATHStr = DEFAULT_ENV_PATH
 
-    gobin: Path | None = None
-    # Default: ABX_PKG_GOGET_ROOT > ABX_PKG_LIB_DIR/goget > $GOPATH > ~/go.
-    gopath: Path = abx_pkg_install_root_default("goget") or DEFAULT_GOPATH
+    install_root: Path | None = Field(
+        default_factory=lambda: abx_pkg_install_root_default("goget"),
+        validation_alias="gopath",
+    )
+    bin_dir: Path | None = Field(default=None, validation_alias="gobin")
     go_install_args: list[str] = []
 
     @computed_field
     @property
     def is_valid(self) -> bool:
-        if self.gobin and not (self.gobin.is_dir() and os.access(self.gobin, os.R_OK)):
+        if self.bin_dir and not (
+            self.bin_dir.is_dir() and os.access(self.bin_dir, os.R_OK)
+        ):
             return False
 
         return bool(self.INSTALLER_BIN_ABSPATH)
 
-    @computed_field
-    @property
-    def install_root(self) -> Path:
-        return self.gopath
-
-    @computed_field
-    @property
-    def bin_dir(self) -> Path:
-        return (self.gobin or (self.install_root / "bin")).expanduser()
-
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
+        if self.install_root is None:
+            self.install_root = DEFAULT_GOPATH
+        if self.bin_dir is None:
+            self.bin_dir = (self.install_root / "bin").expanduser()
+        else:
+            self.bin_dir = self.bin_dir.expanduser()
         if self.euid is None:
             self.euid = self.detect_euid(
-                owner_paths=(self.gobin, self.gopath),
+                owner_paths=(self.bin_dir, self.install_root),
                 preserve_root=True,
             )
 
@@ -67,10 +66,12 @@ class GoGetProvider(BinProvider):
 
     @model_validator(mode="after")
     def load_PATH_from_go_env(self) -> Self:
-        if self.gobin or "gopath" in self.model_fields_set:
-            self.PATH = self._merge_PATH(self.bin_dir)
+        bin_dir = self.bin_dir
+        assert bin_dir is not None
+        if self.install_root != DEFAULT_GOPATH or "bin_dir" in self.model_fields_set:
+            self.PATH = self._merge_PATH(bin_dir)
         else:
-            self.PATH = self._merge_PATH(self.bin_dir, PATH=self.PATH)
+            self.PATH = self._merge_PATH(bin_dir, PATH=self.PATH)
         return self
 
     def setup(
@@ -79,14 +80,23 @@ class GoGetProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
     ) -> None:
-        self.install_root.mkdir(parents=True, exist_ok=True)
-        self.bin_dir.mkdir(parents=True, exist_ok=True)
+        install_root = self.install_root
+        bin_dir = self.bin_dir
+        assert install_root is not None
+        assert bin_dir is not None
+        install_root.mkdir(parents=True, exist_ok=True)
+        bin_dir.mkdir(parents=True, exist_ok=True)
 
     def _go_env(self) -> dict[str, str]:
+        install_root = self.install_root
+        bin_dir = self.bin_dir
+        assert install_root is not None
+        assert bin_dir is not None
         env = os.environ.copy()
-        env["GOPATH"] = str(self.install_root)
-        env["GOBIN"] = str(self.bin_dir)
+        env["GOPATH"] = str(install_root)
+        env["GOBIN"] = str(bin_dir)
         return env
 
     def default_install_args_handler(self, bin_name: BinName, **context) -> InstallArgs:
@@ -159,7 +169,7 @@ class GoGetProvider(BinProvider):
         min_version: SemVer | None = None,
         timeout: int | None = None,
     ) -> bool:
-        abspath = self.get_abspath(bin_name, quiet=True, nocache=True)
+        abspath = self.get_abspath(bin_name, quiet=True, no_cache=True)
         if not abspath:
             return True
 
@@ -188,10 +198,18 @@ class GoGetProvider(BinProvider):
         )
         if candidate_name == bin_name_str:
             return None
-        candidate_abspath = super().default_abspath_handler(candidate_name, **context)
+        candidate_abspath = bin_abspath(candidate_name, PATH=str(self.bin_dir))
         if candidate_abspath is None:
             return None
-        return TypeAdapter(HostBinPath).validate_python(candidate_abspath)
+        direct_abspath = TypeAdapter(HostBinPath).validate_python(candidate_abspath)
+        bin_dir = self.bin_dir
+        assert bin_dir is not None
+        link_path = bin_dir / str(bin_name)
+        link_path.parent.mkdir(parents=True, exist_ok=True)
+        if link_path.exists() or link_path.is_symlink():
+            link_path.unlink(missing_ok=True)
+        link_path.symlink_to(direct_abspath)
+        return TypeAdapter(HostBinPath).validate_python(link_path)
 
     def default_version_handler(
         self,

@@ -5,9 +5,9 @@ import os
 import json
 
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any
 
-from pydantic import model_validator, TypeAdapter, computed_field
+from pydantic import Field, model_validator, TypeAdapter, computed_field
 from typing import Self
 
 from .base_types import (
@@ -32,14 +32,15 @@ DEFAULT_DOCKER_ROOT = DEFAULT_LIB_DIR / "docker"
 class DockerProvider(BinProvider):
     name: BinProviderName = "docker"
     INSTALLER_BIN: BinName = "docker"
-    INSTALL_ROOT_FIELD: ClassVar[str | None] = "docker_root"
-    BIN_DIR_FIELD: ClassVar[str | None] = "docker_shim_dir"
 
     PATH: PATHStr = ""
 
     # Default: ABX_PKG_DOCKER_ROOT > ABX_PKG_LIB_DIR/docker > None.
-    docker_root: Path | None = abx_pkg_install_root_default("docker")
-    docker_shim_dir: Path | None = None
+    install_root: Path | None = Field(
+        default_factory=lambda: abx_pkg_install_root_default("docker"),
+        validation_alias="docker_root",
+    )
+    bin_dir: Path | None = Field(default=None, validation_alias="docker_shim_dir")
     docker_run_args: list[str] = ["--rm", "-i"]
 
     @computed_field
@@ -47,22 +48,12 @@ class DockerProvider(BinProvider):
     def is_valid(self) -> bool:
         return bool(self.INSTALLER_BIN_ABSPATH)
 
-    @computed_field
-    @property
-    def install_root(self) -> Path:
-        if self.docker_root:
-            return self.docker_root
-        if self.docker_shim_dir:
-            return self.docker_shim_dir.parent
-        return DEFAULT_DOCKER_ROOT
-
-    @computed_field
-    @property
-    def bin_dir(self) -> Path:
-        return self.docker_shim_dir or (self.install_root / "bin")
-
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
+        if self.install_root is None:
+            self.install_root = DEFAULT_DOCKER_ROOT
+        if self.bin_dir is None:
+            self.bin_dir = self.install_root / "bin"
         if self.euid is None:
             self.euid = self.detect_euid(
                 owner_paths=(self.bin_dir,),
@@ -73,18 +64,14 @@ class DockerProvider(BinProvider):
 
     @model_validator(mode="after")
     def load_PATH_from_docker_shims(self) -> Self:
+        bin_dir = self.bin_dir
+        assert bin_dir is not None
         self.PATH = self._merge_PATH(
-            self.bin_dir,
+            bin_dir,
             PATH=self.PATH,
             prepend=True,
         )
         return self
-
-    def metadata_dir(self) -> Path:
-        return self.install_root / "metadata"
-
-    def metadata_path(self, bin_name: str) -> Path:
-        return self.metadata_dir() / f"{bin_name}.json"
 
     def setup(
         self,
@@ -92,9 +79,14 @@ class DockerProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
     ) -> None:
-        self.bin_dir.mkdir(parents=True, exist_ok=True)
-        self.metadata_dir().mkdir(parents=True, exist_ok=True)
+        bin_dir = self.bin_dir
+        install_root = self.install_root
+        assert bin_dir is not None
+        assert install_root is not None
+        bin_dir.mkdir(parents=True, exist_ok=True)
+        (install_root / "metadata").mkdir(parents=True, exist_ok=True)
 
     def default_install_args_handler(self, bin_name: BinName, **context) -> InstallArgs:
         return [f"{bin_name}:latest"]
@@ -119,7 +111,9 @@ class DockerProvider(BinProvider):
         return "latest"
 
     def _write_metadata(self, bin_name: str, image_ref: str) -> None:
-        self.metadata_path(bin_name).write_text(
+        install_root = self.install_root
+        assert install_root is not None
+        (install_root / "metadata" / f"{bin_name}.json").write_text(
             json.dumps(
                 {
                     "image": image_ref,
@@ -130,13 +124,17 @@ class DockerProvider(BinProvider):
         )
 
     def _read_metadata(self, bin_name: str) -> dict[str, Any] | None:
-        metadata_path = self.metadata_path(bin_name)
+        install_root = self.install_root
+        assert install_root is not None
+        metadata_path = install_root / "metadata" / f"{bin_name}.json"
         if not metadata_path.is_file():
             return None
         return json.loads(metadata_path.read_text(encoding="utf-8"))
 
     def _write_shim(self, bin_name: str, image_ref: str) -> Path:
-        wrapper_path = self.bin_dir / bin_name
+        bin_dir = self.bin_dir
+        assert bin_dir is not None
+        wrapper_path = bin_dir / bin_name
         docker_bin = self.INSTALLER_BIN_ABSPATH
         assert docker_bin, (
             f"{self.__class__.__name__}.INSTALLER_BIN is not available on this host"
@@ -262,9 +260,13 @@ class DockerProvider(BinProvider):
         install_args = install_args or self.get_install_args(bin_name)
         installer_bin = self._require_installer_bin()
 
-        wrapper_path = self.bin_dir / bin_name
+        bin_dir = self.bin_dir
+        install_root = self.install_root
+        assert bin_dir is not None
+        assert install_root is not None
+        wrapper_path = bin_dir / bin_name
         wrapper_path.unlink(missing_ok=True)
-        self.metadata_path(bin_name).unlink(missing_ok=True)
+        (install_root / "metadata" / f"{bin_name}.json").unlink(missing_ok=True)
 
         main_image = self._main_image_ref(bin_name, install_args)
         for image_ref in install_args:
@@ -284,7 +286,9 @@ class DockerProvider(BinProvider):
         bin_name: BinName | HostBinPath,
         **context,
     ) -> HostBinPath | None:
-        wrapper_path = self.bin_dir / str(bin_name)
+        bin_dir = self.bin_dir
+        assert bin_dir is not None
+        wrapper_path = bin_dir / str(bin_name)
         if wrapper_path.is_file() and os.access(wrapper_path, os.R_OK):
             return TypeAdapter(HostBinPath).validate_python(wrapper_path)
         abspath = super().default_abspath_handler(bin_name, **context)

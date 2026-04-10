@@ -40,9 +40,9 @@ class TestGoGetProvider:
             assert installed is not None
             assert installed.loaded_abspath is not None
             assert installed.loaded_abspath.name == "shfmt"
-            assert provider.load(module_path, quiet=True, nocache=True) is not None
+            assert provider.load(module_path, quiet=True, no_cache=True) is not None
             assert provider.uninstall(module_path)
-            assert provider.load(module_path, quiet=True, nocache=True) is None
+            assert provider.load(module_path, quiet=True, no_cache=True) is None
 
     def test_install_root_and_bin_dir_aliases_install_into_the_requested_paths(
         self,
@@ -141,8 +141,8 @@ class TestGoGetProvider:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_dir_path = Path(temp_dir)
             ambient_provider = GoGetProvider(
-                gobin=temp_dir_path / "ambient-go/bin",
-                gopath=temp_dir_path / "ambient-go",
+                bin_dir=temp_dir_path / "ambient-go/bin",
+                install_root=temp_dir_path / "ambient-go",
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -162,8 +162,8 @@ class TestGoGetProvider:
             gopath = temp_dir_path / "go"
             provider = GoGetProvider(
                 PATH=str(ambient_provider.bin_dir),
-                gobin=gobin,
-                gopath=gopath,
+                bin_dir=gobin,
+                install_root=gopath,
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -191,8 +191,8 @@ class TestGoGetProvider:
 
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = GoGetProvider(
-                gobin=Path(temp_dir) / "go/bin",
-                gopath=Path(temp_dir) / "go",
+                bin_dir=Path(temp_dir) / "go/bin",
+                install_root=Path(temp_dir) / "go",
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -214,8 +214,8 @@ class TestGoGetProvider:
             gobin = Path(temp_dir) / "go/bin"
             gopath = Path(temp_dir) / "go"
             old_provider = GoGetProvider(
-                gobin=gobin,
-                gopath=gopath,
+                bin_dir=gobin,
+                install_root=gopath,
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -230,8 +230,8 @@ class TestGoGetProvider:
             assert old_installed.loaded_version == SemVer("3.7.0")
 
             provider = GoGetProvider(
-                gobin=gobin,
-                gopath=gopath,
+                bin_dir=gobin,
+                install_root=gopath,
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -241,7 +241,7 @@ class TestGoGetProvider:
                     },
                 },
             )
-            upgraded = provider.load_or_install("shfmt", min_version=SemVer("3.8.0"))
+            upgraded = provider.install("shfmt", min_version=SemVer("3.8.0"))
             test_machine.assert_shallow_binary_loaded(
                 upgraded,
                 expected_version=SemVer("3.8.0"),
@@ -264,8 +264,8 @@ class TestGoGetProvider:
             with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
                 installed = (
                     GoGetProvider(
-                        gobin=Path(temp_dir) / "bad-go/bin",
-                        gopath=Path(temp_dir) / "bad-go",
+                        bin_dir=Path(temp_dir) / "bad-go/bin",
+                        install_root=Path(temp_dir) / "bad-go",
                         postinstall_scripts=False,
                         min_release_age=1,
                     )
@@ -287,8 +287,8 @@ class TestGoGetProvider:
                 name="shfmt",
                 binproviders=[
                     GoGetProvider(
-                        gobin=Path(temp_dir) / "ok-go/bin",
-                        gopath=Path(temp_dir) / "ok-go",
+                        bin_dir=Path(temp_dir) / "ok-go/bin",
+                        install_root=Path(temp_dir) / "ok-go",
                         postinstall_scripts=False,
                         min_release_age=1,
                     ),
@@ -315,8 +315,8 @@ class TestGoGetProvider:
                 name="shfmt",
                 binproviders=[
                     GoGetProvider(
-                        gobin=Path(temp_dir) / "go/bin",
-                        gopath=Path(temp_dir) / "go",
+                        bin_dir=Path(temp_dir) / "go/bin",
+                        install_root=Path(temp_dir) / "go",
                         postinstall_scripts=True,
                         min_release_age=0,
                     ),
@@ -336,8 +336,8 @@ class TestGoGetProvider:
 
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = GoGetProvider(
-                gobin=Path(temp_dir) / "go/bin",
-                gopath=Path(temp_dir) / "go",
+                bin_dir=Path(temp_dir) / "go/bin",
+                install_root=Path(temp_dir) / "go",
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(

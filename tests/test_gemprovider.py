@@ -13,7 +13,7 @@ class TestGemProvider:
 
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = GemProvider(
-                gem_home=Path(temp_dir) / "gem-home",
+                install_root=Path(temp_dir) / "gem-home",
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -90,8 +90,8 @@ class TestGemProvider:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_dir_path = Path(temp_dir)
             ambient_provider = GemProvider(
-                gem_home=temp_dir_path / "ambient-gem-home",
-                gem_bindir=temp_dir_path / "ambient-gem-home/bin",
+                install_root=temp_dir_path / "ambient-gem-home",
+                bin_dir=temp_dir_path / "ambient-gem-home/bin",
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -109,8 +109,8 @@ class TestGemProvider:
             gem_bindir = temp_dir_path / "custom-bin"
             provider = GemProvider(
                 PATH=str(ambient_provider.bin_dir),
-                gem_home=gem_home,
-                gem_bindir=gem_bindir,
+                install_root=gem_home,
+                bin_dir=gem_bindir,
                 postinstall_scripts=True,
                 min_release_age=0,
             )
@@ -132,14 +132,14 @@ class TestGemProvider:
 
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = GemProvider(
-                gem_home=Path(temp_dir) / "gem-home",
-                gem_bindir=Path(temp_dir) / "gem-home/bin",
+                install_root=Path(temp_dir) / "gem-home",
+                bin_dir=Path(temp_dir) / "gem-home/bin",
                 postinstall_scripts=True,
                 min_release_age=0,
             )
             test_machine.exercise_provider_lifecycle(provider, bin_name="lolcat")
 
-    def test_provider_direct_min_version_enforcement_on_load_or_install_and_update(
+    def test_provider_direct_min_version_enforcement_on_install_and_update(
         self,
         test_machine,
     ):
@@ -149,8 +149,8 @@ class TestGemProvider:
             gem_home = Path(temp_dir) / "gem-home"
             gem_bindir = gem_home / "bin"
             old_provider = GemProvider(
-                gem_home=gem_home,
-                gem_bindir=gem_bindir,
+                install_root=gem_home,
+                bin_dir=gem_bindir,
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -163,13 +163,13 @@ class TestGemProvider:
             assert old_installed.loaded_version == SemVer("99.9.99")
 
             provider = GemProvider(
-                gem_home=gem_home,
-                gem_bindir=gem_bindir,
+                install_root=gem_home,
+                bin_dir=gem_bindir,
                 postinstall_scripts=True,
                 min_release_age=0,
             )
             with pytest.raises(Exception):
-                provider.load_or_install("lolcat", min_version=SemVer("100.0.0"))
+                provider.install("lolcat", min_version=SemVer("100.0.0"))
 
             updated = provider.update("lolcat")
             test_machine.assert_shallow_binary_loaded(
@@ -177,7 +177,7 @@ class TestGemProvider:
                 expected_version=SemVer("100.0.0"),
             )
 
-            satisfied = provider.load_or_install(
+            satisfied = provider.install(
                 "lolcat",
                 min_version=SemVer("100.0.0"),
             )
@@ -196,8 +196,8 @@ class TestGemProvider:
         with tempfile.TemporaryDirectory() as temp_dir:
             with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
                 installed = GemProvider(
-                    gem_home=Path(temp_dir) / "bad-home",
-                    gem_bindir=Path(temp_dir) / "bad-home/bin",
+                    install_root=Path(temp_dir) / "bad-home",
+                    bin_dir=Path(temp_dir) / "bad-home/bin",
                     postinstall_scripts=False,
                     min_release_age=1,
                 ).install("lolcat")
@@ -210,8 +210,8 @@ class TestGemProvider:
                 name="lolcat",
                 binproviders=[
                     GemProvider(
-                        gem_home=Path(temp_dir) / "ok-home",
-                        gem_bindir=Path(temp_dir) / "ok-home/bin",
+                        install_root=Path(temp_dir) / "ok-home",
+                        bin_dir=Path(temp_dir) / "ok-home/bin",
                         postinstall_scripts=False,
                         min_release_age=1,
                     ),
@@ -233,8 +233,8 @@ class TestGemProvider:
                 name="lolcat",
                 binproviders=[
                     GemProvider(
-                        gem_home=Path(temp_dir) / "gem-home",
-                        gem_bindir=Path(temp_dir) / "gem-home/bin",
+                        install_root=Path(temp_dir) / "gem-home",
+                        bin_dir=Path(temp_dir) / "gem-home/bin",
                         postinstall_scripts=True,
                         min_release_age=0,
                     ),
@@ -249,8 +249,8 @@ class TestGemProvider:
 
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = GemProvider(
-                gem_home=Path(temp_dir) / "gem-home",
-                gem_bindir=Path(temp_dir) / "gem-home/bin",
+                install_root=Path(temp_dir) / "gem-home",
+                bin_dir=Path(temp_dir) / "gem-home/bin",
                 postinstall_scripts=True,
                 min_release_age=0,
             )

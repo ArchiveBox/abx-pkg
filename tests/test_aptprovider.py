@@ -84,10 +84,10 @@ class TestAptProvider:
         )
 
         for pkg in (primary, extra):
-            provider.uninstall(pkg, quiet=True, nocache=True)
+            provider.uninstall(pkg, quiet=True, no_cache=True)
 
-        provider.install(primary, nocache=True)
-        assert provider.load(extra, quiet=True, nocache=True) is not None
+        provider.install(primary, no_cache=True)
+        assert provider.load(extra, quiet=True, no_cache=True) is not None
 
-        provider.uninstall(primary, nocache=True)
-        provider.uninstall(extra, quiet=True, nocache=True)
+        provider.uninstall(primary, no_cache=True)
+        provider.uninstall(extra, quiet=True, no_cache=True)

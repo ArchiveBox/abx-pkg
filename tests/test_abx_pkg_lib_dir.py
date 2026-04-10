@@ -1,4 +1,4 @@
-"""End-to-end coverage for the ``ABX_PKG_LIB_DIR`` env var.
+"""End-to-end coverage for ``ABX_PKG_LIB_DIR``.
 
 Because the constant is read once at module import time in
 ``abx_pkg.base_types``, every assertion has to run inside a fresh
@@ -17,8 +17,6 @@ import textwrap
 from pathlib import Path
 
 import pytest
-
-from abx_pkg import ALL_PROVIDERS
 
 
 def _run_with_lib_dir(
@@ -39,15 +37,6 @@ def _run_with_lib_dir(
         env=env,
         cwd=str(cwd) if cwd is not None else None,
     )
-
-
-def _providers_with_install_root_field() -> list[tuple[str, str]]:
-    """``(provider_name, install_root_field)`` for every wired provider."""
-    return [
-        (provider_cls.model_fields["name"].default, provider_cls.INSTALL_ROOT_FIELD)
-        for provider_cls in ALL_PROVIDERS
-        if provider_cls.INSTALL_ROOT_FIELD
-    ]
 
 
 class TestAbxPkgLibDir:
@@ -76,11 +65,7 @@ class TestAbxPkgLibDir:
 
     @pytest.mark.parametrize(
         "lib_dir_value",
-        [
-            "./lib",
-            "~/.config/abx/lib",
-            "/tmp/abxlib",
-        ],
+        ["./lib", "~/.config/abx/lib", "/tmp/abxlib"],
     )
     def test_all_path_formats_resolve_across_every_provider(
         self,
@@ -90,23 +75,18 @@ class TestAbxPkgLibDir:
         script = textwrap.dedent(
             """
             import json
-            from pathlib import Path
-            from abx_pkg.base_types import ABX_PKG_LIB_DIR
             from abx_pkg import ALL_PROVIDERS
+            from abx_pkg.base_types import ABX_PKG_LIB_DIR
 
             payload = {
                 "lib_dir": str(ABX_PKG_LIB_DIR) if ABX_PKG_LIB_DIR else None,
                 "fields": {},
             }
             for cls in ALL_PROVIDERS:
-                field = cls.INSTALL_ROOT_FIELD
-                if not field:
-                    continue
                 instance = cls()
-                value = getattr(instance, field)
-                payload["fields"][instance.name] = (
-                    str(value) if value is not None else None
-                )
+                if instance.install_root is None:
+                    continue
+                payload["fields"][instance.name] = str(instance.install_root)
             print(json.dumps(payload))
             """,
         )
@@ -120,7 +100,6 @@ class TestAbxPkgLibDir:
             f"ABX_PKG_LIB_DIR={lib_dir_value!r} did not resolve to an absolute "
             f"path; got {resolved_lib_dir}"
         )
-
         if lib_dir_value == "./lib":
             assert resolved_lib_dir == (tmp_path / "lib").resolve()
         elif lib_dir_value == "~/.config/abx/lib":
@@ -128,25 +107,9 @@ class TestAbxPkgLibDir:
         else:
             assert resolved_lib_dir == Path(lib_dir_value).resolve()
 
-        # Every provider with an install_root field now defaults into
-        # ``<lib_dir>/<provider_name>`` — with no exceptions. Any
-        # provider whose ``@model_validator`` auto-corrects the field
-        # after construction (historically BrewProvider did this) must
-        # teach the validator to respect the caller's explicit value.
-        expected_names = {
-            provider_name for provider_name, _ in _providers_with_install_root_field()
-        }
-        assert set(payload["fields"]) == expected_names
-
         for provider_name, field_value in payload["fields"].items():
-            assert field_value is not None, (
-                f"{provider_name}: INSTALL_ROOT_FIELD came back None even "
-                f"though ABX_PKG_LIB_DIR={lib_dir_value!r} was set"
-            )
             assert Path(field_value) == resolved_lib_dir / provider_name, (
-                f"{provider_name}: expected {resolved_lib_dir / provider_name}, "
-                f"got {field_value} (a model_validator somewhere is "
-                f"overriding the ABX_PKG_LIB_DIR default)"
+                f"{provider_name}: expected {resolved_lib_dir / provider_name}, got {field_value}"
             )
 
     def test_explicit_install_root_kwarg_overrides_env_var(self, tmp_path):
@@ -159,19 +122,16 @@ class TestAbxPkgLibDir:
                 CargoProvider, DenoProvider, NpmProvider, PipProvider,
                 PlaywrightProvider, PuppeteerProvider, UvProvider,
             )
+
             explicit = Path({str(explicit_root)!r})
             payload = {{
-                "npm": str(NpmProvider(install_root=explicit).npm_prefix),
-                "pip": str(PipProvider(install_root=explicit).pip_venv),
-                "uv":  str(UvProvider(install_root=explicit).uv_venv),
-                "cargo": str(CargoProvider(install_root=explicit).cargo_root),
-                "deno": str(DenoProvider(install_root=explicit).deno_root),
-                "puppeteer": str(
-                    PuppeteerProvider(install_root=explicit).puppeteer_root,
-                ),
-                "playwright": str(
-                    PlaywrightProvider(install_root=explicit).playwright_root,
-                ),
+                "npm": str(NpmProvider(install_root=explicit).install_root),
+                "pip": str(PipProvider(install_root=explicit).install_root),
+                "uv": str(UvProvider(install_root=explicit).install_root),
+                "cargo": str(CargoProvider(install_root=explicit).install_root),
+                "deno": str(DenoProvider(install_root=explicit).install_root),
+                "puppeteer": str(PuppeteerProvider(install_root=explicit).install_root),
+                "playwright": str(PlaywrightProvider(install_root=explicit).install_root),
             }}
             print(json.dumps(payload))
             """,
@@ -186,7 +146,6 @@ class TestAbxPkgLibDir:
             )
 
     def test_provider_specific_alias_kwarg_overrides_env_var(self, tmp_path):
-        """Passing the provider-specific alias (``npm_prefix=...``) also wins."""
         explicit_npm = tmp_path / "custom-npm"
         explicit_uv = tmp_path / "custom-uv"
         script = textwrap.dedent(
@@ -194,9 +153,10 @@ class TestAbxPkgLibDir:
             import json
             from pathlib import Path
             from abx_pkg import NpmProvider, UvProvider
+
             print(json.dumps({{
-                "npm": str(NpmProvider(npm_prefix=Path({str(explicit_npm)!r})).npm_prefix),
-                "uv": str(UvProvider(uv_venv=Path({str(explicit_uv)!r})).uv_venv),
+                "npm": str(NpmProvider(install_root=Path({str(explicit_npm)!r})).install_root),
+                "uv": str(UvProvider(install_root=Path({str(explicit_uv)!r})).install_root),
             }}))
             """,
         )
@@ -207,71 +167,53 @@ class TestAbxPkgLibDir:
         assert Path(payload["uv"]) == explicit_uv
 
     def test_per_provider_root_env_var_overrides_abx_pkg_lib_dir(self, tmp_path):
-        """``ABX_PKG_<NAME>_ROOT`` beats ``ABX_PKG_LIB_DIR`` for that provider.
-
-        Asserts the precedence rule across every provider that ships
-        an install-root field — set both env vars and confirm the
-        per-provider one wins for the targeted provider while the
-        ``ABX_PKG_LIB_DIR`` default still applies to the rest.
-        """
         lib_dir = tmp_path / "lib"
+        script = textwrap.dedent(
+            """
+            import json
+            from abx_pkg import ALL_PROVIDERS
+
+            payload = {}
+            for cls in ALL_PROVIDERS:
+                instance = cls()
+                if instance.install_root is None:
+                    continue
+                payload[instance.name] = str(instance.install_root)
+            print(json.dumps(payload))
+            """,
+        )
+
+        probe = _run_with_lib_dir(str(lib_dir), script)
+        assert probe.returncode == 0, probe.stderr
+        default_payload = json.loads(probe.stdout.strip().splitlines()[-1])
         per_provider_dirs = {
-            name: tmp_path / f"custom-{name}"
-            for name, _ in _providers_with_install_root_field()
+            name: tmp_path / f"custom-{name}" for name in default_payload
         }
         env_overrides = {
             f"ABX_PKG_{name.upper()}_ROOT": str(path)
             for name, path in per_provider_dirs.items()
         }
 
-        script = textwrap.dedent(
-            """
-            import json
-            from abx_pkg import ALL_PROVIDERS
-            payload = {}
-            for cls in ALL_PROVIDERS:
-                field = cls.INSTALL_ROOT_FIELD
-                if not field:
-                    continue
-                instance = cls()
-                value = getattr(instance, field)
-                payload[instance.name] = str(value) if value is not None else None
-            print(json.dumps(payload))
-            """,
-        )
-        proc = _run_with_lib_dir(
-            str(lib_dir),
-            script,
-            extra_env=env_overrides,
-        )
+        proc = _run_with_lib_dir(str(lib_dir), script, extra_env=env_overrides)
         assert proc.returncode == 0, proc.stderr
         payload = json.loads(proc.stdout.strip().splitlines()[-1])
 
         for name, expected in per_provider_dirs.items():
-            actual = payload.get(name)
-            assert actual is not None, (
-                f"{name}: INSTALL_ROOT_FIELD came back None even though "
-                f"ABX_PKG_{name.upper()}_ROOT={expected} was set"
-            )
-            assert Path(actual) == expected.resolve(), (
+            assert Path(payload[name]) == expected.resolve(), (
                 f"{name}: ABX_PKG_{name.upper()}_ROOT did not win over "
-                f"ABX_PKG_LIB_DIR; expected {expected.resolve()}, got {actual}"
+                f"ABX_PKG_LIB_DIR; expected {expected.resolve()}, got {payload[name]}"
             )
 
     def test_per_provider_root_alone_resolves_correctly(self, tmp_path):
-        """``ABX_PKG_<NAME>_ROOT`` works even with ``ABX_PKG_LIB_DIR`` unset.
-
-        And providers without a per-provider env var set still use
-        their built-in defaults (``None`` for the nullable ones).
-        """
         explicit_npm = tmp_path / "npm-only"
         script = textwrap.dedent(
             """
             import json
             from abx_pkg import NpmProvider, PipProvider
+
             print(json.dumps({
-                "npm": str(NpmProvider().npm_prefix),
-                "pip": str(PipProvider().pip_venv) if PipProvider().pip_venv else None,
+                "npm": str(NpmProvider().install_root),
+                "pip": str(PipProvider().install_root) if PipProvider().install_root else None,
             }))
             """,
         )
@@ -291,14 +233,6 @@ class TestAbxPkgLibDir:
         assert payload["pip"] is None
 
     def test_real_installs_land_under_abx_pkg_lib_dir(self, test_machine):
-        """End-to-end: set ``ABX_PKG_LIB_DIR`` and run real installs through
-        every fast package manager; assert that each provider's expected
-        subdirectory appears on disk inside the lib dir afterwards.
-
-        Excludes the slow browser installers (puppeteer/playwright) and
-        tools that can't be rehomed on the fly (brew, nix, goget,
-        chromewebstore, docker, bash).
-        """
         test_machine.require_tool("node")
         test_machine.require_tool("npm")
         test_machine.require_tool("uv")
@@ -311,66 +245,54 @@ class TestAbxPkgLibDir:
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             lib_dir = Path(tmp_dir) / "abx-lib"
-
             script = textwrap.dedent(
                 """
                 import json
-                from pathlib import Path
                 from abx_pkg import (
                     BunProvider, CargoProvider, DenoProvider, GemProvider,
                     NpmProvider, PipProvider, PnpmProvider, UvProvider,
                     YarnProvider,
                 )
                 from abx_pkg.base_types import ABX_PKG_LIB_DIR
+
                 results = {"lib_dir": str(ABX_PKG_LIB_DIR)}
 
-                # pip: installs a CLI tool into a fresh venv at pip_venv
                 pip = PipProvider(postinstall_scripts=True, min_release_age=0)
-                results["pip_venv"] = str(pip.pip_venv)
+                results["pip"] = str(pip.install_root)
                 pip.install("cowsay")
 
-                # uv: same idea, into uv_venv
                 uv = UvProvider(postinstall_scripts=True, min_release_age=0)
-                results["uv_venv"] = str(uv.uv_venv)
+                results["uv"] = str(uv.install_root)
                 uv.install("cowsay")
 
-                # npm: installs a global-style package under npm_prefix
                 npm = NpmProvider(postinstall_scripts=True, min_release_age=0)
-                results["npm_prefix"] = str(npm.npm_prefix)
+                results["npm"] = str(npm.install_root)
                 npm.install("cowsay")
 
-                # pnpm
                 pnpm = PnpmProvider(postinstall_scripts=True, min_release_age=0)
-                results["pnpm_prefix"] = str(pnpm.pnpm_prefix)
+                results["pnpm"] = str(pnpm.install_root)
                 pnpm.install("cowsay")
 
-                # yarn (Yarn 4 workspace)
                 yarn = YarnProvider(postinstall_scripts=True, min_release_age=0)
-                results["yarn_prefix"] = str(yarn.yarn_prefix)
+                results["yarn"] = str(yarn.install_root)
                 yarn.install("cowsay")
 
-                # bun
                 bun = BunProvider(postinstall_scripts=True, min_release_age=0)
-                results["bun_prefix"] = str(bun.bun_prefix)
+                results["bun"] = str(bun.install_root)
                 bun.install("cowsay")
 
-                # deno
-                deno = DenoProvider(
-                    postinstall_scripts=True, min_release_age=0,
-                )
-                results["deno_root"] = str(deno.deno_root)
+                deno = DenoProvider(postinstall_scripts=True, min_release_age=0)
+                results["deno"] = str(deno.install_root)
                 deno.install("cowsay")
 
-                # cargo (small, fast crate)
                 cargo = CargoProvider()
-                results["cargo_root"] = str(cargo.cargo_root)
+                results["cargo"] = str(cargo.install_root)
                 cargo.get_provider_with_overrides(
                     overrides={"loc": {"install_args": ["loc"]}},
                 ).install("loc")
 
-                # gem
                 gem = GemProvider()
-                results["gem_home"] = str(gem.gem_home)
+                results["gem"] = str(gem.install_root)
                 gem.get_provider_with_overrides(
                     overrides={"lolcat": {"install_args": ["lolcat"]}},
                 ).install("lolcat")
@@ -387,31 +309,24 @@ class TestAbxPkgLibDir:
             payload = json.loads(proc.stdout.strip().splitlines()[-1])
 
             assert Path(payload["lib_dir"]) == lib_dir.resolve()
-
-            # Every provider's install root should live inside lib_dir.
-            for key, subdir_name in (
-                ("pip_venv", "pip"),
-                ("uv_venv", "uv"),
-                ("npm_prefix", "npm"),
-                ("pnpm_prefix", "pnpm"),
-                ("yarn_prefix", "yarn"),
-                ("bun_prefix", "bun"),
-                ("deno_root", "deno"),
-                ("cargo_root", "cargo"),
-                ("gem_home", "gem"),
+            for provider_name in (
+                "pip",
+                "uv",
+                "npm",
+                "pnpm",
+                "yarn",
+                "bun",
+                "deno",
+                "cargo",
+                "gem",
             ):
-                reported = Path(payload[key])
-                assert reported == lib_dir.resolve() / subdir_name, (
-                    f"{key}: expected {lib_dir.resolve() / subdir_name}, got {reported}"
+                reported = Path(payload[provider_name])
+                assert reported == lib_dir.resolve() / provider_name, (
+                    f"{provider_name}: expected {lib_dir.resolve() / provider_name}, got {reported}"
                 )
-                assert reported.exists(), (
-                    f"{key}: {reported} does not exist on disk after real install"
-                )
-                assert reported.is_dir(), (
-                    f"{key}: {reported} exists but is not a directory"
-                )
+                assert reported.exists()
+                assert reported.is_dir()
 
-            # Spot-check that every expected top-level subdir landed in place.
             top_level_subdirs = {
                 child.name for child in lib_dir.iterdir() if child.is_dir()
             }
@@ -425,6 +340,4 @@ class TestAbxPkgLibDir:
                 "deno",
                 "cargo",
                 "gem",
-            }.issubset(top_level_subdirs), (
-                f"Missing expected subdirs under {lib_dir}; saw {top_level_subdirs}"
-            )
+            }.issubset(top_level_subdirs)

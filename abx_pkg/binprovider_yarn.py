@@ -7,7 +7,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from typing import ClassVar, Self
+from typing import Self
 
 from platformdirs import user_cache_path
 from pydantic import Field, TypeAdapter, computed_field, model_validator
@@ -57,7 +57,6 @@ class YarnProvider(BinProvider):
 
     name: BinProviderName = "yarn"
     INSTALLER_BIN: BinName = "yarn"
-    INSTALL_ROOT_FIELD: ClassVar[str | None] = "yarn_prefix"
 
     PATH: PATHStr = ""
     postinstall_scripts: bool | None = Field(
@@ -70,7 +69,11 @@ class YarnProvider(BinProvider):
     )
 
     # Workspace dir. Default: ABX_PKG_YARN_ROOT > ABX_PKG_LIB_DIR/yarn > None.
-    yarn_prefix: Path | None = abx_pkg_install_root_default("yarn")
+    install_root: Path | None = Field(
+        default_factory=lambda: abx_pkg_install_root_default("yarn"),
+        validation_alias="yarn_prefix",
+    )
+    bin_dir: Path | None = None
 
     cache_dir: Path = USER_CACHE_PATH
 
@@ -126,38 +129,38 @@ class YarnProvider(BinProvider):
     @computed_field
     @property
     def is_valid(self) -> bool:
-        if self.yarn_prefix:
-            bin_dir = self.yarn_prefix / "node_modules" / ".bin"
-            if not (bin_dir.is_dir() and os.access(bin_dir, os.R_OK)):
-                return False
+        if self.bin_dir and not (
+            self.bin_dir.is_dir() and os.access(self.bin_dir, os.R_OK)
+        ):
+            return False
         return bool(self.INSTALLER_BIN_ABSPATH)
-
-    @computed_field
-    @property
-    def install_root(self) -> Path | None:
-        return self.yarn_prefix
-
-    @computed_field
-    @property
-    def bin_dir(self) -> Path | None:
-        return self.yarn_prefix / "node_modules" / ".bin" if self.yarn_prefix else None
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
+        if self.bin_dir is None and self.install_root is not None:
+            self.bin_dir = self.install_root / "node_modules" / ".bin"
         if self.euid is None:
             self.euid = self.detect_euid(
-                owner_paths=(self.yarn_prefix,),
+                owner_paths=(self.install_root,),
                 preserve_root=True,
             )
         return self
 
     @model_validator(mode="after")
     def load_PATH_from_yarn_prefix(self) -> Self:
-        if self.yarn_prefix:
-            self.PATH = self._merge_PATH(self.yarn_prefix / "node_modules" / ".bin")
+        if self.bin_dir:
+            self.PATH = self._merge_PATH(self.bin_dir)
         return self
 
-    def exec(self, bin_name, cmd=(), cwd: Path | str = ".", quiet=False, **kwargs):
+    def exec(
+        self,
+        bin_name,
+        cmd=(),
+        cwd: Path | str = ".",
+        quiet=False,
+        should_log_command: bool = True,
+        **kwargs,
+    ):
         # Yarn 4 expects to be invoked from inside a workspace dir, so default
         # cwd to <yarn_prefix>. Also pin global folders into our cache_dir so
         # parallel test workspaces share the same store.
@@ -166,14 +169,15 @@ class YarnProvider(BinProvider):
         env.setdefault("YARN_ENABLE_GLOBAL_CACHE", "1")
         env.setdefault("YARN_GLOBAL_FOLDER", str(self.cache_dir))
         env.setdefault("YARN_CACHE_FOLDER", str(self.cache_dir / "v6"))
-        if cwd == "." and self.yarn_prefix:
-            self.yarn_prefix.mkdir(parents=True, exist_ok=True)
-            cwd = self.yarn_prefix
+        if cwd == "." and self.install_root:
+            self.install_root.mkdir(parents=True, exist_ok=True)
+            cwd = self.install_root
         return super().exec(
             bin_name=bin_name,
             cmd=cmd,
             cwd=cwd,
             quiet=quiet,
+            should_log_command=should_log_command,
             env=env,
             **kwargs,
         )
@@ -184,9 +188,10 @@ class YarnProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
     ) -> None:
         self._ensure_writable_cache_dir(self.cache_dir)
-        prefix = self.yarn_prefix
+        prefix = self.install_root
         if not prefix:
             raise TypeError(
                 "YarnProvider.setup requires yarn_prefix to be set "
@@ -231,9 +236,10 @@ class YarnProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        self.setup()
+        self.setup(no_cache=no_cache)
         installer_bin = self._require_installer_bin()
         postinstall_scripts = bool(postinstall_scripts)
         install_args = install_args or self.get_install_args(bin_name)
@@ -259,8 +265,8 @@ class YarnProvider(BinProvider):
 
         # Rewrite ``.yarnrc.yml`` (Yarn 2+ only) so npmMinimalAgeGate /
         # enableScripts always reflect the latest provider/binary defaults.
-        if is_berry and version is not None and self.yarn_prefix:
-            prefix = self.yarn_prefix
+        if is_berry and version is not None and self.install_root:
+            prefix = self.install_root
             yarnrc = prefix / ".yarnrc.yml"
             existing = yarnrc.read_text() if yarnrc.exists() else ""
             kept = [
@@ -287,16 +293,27 @@ class YarnProvider(BinProvider):
             yarnrc.write_text(content + "\n" if content else "")
 
         cmd = ["add", *self.yarn_install_args, *install_args]
+        if no_cache and "--force" not in cmd:
+            cmd.insert(1, "--force")
         if is_berry and not postinstall_scripts:
             cmd = [
                 "add",
                 *self.yarn_install_args,
+                *(
+                    ["--force"]
+                    if no_cache and "--force" not in self.yarn_install_args
+                    else []
+                ),
                 "--mode",
                 "skip-build",
                 *install_args,
             ]
 
-        proc = self.exec(bin_name=installer_bin, cmd=cmd, timeout=timeout)
+        proc = self.exec(
+            bin_name=installer_bin,
+            cmd=cmd,
+            timeout=timeout,
+        )
         if proc.returncode != 0:
             self._raise_proc_error("install", install_args, proc)
         return format_subprocess_output(proc.stdout, proc.stderr)
@@ -309,9 +326,10 @@ class YarnProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        self.setup()
+        self.setup(no_cache=no_cache)
         installer_bin = self._require_installer_bin()
         postinstall_scripts = bool(postinstall_scripts)
         install_args = install_args or self.get_install_args(bin_name)
@@ -335,8 +353,8 @@ class YarnProvider(BinProvider):
             and version >= berry_threshold
         )
 
-        if is_berry and version is not None and self.yarn_prefix:
-            prefix = self.yarn_prefix
+        if is_berry and version is not None and self.install_root:
+            prefix = self.install_root
             yarnrc = prefix / ".yarnrc.yml"
             existing = yarnrc.read_text() if yarnrc.exists() else ""
             kept = [
@@ -362,19 +380,33 @@ class YarnProvider(BinProvider):
             content = "\n".join(kept)
             yarnrc.write_text(content + "\n" if content else "")
 
+        if is_berry:
             cmd = ["up", *self.yarn_install_args, *install_args]
+            if no_cache and "--force" not in cmd:
+                cmd.insert(1, "--force")
             if not postinstall_scripts:
                 cmd = [
                     "up",
                     *self.yarn_install_args,
+                    *(
+                        ["--force"]
+                        if no_cache and "--force" not in self.yarn_install_args
+                        else []
+                    ),
                     "--mode",
                     "skip-build",
                     *install_args,
                 ]
         else:
             cmd = ["upgrade", *self.yarn_install_args, *install_args]
+            if no_cache and "--force" not in cmd:
+                cmd.insert(1, "--force")
 
-        proc = self.exec(bin_name=installer_bin, cmd=cmd, timeout=timeout)
+        proc = self.exec(
+            bin_name=installer_bin,
+            cmd=cmd,
+            timeout=timeout,
+        )
         if proc.returncode != 0:
             self._raise_proc_error("update", install_args, proc)
         return format_subprocess_output(proc.stdout, proc.stderr)
@@ -416,8 +448,8 @@ class YarnProvider(BinProvider):
         if not self.INSTALLER_BIN_ABSPATH:
             return None
 
-        if self.yarn_prefix:
-            candidate = self.yarn_prefix / "node_modules" / ".bin" / str(bin_name)
+        if self.install_root:
+            candidate = self.install_root / "node_modules" / ".bin" / str(bin_name)
             if candidate.exists():
                 return TypeAdapter(HostBinPath).validate_python(candidate)
         return None
@@ -443,7 +475,7 @@ class YarnProvider(BinProvider):
         if not self.INSTALLER_BIN_ABSPATH:
             return None
 
-        if not self.yarn_prefix:
+        if not self.install_root:
             return None
         install_args = self.get_install_args(str(bin_name), **context) or [
             str(bin_name),
@@ -454,8 +486,8 @@ class YarnProvider(BinProvider):
             if main_package.startswith("@")
             else main_package.split("@", 1)[0]
         )
-        assert self.yarn_prefix is not None  # guarded by early return above
-        package_json = self.yarn_prefix / "node_modules" / package / "package.json"
+        assert self.install_root is not None  # guarded by early return above
+        package_json = self.install_root / "node_modules" / package / "package.json"
         if package_json.exists():
             try:
                 return json.loads(package_json.read_text())["version"]

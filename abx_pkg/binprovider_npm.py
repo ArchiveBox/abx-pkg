@@ -8,7 +8,7 @@ import json
 import tempfile
 
 from pathlib import Path
-from typing import ClassVar, Self
+from typing import Self
 
 from pydantic import Field, model_validator, TypeAdapter, computed_field
 from platformdirs import user_cache_path
@@ -51,7 +51,6 @@ except Exception:
 class NpmProvider(BinProvider):
     name: BinProviderName = "npm"
     INSTALLER_BIN: BinName = "npm"
-    INSTALL_ROOT_FIELD: ClassVar[str | None] = "npm_prefix"
 
     PATH: PATHStr = ""
     postinstall_scripts: bool | None = Field(
@@ -65,7 +64,11 @@ class NpmProvider(BinProvider):
 
     # None = -g global, otherwise it's a path.
     # Default: ABX_PKG_NPM_ROOT > ABX_PKG_LIB_DIR/npm > None.
-    npm_prefix: Path | None = abx_pkg_install_root_default("npm")
+    install_root: Path | None = Field(
+        default_factory=lambda: abx_pkg_install_root_default("npm"),
+        validation_alias="npm_prefix",
+    )
+    bin_dir: Path | None = None
 
     cache_dir: Path = USER_CACHE_PATH
     cache_arg: str = f"--cache={cache_dir}"
@@ -154,29 +157,12 @@ class NpmProvider(BinProvider):
     @computed_field
     @property
     def is_valid(self) -> bool:
-        """False if npm_prefix is not created yet or if npm binary is not found in PATH"""
-        if self.npm_prefix:
-            npm_bin_dir = self.npm_prefix / "node_modules" / ".bin"
-            npm_bin_dir_exists = os.path.isdir(npm_bin_dir) and os.access(
-                npm_bin_dir,
-                os.R_OK,
-            )
-            if not npm_bin_dir_exists:
-                return False
-
+        """False if install_root is not created yet or if npm binary is not found in PATH"""
+        if self.bin_dir and not (
+            os.path.isdir(self.bin_dir) and os.access(self.bin_dir, os.R_OK)
+        ):
+            return False
         return bool(self.INSTALLER_BIN_ABSPATH)
-
-    @computed_field
-    @property
-    def install_root(self) -> Path | None:
-        return self.npm_prefix
-
-    @computed_field
-    @property
-    def bin_dir(self) -> Path | None:
-        return (
-            self.install_root / "node_modules" / ".bin" if self.install_root else None
-        )
 
     @computed_field
     @property
@@ -210,9 +196,11 @@ class NpmProvider(BinProvider):
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
         """Detect the user (UID) to run as when executing npm."""
+        if self.bin_dir is None and self.install_root is not None:
+            self.bin_dir = self.install_root / "node_modules" / ".bin"
         if self.euid is None:
             self.euid = self.detect_euid(
-                owner_paths=(self.npm_prefix,),
+                owner_paths=(self.install_root,),
                 preserve_root=True,
             )
 
@@ -227,8 +215,8 @@ class NpmProvider(BinProvider):
         PATH = self.PATH
         global _CACHED_GLOBAL_NPM_PREFIX
 
-        if self.npm_prefix:
-            return self._merge_PATH(self.npm_prefix / "node_modules/.bin")
+        if self.bin_dir:
+            return self._merge_PATH(self.bin_dir)
 
         npm_abspath = self.INSTALLER_BIN_ABSPATH
         if not npm_abspath:
@@ -281,6 +269,7 @@ class NpmProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
     ) -> None:
         """create npm install prefix and node_modules_dir if needed"""
         if not self.PATH or not self._CACHED_LOCAL_NPM_PREFIX:
@@ -289,18 +278,20 @@ class NpmProvider(BinProvider):
         if not self._ensure_writable_cache_dir(self.cache_dir):
             self.cache_arg = "--no-cache"
 
-        if self.npm_prefix:
-            (self.npm_prefix / "node_modules/.bin").mkdir(parents=True, exist_ok=True)
+        if self.bin_dir:
+            self.bin_dir.mkdir(parents=True, exist_ok=True)
 
     def _build_mutation_args(
         self,
         install_args: InstallArgs,
         *,
+        cache_arg: str | None = None,
         postinstall_scripts: bool,
         min_release_age: float,
     ) -> list[str]:
         """Shared ``install``/``update`` CLI args (security flags + prefix)."""
-        explicit_args = [*self.npm_install_args, self.cache_arg, *install_args]
+        resolved_cache_arg = cache_arg or self.cache_arg
+        explicit_args = [*self.npm_install_args, resolved_cache_arg, *install_args]
         min_release_age_days = f"{min_release_age:g}"
         extra: list[str] = []
         if not postinstall_scripts and not self._install_args_have_option(
@@ -316,14 +307,32 @@ class NpmProvider(BinProvider):
 
         mutation_args = [
             *self.npm_install_args,
-            self.cache_arg,
+            resolved_cache_arg,
             *extra,
         ]
-        if self.npm_prefix:
-            mutation_args.append(f"--prefix={self.npm_prefix}")
+        if self.install_root:
+            mutation_args.append(f"--prefix={self.install_root}")
         else:
             mutation_args.append("--global")
         return mutation_args
+
+    def _linked_bin_path(self, bin_name: BinName | HostBinPath) -> Path | None:
+        if self.bin_dir is None:
+            return None
+        return self.bin_dir / str(bin_name)
+
+    def _refresh_bin_link(
+        self,
+        bin_name: BinName | HostBinPath,
+        target: HostBinPath,
+    ) -> HostBinPath:
+        link_path = self._linked_bin_path(bin_name)
+        assert link_path is not None, "_refresh_bin_link requires bin_dir to be set"
+        link_path.parent.mkdir(parents=True, exist_ok=True)
+        if link_path.exists() or link_path.is_symlink():
+            link_path.unlink(missing_ok=True)
+        link_path.symlink_to(target)
+        return TypeAdapter(HostBinPath).validate_python(link_path)
 
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(
@@ -333,9 +342,10 @@ class NpmProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        self.setup()
+        self.setup(no_cache=no_cache)
         npm_abspath = self._require_installer_bin()
         postinstall_scripts = (
             False if postinstall_scripts is None else postinstall_scripts
@@ -362,6 +372,13 @@ class NpmProvider(BinProvider):
             postinstall_scripts=postinstall_scripts,
             min_release_age=min_release_age,
         )
+        if no_cache and not self._install_args_have_option(
+            [*mutation_args, *install_args],
+            "--prefer-online",
+            "--prefer-offline",
+            "--offline",
+        ):
+            mutation_args.append("--prefer-online")
         proc = self.exec(
             bin_name=npm_abspath,
             cmd=["install", *mutation_args, *install_args],
@@ -380,9 +397,10 @@ class NpmProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        self.setup()
+        self.setup(no_cache=no_cache)
         npm_abspath = self._require_installer_bin()
         postinstall_scripts = (
             False if postinstall_scripts is None else postinstall_scripts
@@ -409,9 +427,17 @@ class NpmProvider(BinProvider):
             postinstall_scripts=postinstall_scripts,
             min_release_age=min_release_age,
         )
+        if no_cache and not self._install_args_have_option(
+            [*mutation_args, *install_args],
+            "--prefer-online",
+            "--prefer-offline",
+            "--offline",
+        ):
+            mutation_args.append("--prefer-online")
+        mutation_verb = "install" if min_version is not None else "update"
         proc = self.exec(
             bin_name=npm_abspath,
-            cmd=["update", *mutation_args, *install_args],
+            cmd=[mutation_verb, *mutation_args, *install_args],
             timeout=timeout,
         )
 
@@ -456,8 +482,8 @@ class NpmProvider(BinProvider):
                 else []
             ),
         ]
-        if self.npm_prefix:
-            uninstall_args.append(f"--prefix={self.npm_prefix}")
+        if self.install_root:
+            uninstall_args.append(f"--prefix={self.install_root}")
         else:
             uninstall_args.append("--global")
 
@@ -519,9 +545,15 @@ class NpmProvider(BinProvider):
                 else {}
             ).keys()
             for alt_bin_name in alt_bin_names:
-                abspath = bin_abspath(alt_bin_name, PATH=self.PATH)
+                abspath = bin_abspath(
+                    alt_bin_name,
+                    PATH=str(self.bin_dir) if self.bin_dir else self.PATH,
+                )
                 if abspath:
-                    return TypeAdapter(HostBinPath).validate_python(abspath)
+                    direct_abspath = TypeAdapter(HostBinPath).validate_python(abspath)
+                    if str(alt_bin_name) == str(bin_name) or self.bin_dir is None:
+                        return direct_abspath
+                    return self._refresh_bin_link(bin_name, direct_abspath)
         except Exception:
             pass
         return None
@@ -571,7 +603,9 @@ class NpmProvider(BinProvider):
                 bin_name=npm_abspath,
                 cmd=[
                     "list",
-                    f"--prefix={self.npm_prefix}" if self.npm_prefix else "--global",
+                    f"--prefix={self.install_root}"
+                    if self.install_root
+                    else "--global",
                     "--depth=0",
                     "--json",
                     package,
@@ -598,8 +632,8 @@ class NpmProvider(BinProvider):
         try:
             assert package
             root_args = (
-                ["root", f"--prefix={self.npm_prefix}"]
-                if self.npm_prefix
+                ["root", f"--prefix={self.install_root}"]
+                if self.install_root
                 else ["root", "--global"]
             )
             modules_dir = Path(

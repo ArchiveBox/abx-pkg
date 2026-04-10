@@ -21,7 +21,7 @@ class TestPnpmProvider:
         with tempfile.TemporaryDirectory() as temp_dir:
             pnpm_prefix = Path(temp_dir) / "pnpm"
             provider = PnpmProvider(
-                pnpm_prefix=pnpm_prefix,
+                install_root=pnpm_prefix,
                 postinstall_scripts=True,
                 min_release_age=36500,
             ).get_provider_with_overrides(
@@ -69,9 +69,13 @@ class TestPnpmProvider:
             test_machine.assert_shallow_binary_loaded(installed)
             assert installed is not None
             assert installed.loaded_abspath is not None
+            bin_dir = provider.bin_dir
+            assert bin_dir is not None
             assert provider.install_root == install_root
-            assert provider.bin_dir == install_root / "node_modules" / ".bin"
-            assert installed.loaded_abspath.parent == provider.bin_dir
+            assert bin_dir == install_root / "node_modules" / ".bin"
+            assert bin_dir.exists()
+            assert installed.loaded_abspath == bin_dir / "zx"
+            assert installed.loaded_abspath.parent == bin_dir
             # Real on-disk pnpm install side effects.
             assert (install_root / "node_modules" / "zx" / "package.json").exists()
             assert (install_root / "package.json").exists()
@@ -88,7 +92,7 @@ class TestPnpmProvider:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_dir_path = Path(temp_dir)
             ambient_provider = PnpmProvider(
-                pnpm_prefix=temp_dir_path / "ambient-pnpm",
+                install_root=temp_dir_path / "ambient-pnpm",
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -105,7 +109,7 @@ class TestPnpmProvider:
             install_root = temp_dir_path / "pnpm-root"
             provider = PnpmProvider(
                 PATH=str(ambient_provider.bin_dir),
-                pnpm_prefix=install_root,
+                install_root=install_root,
                 postinstall_scripts=True,
                 min_release_age=0,
             )
@@ -115,9 +119,13 @@ class TestPnpmProvider:
             test_machine.assert_shallow_binary_loaded(installed)
             assert installed is not None
             assert installed.loaded_abspath is not None
+            bin_dir = provider.bin_dir
+            assert bin_dir is not None
             assert provider.install_root == install_root
-            assert provider.bin_dir == install_root / "node_modules" / ".bin"
-            assert installed.loaded_abspath.parent == provider.bin_dir
+            assert bin_dir == install_root / "node_modules" / ".bin"
+            assert bin_dir.exists()
+            assert installed.loaded_abspath == bin_dir / "zx"
+            assert installed.loaded_abspath.parent == bin_dir
             # The two installs must have produced two different on-disk binaries.
             assert installed.loaded_abspath != ambient_installed.loaded_abspath
             assert installed.loaded_version is not None
@@ -134,7 +142,7 @@ class TestPnpmProvider:
             cache_file.write_text("not-a-directory", encoding="utf-8")
 
             provider = PnpmProvider(
-                pnpm_prefix=tmp_path / "pnpm",
+                install_root=tmp_path / "pnpm",
                 cache_dir=cache_file,
                 postinstall_scripts=True,
                 min_release_age=0,
@@ -154,7 +162,7 @@ class TestPnpmProvider:
     def test_provider_direct_methods_exercise_real_lifecycle(self, test_machine):
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = PnpmProvider(
-                pnpm_prefix=Path(temp_dir) / "pnpm",
+                install_root=Path(temp_dir) / "pnpm",
                 postinstall_scripts=True,
                 min_release_age=0,
             )
@@ -172,7 +180,7 @@ class TestPnpmProvider:
         with tempfile.TemporaryDirectory() as tmpdir:
             pnpm_prefix = Path(tmpdir) / "pnpm"
             old_provider = PnpmProvider(
-                pnpm_prefix=pnpm_prefix,
+                install_root=pnpm_prefix,
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -183,7 +191,7 @@ class TestPnpmProvider:
             assert old_installed.loaded_version == SemVer("7.2.3")
 
             upgraded = PnpmProvider(
-                pnpm_prefix=pnpm_prefix,
+                install_root=pnpm_prefix,
                 postinstall_scripts=True,
                 min_release_age=0,
             ).install("zx", min_version=SemVer("8.8.0"))
@@ -209,7 +217,7 @@ class TestPnpmProvider:
             # update() with an unreachable min_version must surface a real error.
             with pytest.raises(Exception):
                 PnpmProvider(
-                    pnpm_prefix=pnpm_prefix,
+                    install_root=pnpm_prefix,
                     postinstall_scripts=True,
                     min_release_age=0,
                 ).update("zx", min_version=SemVer("999.0.0"))
@@ -220,7 +228,7 @@ class TestPnpmProvider:
     ):
         with tempfile.TemporaryDirectory() as tmpdir:
             strict_provider = PnpmProvider(
-                pnpm_prefix=Path(tmpdir) / "strict-pnpm",
+                install_root=Path(tmpdir) / "strict-pnpm",
                 postinstall_scripts=True,
                 min_release_age=36500,
             )
@@ -238,7 +246,7 @@ class TestPnpmProvider:
                 name="zx",
                 binproviders=[
                     PnpmProvider(
-                        pnpm_prefix=Path(tmpdir) / "binary-pnpm",
+                        install_root=Path(tmpdir) / "binary-pnpm",
                         postinstall_scripts=True,
                         min_release_age=36500,
                     ),
@@ -255,7 +263,7 @@ class TestPnpmProvider:
     ):
         with tempfile.TemporaryDirectory() as tmpdir:
             strict_provider = PnpmProvider(
-                pnpm_prefix=Path(tmpdir) / "strict-pnpm",
+                install_root=Path(tmpdir) / "strict-pnpm",
                 postinstall_scripts=False,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -280,7 +288,7 @@ class TestPnpmProvider:
             # caches the package without the vendor binaries from the
             # previous --ignore-scripts run.)
             override_provider = PnpmProvider(
-                pnpm_prefix=Path(tmpdir) / "override-pnpm",
+                install_root=Path(tmpdir) / "override-pnpm",
                 postinstall_scripts=False,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -304,7 +312,7 @@ class TestPnpmProvider:
                 name="optipng",
                 binproviders=[
                     PnpmProvider(
-                        pnpm_prefix=Path(tmpdir) / "binary-pnpm",
+                        install_root=Path(tmpdir) / "binary-pnpm",
                         postinstall_scripts=False,
                         min_release_age=0,
                     ).get_provider_with_overrides(
@@ -324,7 +332,7 @@ class TestPnpmProvider:
                 name="optipng",
                 binproviders=[
                     PnpmProvider(
-                        pnpm_prefix=Path(tmpdir) / "failing-pnpm",
+                        install_root=Path(tmpdir) / "failing-pnpm",
                         postinstall_scripts=False,
                         min_release_age=0,
                     ).get_provider_with_overrides(
@@ -345,7 +353,7 @@ class TestPnpmProvider:
                 name="zx",
                 binproviders=[
                     PnpmProvider(
-                        pnpm_prefix=Path(temp_dir) / "pnpm",
+                        install_root=Path(temp_dir) / "pnpm",
                         postinstall_scripts=True,
                         min_release_age=0,
                     ),
@@ -358,7 +366,7 @@ class TestPnpmProvider:
     def test_provider_dry_run_does_not_install_zx(self, test_machine):
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = PnpmProvider(
-                pnpm_prefix=Path(temp_dir) / "pnpm",
+                install_root=Path(temp_dir) / "pnpm",
                 postinstall_scripts=True,
                 min_release_age=0,
             )
@@ -371,7 +379,7 @@ class TestPnpmProvider:
     def test_provider_action_args_override_provider_defaults(self, test_machine):
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = PnpmProvider(
-                pnpm_prefix=Path(temp_dir) / "pnpm",
+                install_root=Path(temp_dir) / "pnpm",
                 dry_run=True,
                 postinstall_scripts=False,
                 min_release_age=36500,
@@ -399,12 +407,12 @@ class TestPnpmProvider:
             os.environ["PNPM_HOME"] = str(pnpm_home)
             try:
                 provider = PnpmProvider(
-                    pnpm_prefix=None,  # global mode
+                    install_root=None,  # global mode
                     cache_dir=Path(temp_dir) / "pnpm-cache",
                     postinstall_scripts=True,
                     min_release_age=0,
                 )
-                installed = provider.install("zx", nocache=True)
+                installed = provider.install("zx", no_cache=True)
                 test_machine.assert_shallow_binary_loaded(installed)
                 assert installed is not None
                 assert installed.loaded_abspath is not None
@@ -412,8 +420,8 @@ class TestPnpmProvider:
                 assert installed.loaded_abspath.resolve().is_relative_to(pnpm_home)
                 # Real on-disk side effect: pnpm's global package manifest exists.
                 assert (pnpm_home / "global").exists()
-                assert provider.uninstall("zx", nocache=True) is True
-                assert provider.load("zx", quiet=True, nocache=True) is None
+                assert provider.uninstall("zx", no_cache=True) is True
+                assert provider.load("zx", quiet=True, no_cache=True) is None
             finally:
                 if previous is None:
                     os.environ.pop("PNPM_HOME", None)
@@ -423,7 +431,7 @@ class TestPnpmProvider:
     def test_min_release_age_pins_to_older_version_when_strict(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             strict_provider = PnpmProvider(
-                pnpm_prefix=Path(tmpdir) / "pnpm",
+                install_root=Path(tmpdir) / "pnpm",
                 postinstall_scripts=True,
                 min_release_age=365,
             )
@@ -443,7 +451,7 @@ class TestPnpmProvider:
         with tempfile.TemporaryDirectory() as tmpdir:
             with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
                 provider = PnpmProvider(
-                    pnpm_prefix=Path(tmpdir) / "pnpm",
+                    install_root=Path(tmpdir) / "pnpm",
                     postinstall_scripts=False,
                     min_release_age=0,
                 )
@@ -460,7 +468,7 @@ class TestPnpmProvider:
                 name="zx",
                 binproviders=[
                     PnpmProvider(
-                        pnpm_prefix=Path(tmpdir) / "pnpm",
+                        install_root=Path(tmpdir) / "pnpm",
                         postinstall_scripts=True,
                         min_release_age=36500,
                     ),

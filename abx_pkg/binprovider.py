@@ -12,6 +12,7 @@ import platform
 import subprocess
 import functools
 import tempfile
+from contextvars import ContextVar
 from types import SimpleNamespace
 
 from typing import (
@@ -19,7 +20,6 @@ from typing import (
     cast,
     final,
     Any,
-    ClassVar,
     Literal,
     Protocol,
     runtime_checkable,
@@ -90,6 +90,10 @@ if PYTHON_BIN_DIR not in DEFAULT_ENV_PATH:
 
 UNKNOWN_ABSPATH = Path("/usr/bin/true")
 UNKNOWN_VERSION = cast(SemVer, SemVer.parse("999.999.999"))
+ACTIVE_EXEC_LOG_PREFIX: ContextVar[str | None] = ContextVar(
+    "abx_pkg_active_exec_log_prefix",
+    default=None,
+)
 
 
 def env_flag_is_true(name: str) -> bool:
@@ -120,7 +124,7 @@ def binprovider_cache(binprovider_method):
         self._cache[method_name] = self._cache.get(method_name, {})
         method_cache = self._cache[method_name]
 
-        if bin_name in method_cache and not kwargs.get("nocache"):
+        if bin_name in method_cache and not kwargs.get("no_cache"):
             # print('USING CACHED VALUE:', f'{self.__class__.__name__}.{method_name}({bin_name}, {kwargs}) -> {method_cache[bin_name]}')
             return method_cache[bin_name]
 
@@ -158,13 +162,15 @@ def remap_kwargs(
 
 class ShallowBinary(BaseModel):
     """
-    Shallow version of Binary used as a return type for BinProvider methods (e.g. load_or_install()).
+    Shallow version of Binary used as a return type for BinProvider methods (e.g. install()).
     (doesn't implement full Binary interface, but can be used to populate a full loaded Binary instance)
     """
 
     model_config = ConfigDict(
         extra="forbid",
         populate_by_name=True,
+        validate_by_alias=True,
+        validate_by_name=True,
         validate_default=True,
         validate_assignment=False,
         from_attributes=True,
@@ -179,11 +185,11 @@ class ShallowBinary(BaseModel):
 
     loaded_binprovider: InstanceOf["BinProvider"] | None = Field(
         default=None,
-        alias="binprovider",
+        validation_alias="binprovider",
     )
-    loaded_abspath: HostBinPath | None = Field(default=None, alias="abspath")
-    loaded_version: SemVer | None = Field(default=None, alias="version")
-    loaded_sha256: Sha256 | None = Field(default=None, alias="sha256")
+    loaded_abspath: HostBinPath | None = Field(default=None, validation_alias="abspath")
+    loaded_version: SemVer | None = Field(default=None, validation_alias="version")
+    loaded_sha256: Sha256 | None = Field(default=None, validation_alias="sha256")
 
     def __getattr__(self, item: str) -> Any:
         """Allow accessing fields as attributes by both field name and alias name"""
@@ -276,10 +282,10 @@ class ShallowBinary(BaseModel):
         bin_name = str(bin_name or self.loaded_abspath or self.name)
         if bin_name == self.name:
             assert self.loaded_abspath, (
-                "Binary must have a loaded_abspath, make sure to load_or_install() first"
+                "Binary must have a loaded_abspath, make sure to load() or install() first"
             )
             assert self.loaded_version, (
-                "Binary must have a loaded_version, make sure to load_or_install() first"
+                "Binary must have a loaded_version, make sure to load() or install() first"
             )
         assert os.path.isdir(cwd) and os.access(cwd, os.R_OK), (
             f"cwd must be a valid, accessible directory: {cwd}"
@@ -299,6 +305,8 @@ class BinProvider(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
         populate_by_name=True,
+        validate_by_alias=True,
+        validate_by_name=True,
         validate_default=True,
         validate_assignment=False,
         from_attributes=True,
@@ -314,6 +322,8 @@ class BinProvider(BaseModel):
     INSTALLER_BIN: BinName = "env"
 
     euid: int | None = None
+    install_root: Path | None = None
+    bin_dir: Path | None = None
     dry_run: bool = Field(
         default_factory=lambda: (
             env_flag_is_true("ABX_PKG_DRY_RUN")
@@ -354,42 +364,6 @@ class BinProvider(BaseModel):
     _INSTALLER_BINARY: ShallowBinary | None = (
         None  # speed optimization only, faster to cache the binary than to recompute it on every access
     )
-    INSTALL_ROOT_FIELD: ClassVar[str | None] = None
-    BIN_DIR_FIELD: ClassVar[str | None] = None
-
-    def __init__(
-        self,
-        install_root: Path | None = None,
-        bin_dir: Path | None = None,
-        **data: Any,
-    ) -> None:
-        install_root_field = type(self).INSTALL_ROOT_FIELD
-        bin_dir_field = type(self).BIN_DIR_FIELD
-
-        if install_root is not None:
-            if not install_root_field:
-                # Warn and ignore so callers (e.g. the CLI) can pass a
-                # blanket install_root to every provider without having
-                # to know which subclasses actually support one.
-                logger.warning(
-                    "%s ignoring unsupported install_root=%s (no INSTALL_ROOT_FIELD)",
-                    self.__class__.__name__,
-                    install_root,
-                )
-            else:
-                data.setdefault(install_root_field, install_root)
-
-        if bin_dir is not None:
-            if not bin_dir_field:
-                logger.warning(
-                    "%s ignoring unsupported bin_dir=%s (no BIN_DIR_FIELD)",
-                    self.__class__.__name__,
-                    bin_dir,
-                )
-            else:
-                data.setdefault(bin_dir_field, bin_dir)
-
-        super().__init__(**data)
 
     def __eq__(self, other: Any) -> bool:
         try:
@@ -536,16 +510,6 @@ class BinProvider(BaseModel):
     def is_valid(self) -> bool:
         return bool(self.INSTALLER_BIN_ABSPATH)
 
-    @computed_field
-    @property
-    def install_root(self) -> Path | None:
-        return None
-
-    @computed_field
-    @property
-    def bin_dir(self) -> Path | None:
-        return None
-
     @final
     # @validate_call(config={'arbitrary_types_allowed': True})
     @log_method_call()
@@ -624,7 +588,7 @@ class BinProvider(BaseModel):
                 break
         # print('getting handler for action', bin_name, handler_type, handler_func)
         assert handler, (
-            f"BinProvider(name={self.name}) has no {handler_type} handler implemented for Binary(name={bin_name})"
+            f"🚫 BinProvider(name={self.name}) has no {handler_type} handler implemented for Binary(name={bin_name})"
         )
 
         # if handler_func is already a callable, return it directly
@@ -722,6 +686,13 @@ class BinProvider(BaseModel):
         if not self.PATH:
             return None
 
+        bin_dir = getattr(self, "bin_dir", None)
+        if bin_dir is not None:
+            managed_abspath = bin_abspath(bin_name, PATH=str(bin_dir))
+            if managed_abspath is not None:
+                return managed_abspath
+            return None
+
         return bin_abspath(bin_name, PATH=self.PATH)
 
     # @validate_call
@@ -764,12 +735,14 @@ class BinProvider(BaseModel):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> "InstallFuncReturnValue":  # aka str
         self.setup(
             postinstall_scripts=postinstall_scripts,
             min_release_age=min_release_age,
             min_version=min_version,
+            no_cache=no_cache,
         )
         install_args = install_args or self.get_install_args(bin_name)
         self._require_installer_bin()
@@ -784,7 +757,7 @@ class BinProvider(BaseModel):
         #     print(proc.stderr.strip())
         #     raise Exception(f'{self.name} Failed to install {bin_name}: {proc.stderr.strip()}\n{proc.stdout.strip()}')
 
-        return f"{self.name} BinProvider does not implement any install method"
+        return f"🚫 {self.name} BinProvider does not implement any .install() method"
 
     # @validate_call
     @remap_kwargs({"packages": "install_args"})
@@ -795,10 +768,11 @@ class BinProvider(BaseModel):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> "ActionFuncReturnValue":
         self._require_installer_bin()
-        return f"{self.name} BinProvider does not implement any update method"
+        return f"🚫 {self.name} BinProvider does not implement any .update() method"
 
     # @validate_call
     @remap_kwargs({"packages": "install_args"})
@@ -809,6 +783,7 @@ class BinProvider(BaseModel):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> "ActionFuncReturnValue":
         self._require_installer_bin()
@@ -881,20 +856,20 @@ class BinProvider(BaseModel):
             version_outputs.append(version_output)
             if proc.returncode != 0:
                 validation_err = validation_err or AssertionError(
-                    f"$ {bin_name} {version_arg} exited with status {proc.returncode}",
+                    f"❌ $ {bin_name} {version_arg} exited with status {proc.returncode}",
                 )
                 continue
             try:
                 version = SemVer.parse(version_output)
                 assert version, (
-                    f"Could not parse version from $ {bin_name} {version_arg}: {version_output}".strip()
+                    f"❌ Could not parse version from $ {bin_name} {version_arg}: {version_output}".strip()
                 )
                 return version
             except (ValidationError, AssertionError) as err:
                 validation_err = validation_err or err
 
         raise ValueError(
-            f"Unable to find {bin_name} version from {bin_name} --version, -version or -v output\n{next((output for output in version_outputs if output), '')}".strip(),
+            f"❌ Unable to find {bin_name} version from {bin_name} --version, -version or -v output\n{next((output for output in version_outputs if output), '')}".strip(),
         ) from validation_err
 
     def _ensure_writable_cache_dir(self, cache_dir: Path) -> bool:
@@ -951,45 +926,65 @@ class BinProvider(BaseModel):
         cmd: Iterable[str | Path | int | float | bool] = (),
         cwd: Path | str = ".",
         quiet=False,
+        should_log_command: bool = True,
         **kwargs,
     ) -> subprocess.CompletedProcess:
-        if shutil.which(str(bin_name)):
-            bin_abspath = bin_name
+        explicit_abspath = Path(str(bin_name)).expanduser()
+        if (
+            explicit_abspath.is_absolute()
+            and explicit_abspath.is_file()
+            and os.access(explicit_abspath, os.X_OK)
+        ):
+            bin_abspath = explicit_abspath
         else:
-            bin_abspath = self.get_abspath(str(bin_name))
+            bin_abspath = self.get_abspath(str(bin_name)) or shutil.which(str(bin_name))
         assert bin_abspath, (
-            f"BinProvider {self.name} cannot execute bin_name {bin_name} because it could not find its abspath. (Did {self.__class__.__name__}.load_or_install({bin_name}) fail?)"
+            f"❌ BinProvider {self.name} cannot execute bin_name {bin_name} because it could not find its abspath. (Did {self.__class__.__name__}.install({bin_name}) fail?)"
         )
         assert os.access(cwd, os.R_OK) and os.path.isdir(cwd), (
             f"cwd must be a valid, accessible directory: {cwd}"
         )
         cwd_path = Path(cwd).resolve()
         cmd = [str(bin_abspath), *(str(arg) for arg in cmd)]
-        if self.dry_run:
-            logger.info(
-                "DRY RUN (%s): %s",
-                self.__class__.__name__,
-                format_command(cmd),
-            )
+        exec_log_prefix = ACTIVE_EXEC_LOG_PREFIX.get()
+        if should_log_command:
+            if exec_log_prefix:
+                logger.info("$ %s", format_command(cmd))
+            elif self.dry_run:
+                logger.info(
+                    "DRY RUN (%s): %s",
+                    self.__class__.__name__,
+                    format_command(cmd),
+                )
 
         # https://stackoverflow.com/a/6037494/2156113
         # copy env and modify it to run the subprocess as the the designated user
+        current_euid = os.geteuid()
         explicit_env = kwargs.pop("env", None)
-        env = (explicit_env or os.environ.copy()).copy()
-        env["PATH"] = self._merge_PATH(
-            *env.get("PATH", "").split(":"),
+        base_env = (explicit_env or os.environ.copy()).copy()
+        base_env["PATH"] = self._merge_PATH(
+            *base_env.get("PATH", "").split(":"),
             PATH=self.PATH,
         )
-        pw_record = self.get_pw_record(self.EUID)
-        run_as_uid = pw_record.pw_uid
-        run_as_gid = pw_record.pw_gid
-        # update environment variables so that subprocesses dont try to write to /root home directory
-        # for things like cache dirs, logs, etc. npm/pip/etc. often try to write to $HOME
-        env["PWD"] = str(cwd_path)
-        env["HOME"] = pw_record.pw_dir
-        env["LOGNAME"] = pw_record.pw_name
-        env["USER"] = pw_record.pw_name
-        current_euid = os.geteuid()
+        base_env["PWD"] = str(cwd_path)
+        target_pw_record = self.get_pw_record(self.EUID)
+        current_pw_record = self.get_pw_record(current_euid)
+        run_as_uid = target_pw_record.pw_uid
+        run_as_gid = target_pw_record.pw_gid
+
+        def _env_for_identity(
+            identity: Any,
+            *,
+            source_env: dict[str, str],
+        ) -> dict[str, str]:
+            env = source_env.copy()
+            env["HOME"] = identity.pw_dir
+            env["LOGNAME"] = identity.pw_name
+            env["USER"] = identity.pw_name
+            return env
+
+        sudo_env = _env_for_identity(target_pw_record, source_env=base_env)
+        fallback_env = _env_for_identity(current_pw_record, source_env=base_env)
 
         def drop_privileges():
             try:
@@ -1006,18 +1001,18 @@ class BinProvider(BaseModel):
 
         sudo_failure_output = None
         if current_euid != 0 and run_as_uid != current_euid:
-            sudo_abspath = shutil.which("sudo", path=env["PATH"]) or shutil.which(
+            sudo_abspath = shutil.which("sudo", path=sudo_env["PATH"]) or shutil.which(
                 "sudo",
             )
             if sudo_abspath:
                 sudo_cmd = [sudo_abspath, "-n"]
                 if run_as_uid != 0:
-                    sudo_cmd.extend(["-u", pw_record.pw_name])
+                    sudo_cmd.extend(["-u", target_pw_record.pw_name])
                 sudo_cmd.extend(["--", *cmd])
                 sudo_proc = subprocess.run(
                     sudo_cmd,
                     cwd=str(cwd_path),
-                    env=env,
+                    env=sudo_env,
                     **kwargs,
                 )
                 if sudo_proc.returncode == 0:
@@ -1037,7 +1032,7 @@ class BinProvider(BaseModel):
         proc = subprocess.run(
             cmd,
             cwd=str(cwd_path),
-            env=env,
+            env=fallback_env,
             preexec_fn=drop_privileges,
             **kwargs,
         )
@@ -1066,11 +1061,11 @@ class BinProvider(BaseModel):
     def get_abspaths(
         self,
         bin_name: BinName,
-        nocache: bool = False,
+        no_cache: bool = False,
     ) -> list[HostBinPath]:
         abspaths: list[HostBinPath] = []
 
-        primary_abspath = self.get_abspath(bin_name, quiet=True, nocache=nocache)
+        primary_abspath = self.get_abspath(bin_name, quiet=True, no_cache=no_cache)
         if primary_abspath:
             abspaths.append(primary_abspath)
 
@@ -1088,18 +1083,13 @@ class BinProvider(BaseModel):
         self,
         bin_name: BinName,
         abspath: HostBinPath | None = None,
-        nocache: bool = False,
+        no_cache: bool = False,
     ) -> Sha256 | None:
         """Get the sha256 hash of the binary at the given abspath (or equivalent hash of the underlying package)"""
 
-        abspath = abspath or self.get_abspath(bin_name, nocache=nocache)
+        abspath = abspath or self.get_abspath(bin_name, no_cache=no_cache)
         if not abspath or not os.access(abspath, os.R_OK):
             return None
-
-            with open(abspath, "rb", buffering=0) as f:
-                return TypeAdapter(Sha256).validate_python(
-                    hashlib.file_digest(f, "sha256").hexdigest(),
-                )
 
         hash_sha256 = hashlib.sha256()
         with open(abspath, "rb") as f:
@@ -1115,7 +1105,7 @@ class BinProvider(BaseModel):
         self,
         bin_name: BinName,
         quiet: bool = False,
-        nocache: bool = False,
+        no_cache: bool = False,
     ) -> HostBinPath | None:
         self.setup_PATH()
         abspath = None
@@ -1127,13 +1117,13 @@ class BinProvider(BaseModel):
                     handler_type="abspath",
                 ),
             )
-        except Exception as err:
-            logger.warning(
-                "Provider %s failed to resolve abspath for %s: %s",
-                self.name,
-                bin_name,
-                err,
-            )
+        except Exception:
+            # logger.warning(
+            #     "Provider %s failed to resolve abspath for %s: %s",
+            #     self.name,
+            #     bin_name,
+            #     err,
+            # )
             if not quiet:
                 raise
         if not abspath:
@@ -1150,7 +1140,7 @@ class BinProvider(BaseModel):
         bin_name: BinName,
         abspath: HostBinPath | None = None,
         quiet: bool = False,
-        nocache: bool = False,
+        no_cache: bool = False,
     ) -> SemVer | None:
         version = None
         try:
@@ -1165,7 +1155,7 @@ class BinProvider(BaseModel):
             )
         except Exception as err:
             logger.warning(
-                "Provider %s failed to resolve version for %s: %s",
+                "%s failed to resolve version for %s: %s",
                 self.name,
                 bin_name,
                 err,
@@ -1189,7 +1179,7 @@ class BinProvider(BaseModel):
         self,
         bin_name: BinName,
         quiet: bool = False,
-        nocache: bool = False,
+        no_cache: bool = False,
     ) -> InstallArgs:
         install_args = None
         try:
@@ -1200,13 +1190,13 @@ class BinProvider(BaseModel):
                     handler_type="install_args",
                 ),
             )
-        except Exception as err:
-            logger.warning(
-                "Provider %s failed to resolve install args for %s: %s",
-                self.name,
-                bin_name,
-                err,
-            )
+        except Exception:
+            # logger.warning(
+            #     "Provider %s failed to resolve install args for %s: %s",
+            #     self.name,
+            #     bin_name,
+            #     err,
+            # )
             if not quiet:
                 raise
 
@@ -1220,9 +1210,9 @@ class BinProvider(BaseModel):
         self,
         bin_name: BinName,
         quiet: bool = False,
-        nocache: bool = False,
+        no_cache: bool = False,
     ) -> InstallArgs:
-        return self.get_install_args(bin_name, quiet=quiet, nocache=nocache)
+        return self.get_install_args(bin_name, quiet=quiet, no_cache=no_cache)
 
     @log_method_call()
     def setup(
@@ -1231,6 +1221,7 @@ class BinProvider(BaseModel):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
     ) -> None:
         """Override this to do any setup steps needed before installing packaged (e.g. create a venv, init an npm prefix, etc.)"""
         pass
@@ -1254,7 +1245,7 @@ class BinProvider(BaseModel):
     ) -> None:
         if min_version and loaded_version and loaded_version < min_version:
             raise ValueError(
-                f"{self.__class__.__name__}.{action} resolved {bin_name} with version {loaded_version} which does not satisfy min_version {min_version}",
+                f"🚫 {self.__class__.__name__}.{action} resolved {bin_name} with version {loaded_version} which does not satisfy min_version {min_version}",
             )
 
     @final
@@ -1264,7 +1255,7 @@ class BinProvider(BaseModel):
         self,
         bin_name: BinName,
         quiet: bool = False,
-        nocache: bool = False,
+        no_cache: bool = False,
         dry_run: bool | None = None,
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
@@ -1274,7 +1265,7 @@ class BinProvider(BaseModel):
             return self.get_provider_with_overrides(dry_run=dry_run).install(
                 bin_name=bin_name,
                 quiet=quiet,
-                nocache=nocache,
+                no_cache=no_cache,
                 postinstall_scripts=postinstall_scripts,
                 min_release_age=min_release_age,
                 min_version=min_version,
@@ -1287,14 +1278,37 @@ class BinProvider(BaseModel):
         min_release_age = (
             self.min_release_age if min_release_age is None else min_release_age
         )
-        install_args = self.get_install_args(bin_name, quiet=quiet, nocache=nocache)
+        if not no_cache:
+            try:
+                installed = self.load(bin_name=bin_name, quiet=True, no_cache=False)
+            except Exception:
+                installed = None
+            if (
+                installed is not None
+                and min_version is not None
+                and installed.loaded_version is not None
+                and installed.loaded_version < min_version
+            ):
+                installed = self.update(
+                    bin_name=bin_name,
+                    quiet=quiet,
+                    no_cache=False,
+                    dry_run=dry_run,
+                    postinstall_scripts=postinstall_scripts,
+                    min_release_age=min_release_age,
+                    min_version=min_version,
+                )
+            if installed:
+                return installed
+
+        install_args = self.get_install_args(bin_name, quiet=quiet, no_cache=no_cache)
         if (
             min_release_age is not None
             and min_release_age > 0
             and not self.supports_min_release_age("install")
         ):
             logger.warning(
-                "%s.install ignoring unsupported min_release_age=%s for provider %s",
+                "⚠️ %s.install ignoring unsupported min_release_age=%s for %s",
                 self.__class__.__name__,
                 min_release_age,
                 self.name,
@@ -1304,7 +1318,7 @@ class BinProvider(BaseModel):
             "install",
         ):
             logger.warning(
-                "%s.install ignoring unsupported postinstall_scripts=%s for provider %s",
+                "⚠️ %s.install ignoring unsupported postinstall_scripts=%s for %s",
                 self.__class__.__name__,
                 postinstall_scripts,
                 self.name,
@@ -1314,17 +1328,15 @@ class BinProvider(BaseModel):
             postinstall_scripts=postinstall_scripts,
             min_release_age=min_release_age,
             min_version=min_version,
-        )
-
-        logger.info(
-            "Installing %s via provider %s with args %s",
-            bin_name,
-            self.name,
-            list(install_args),
+            no_cache=no_cache,
         )
 
         self.setup_PATH()
         install_log = None
+        exec_log_prefix_token = ACTIVE_EXEC_LOG_PREFIX.set(
+            f"⛟  Installing {bin_name} via {self.name}...",
+        )
+        logger.info(ACTIVE_EXEC_LOG_PREFIX.get())
         try:
             install_log = cast(
                 InstallFuncReturnValue,
@@ -1333,6 +1345,7 @@ class BinProvider(BaseModel):
                     handler_type="install",
                     install_args=install_args,
                     packages=install_args,
+                    no_cache=no_cache,
                     postinstall_scripts=postinstall_scripts,
                     min_release_age=min_release_age,
                     min_version=min_version,
@@ -1340,9 +1353,11 @@ class BinProvider(BaseModel):
                 ),
             )
         except Exception as err:
-            install_log = f"{self.__class__.__name__} Failed to install {bin_name}, got {err.__class__.__name__}: {err}"
+            install_log = f"❌ {self.__class__.__name__} Failed to install {bin_name}, got {err.__class__.__name__}: {err}"
             if not quiet:
                 raise
+        finally:
+            ACTIVE_EXEC_LOG_PREFIX.reset(exec_log_prefix_token)
 
         if self.dry_run:
             # return fake ShallowBinary if we're just doing a dry run
@@ -1360,21 +1375,21 @@ class BinProvider(BaseModel):
 
         self.invalidate_cache(bin_name)
 
-        installed_abspath = self.get_abspath(bin_name, quiet=True, nocache=nocache)
+        installed_abspath = self.get_abspath(bin_name, quiet=True, no_cache=no_cache)
         if not quiet:
             assert installed_abspath, (
-                f"{self.__class__.__name__} Unable to find abspath for {bin_name} after installing. PATH={self.PATH} LOG={install_log}"
+                f"❌ {self.__class__.__name__} Unable to find abspath for {bin_name} after installing. PATH={self.PATH} LOG={install_log}"
             )
 
         installed_version = self.get_version(
             bin_name,
             abspath=installed_abspath,
             quiet=True,
-            nocache=nocache,
+            no_cache=no_cache,
         )
         if not quiet:
             assert installed_version, (
-                f"{self.__class__.__name__} Unable to find version for {bin_name} after installing. ABSPATH={installed_abspath} LOG={install_log}"
+                f"❌ {self.__class__.__name__} Unable to find version for {bin_name} after installing. ABSPATH={installed_abspath} LOG={install_log}"
             )
         self._assert_min_version_satisfied(
             bin_name=bin_name,
@@ -1384,7 +1399,7 @@ class BinProvider(BaseModel):
         )
 
         sha256 = (
-            self.get_sha256(bin_name, abspath=installed_abspath, nocache=nocache)
+            self.get_sha256(bin_name, abspath=installed_abspath, no_cache=no_cache)
             or UNKNOWN_SHA256
         )
 
@@ -1402,11 +1417,12 @@ class BinProvider(BaseModel):
             )
             logger.info(
                 format_loaded_binary(
-                    "Installed",
+                    "🆕 Installed",
                     installed_abspath,
                     installed_version,
                     self,
                 ),
+                extra={"abx_cli_duplicate_stdout": True},
             )
             return result
         return None
@@ -1418,7 +1434,7 @@ class BinProvider(BaseModel):
         self,
         bin_name: BinName,
         quiet: bool = False,
-        nocache: bool = False,
+        no_cache: bool = False,
         dry_run: bool | None = None,
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
@@ -1428,7 +1444,7 @@ class BinProvider(BaseModel):
             return self.get_provider_with_overrides(dry_run=dry_run).update(
                 bin_name=bin_name,
                 quiet=quiet,
-                nocache=nocache,
+                no_cache=no_cache,
                 postinstall_scripts=postinstall_scripts,
                 min_release_age=min_release_age,
                 min_version=min_version,
@@ -1441,14 +1457,14 @@ class BinProvider(BaseModel):
         min_release_age = (
             self.min_release_age if min_release_age is None else min_release_age
         )
-        install_args = self.get_install_args(bin_name, quiet=quiet, nocache=nocache)
+        install_args = self.get_install_args(bin_name, quiet=quiet, no_cache=no_cache)
         if (
             min_release_age is not None
             and min_release_age > 0
             and not self.supports_min_release_age("update")
         ):
             logger.warning(
-                "%s.update ignoring unsupported min_release_age=%s for provider %s",
+                "⚠️ %s.update ignoring unsupported min_release_age=%s for provider %s",
                 self.__class__.__name__,
                 min_release_age,
                 self.name,
@@ -1458,7 +1474,7 @@ class BinProvider(BaseModel):
             "update",
         ):
             logger.warning(
-                "%s.update ignoring unsupported postinstall_scripts=%s for provider %s",
+                "⚠️ %s.update ignoring unsupported postinstall_scripts=%s for provider %s",
                 self.__class__.__name__,
                 postinstall_scripts,
                 self.name,
@@ -1468,17 +1484,15 @@ class BinProvider(BaseModel):
             postinstall_scripts=postinstall_scripts,
             min_release_age=min_release_age,
             min_version=min_version,
-        )
-
-        logger.info(
-            "Updating %s via provider %s with args %s",
-            bin_name,
-            self.name,
-            list(install_args),
+            no_cache=no_cache,
         )
 
         self.setup_PATH()
         update_log = None
+        exec_log_prefix_token = ACTIVE_EXEC_LOG_PREFIX.set(
+            f"⬆ Updating {bin_name} via {self.name}...",
+        )
+        logger.info(ACTIVE_EXEC_LOG_PREFIX.get())
         try:
             update_log = cast(
                 ActionFuncReturnValue,
@@ -1487,6 +1501,7 @@ class BinProvider(BaseModel):
                     handler_type="update",
                     install_args=install_args,
                     packages=install_args,
+                    no_cache=no_cache,
                     postinstall_scripts=postinstall_scripts,
                     min_release_age=min_release_age,
                     min_version=min_version,
@@ -1494,9 +1509,11 @@ class BinProvider(BaseModel):
                 ),
             )
         except Exception as err:
-            update_log = f"{self.__class__.__name__} Failed to update {bin_name}, got {err.__class__.__name__}: {err}"
+            update_log = f"❌ {self.__class__.__name__} Failed to update {bin_name}, got {err.__class__.__name__}: {err}"
             if not quiet:
                 raise
+        finally:
+            ACTIVE_EXEC_LOG_PREFIX.reset(exec_log_prefix_token)
 
         if self.dry_run:
             return ShallowBinary.model_validate(
@@ -1512,21 +1529,21 @@ class BinProvider(BaseModel):
 
         self.invalidate_cache(bin_name)
 
-        updated_abspath = self.get_abspath(bin_name, quiet=True, nocache=True)
+        updated_abspath = self.get_abspath(bin_name, quiet=True, no_cache=True)
         if not quiet:
             assert updated_abspath, (
-                f"{self.__class__.__name__} Unable to find abspath for {bin_name} after updating. PATH={self.PATH} LOG={update_log}"
+                f"❌ {self.__class__.__name__} Unable to find abspath for {bin_name} after updating. PATH={self.PATH} LOG={update_log}"
             )
 
         updated_version = self.get_version(
             bin_name,
             abspath=updated_abspath,
             quiet=True,
-            nocache=True,
+            no_cache=True,
         )
         if not quiet:
             assert updated_version, (
-                f"{self.__class__.__name__} Unable to find version for {bin_name} after updating. ABSPATH={updated_abspath} LOG={update_log}"
+                f"❌ {self.__class__.__name__} Unable to find version for {bin_name} after updating. ABSPATH={updated_abspath} LOG={update_log}"
             )
         self._assert_min_version_satisfied(
             bin_name=bin_name,
@@ -1536,13 +1553,19 @@ class BinProvider(BaseModel):
         )
 
         sha256 = (
-            self.get_sha256(bin_name, abspath=updated_abspath, nocache=True)
+            self.get_sha256(bin_name, abspath=updated_abspath, no_cache=True)
             or UNKNOWN_SHA256
         )
 
         if updated_abspath and updated_version:
             logger.info(
-                format_loaded_binary("Updated", updated_abspath, updated_version, self),
+                format_loaded_binary(
+                    "⬆ Updated",
+                    updated_abspath,
+                    updated_version,
+                    self,
+                ),
+                extra={"abx_cli_duplicate_stdout": True},
             )
             return ShallowBinary.model_validate(
                 {
@@ -1564,7 +1587,7 @@ class BinProvider(BaseModel):
         self,
         bin_name: BinName,
         quiet: bool = False,
-        nocache: bool = False,
+        no_cache: bool = False,
         dry_run: bool | None = None,
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
@@ -1574,7 +1597,7 @@ class BinProvider(BaseModel):
             return self.get_provider_with_overrides(dry_run=dry_run).uninstall(
                 bin_name=bin_name,
                 quiet=quiet,
-                nocache=nocache,
+                no_cache=no_cache,
                 postinstall_scripts=postinstall_scripts,
                 min_release_age=min_release_age,
                 min_version=min_version,
@@ -1587,16 +1610,13 @@ class BinProvider(BaseModel):
         min_release_age = (
             self.min_release_age if min_release_age is None else min_release_age
         )
-        install_args = self.get_install_args(bin_name, quiet=quiet, nocache=nocache)
-        logger.info(
-            "Uninstalling %s via provider %s with args %s",
-            bin_name,
-            self.name,
-            list(install_args),
-        )
-
+        install_args = self.get_install_args(bin_name, quiet=quiet, no_cache=no_cache)
         self.setup_PATH()
         uninstall_result = None
+        exec_log_prefix_token = ACTIVE_EXEC_LOG_PREFIX.set(
+            f"🗑️ Uninstalling {bin_name} via {self.name}...",
+        )
+        logger.info(ACTIVE_EXEC_LOG_PREFIX.get())
         try:
             uninstall_result = cast(
                 ActionFuncReturnValue,
@@ -1605,6 +1625,7 @@ class BinProvider(BaseModel):
                     handler_type="uninstall",
                     install_args=install_args,
                     packages=install_args,
+                    no_cache=no_cache,
                     postinstall_scripts=postinstall_scripts,
                     min_release_age=min_release_age,
                     min_version=min_version,
@@ -1615,6 +1636,8 @@ class BinProvider(BaseModel):
             if not quiet:
                 raise
             return False
+        finally:
+            ACTIVE_EXEC_LOG_PREFIX.reset(exec_log_prefix_token)
 
         self.invalidate_cache(bin_name)
 
@@ -1622,7 +1645,7 @@ class BinProvider(BaseModel):
             return True
 
         if uninstall_result is not False:
-            logger.info("Uninstalled %s via provider %s", bin_name, self.name)
+            logger.info("🗑️ Uninstalled %s via %s", bin_name, self.name)
         return uninstall_result is not False
 
     @final
@@ -1632,10 +1655,10 @@ class BinProvider(BaseModel):
         self,
         bin_name: BinName,
         quiet: bool = True,
-        nocache: bool = False,
+        no_cache: bool = False,
     ) -> ShallowBinary | None:
-        logger.info("Loading %s via provider %s", bin_name, self.name)
-        installed_abspath = self.get_abspath(bin_name, quiet=quiet, nocache=nocache)
+        # logger.info("🔎 Loading %s via %s", bin_name, self.name)
+        installed_abspath = self.get_abspath(bin_name, quiet=quiet, no_cache=no_cache)
         if not installed_abspath:
             return None
 
@@ -1643,7 +1666,7 @@ class BinProvider(BaseModel):
             bin_name,
             abspath=installed_abspath,
             quiet=quiet,
-            nocache=nocache,
+            no_cache=no_cache,
         )
         if not installed_version:
             return None
@@ -1663,71 +1686,15 @@ class BinProvider(BaseModel):
             },
         )
         logger.info(
-            format_loaded_binary("Loaded", installed_abspath, installed_version, self),
+            format_loaded_binary(
+                "☑️ Loaded",
+                installed_abspath,
+                installed_version,
+                self,
+            ),
+            extra={"abx_cli_duplicate_stdout": True},
         )
         return result
-
-    @final
-    @log_method_call(include_result=True)
-    @validate_call
-    def load_or_install(
-        self,
-        bin_name: BinName,
-        quiet: bool = False,
-        nocache: bool = False,
-        dry_run: bool | None = None,
-        postinstall_scripts: bool | None = None,
-        min_release_age: float | None = None,
-        min_version: SemVer | None = None,
-    ) -> ShallowBinary | None:
-        if dry_run is not None and dry_run != self.dry_run:
-            return self.get_provider_with_overrides(dry_run=dry_run).load_or_install(
-                bin_name=bin_name,
-                quiet=quiet,
-                nocache=nocache,
-                postinstall_scripts=postinstall_scripts,
-                min_release_age=min_release_age,
-                min_version=min_version,
-            )
-        postinstall_scripts = (
-            self.postinstall_scripts
-            if postinstall_scripts is None
-            else postinstall_scripts
-        )
-        min_release_age = (
-            self.min_release_age if min_release_age is None else min_release_age
-        )
-        logger.info("Loading or installing %s via provider %s", bin_name, self.name)
-        try:
-            installed = self.load(bin_name=bin_name, quiet=True, nocache=nocache)
-        except Exception:
-            installed = None
-        if (
-            installed is not None
-            and min_version is not None
-            and installed.loaded_version is not None
-            and installed.loaded_version < min_version
-        ):
-            installed = self.update(
-                bin_name=bin_name,
-                quiet=quiet,
-                nocache=nocache,
-                dry_run=dry_run,
-                postinstall_scripts=postinstall_scripts,
-                min_release_age=min_release_age,
-                min_version=min_version,
-            )
-        if not installed:
-            installed = self.install(
-                bin_name=bin_name,
-                quiet=quiet,
-                nocache=nocache,
-                dry_run=dry_run,
-                postinstall_scripts=postinstall_scripts,
-                min_release_age=min_release_age,
-                min_version=min_version,
-            )
-        return installed
 
 
 class EnvProvider(BinProvider):

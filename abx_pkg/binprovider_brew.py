@@ -6,9 +6,8 @@ import sys
 import time
 import platform
 from pathlib import Path
-from typing import ClassVar
 
-from pydantic import Field, model_validator, TypeAdapter, computed_field
+from pydantic import Field, model_validator, TypeAdapter
 
 from .base_types import (
     BinProviderName,
@@ -40,7 +39,6 @@ UPDATE_CHECK_INTERVAL = 60 * 60 * 24  # 1 day
 class BrewProvider(BinProvider):
     name: BinProviderName = "brew"
     INSTALLER_BIN: BinName = "brew"
-    INSTALL_ROOT_FIELD: ClassVar[str | None] = "brew_prefix"
 
     PATH: PATHStr = f"{DEFAULT_LINUX_DIR}:{NEW_MACOS_DIR}:{OLD_MACOS_DIR}"
     postinstall_scripts: bool | None = Field(
@@ -48,18 +46,13 @@ class BrewProvider(BinProvider):
         repr=False,
     )
 
-    # Default: ABX_PKG_BREW_ROOT > ABX_PKG_LIB_DIR/brew > detected/guessed.
-    brew_prefix: Path = abx_pkg_install_root_default("brew") or GUESSED_BREW_PREFIX
-
-    @computed_field
-    @property
-    def install_root(self) -> Path:
-        return self.brew_prefix
-
-    @computed_field
-    @property
-    def bin_dir(self) -> Path:
-        return self.brew_prefix / "bin"
+    install_root: Path | None = Field(
+        default_factory=lambda: (
+            abx_pkg_install_root_default("brew") or GUESSED_BREW_PREFIX
+        ),
+        validation_alias="brew_prefix",
+    )
+    bin_dir: Path | None = None
 
     def supports_min_release_age(self, action) -> bool:
         return False
@@ -126,8 +119,30 @@ class BrewProvider(BinProvider):
 
         return TypeAdapter(PATHStr).validate_python(search_paths)
 
+    def _linked_bin_path(self, bin_name: BinName | HostBinPath) -> Path | None:
+        if self.bin_dir is None:
+            return None
+        return self.bin_dir / str(bin_name)
+
+    def _refresh_bin_link(
+        self,
+        bin_name: BinName | HostBinPath,
+        target: HostBinPath,
+    ) -> HostBinPath:
+        link_path = self._linked_bin_path(bin_name)
+        assert link_path is not None, "_refresh_bin_link requires bin_dir to be set"
+        link_path.parent.mkdir(parents=True, exist_ok=True)
+        if link_path.exists() or link_path.is_symlink():
+            link_path.unlink(missing_ok=True)
+        link_path.symlink_to(target)
+        return TypeAdapter(HostBinPath).validate_python(link_path)
+
     @model_validator(mode="after")
     def load_PATH(self):
+        install_root = self.install_root
+        assert install_root is not None
+        if self.bin_dir is None:
+            self.bin_dir = install_root / "bin"
         if not self.INSTALLER_BIN_ABSPATH:
             # brew is not available on this host
             self.PATH: PATHStr = ""
@@ -156,13 +171,14 @@ class BrewProvider(BinProvider):
             ):
                 add_bin_dir(DEFAULT_LINUX_DIR)
 
-        # Only auto-correct ``brew_prefix`` when the caller left it at
+        # Only auto-correct the install root when the caller left it at
         # the built-in guess (i.e. didn't pin one via ``brew_prefix=`` /
         # ``install_root=`` / ``ABX_PKG_LIB_DIR``). Respect any explicit
         # value the caller passed in so a pinned managed root sticks
         # even on hosts where brew is already installed somewhere else.
-        if self.brew_prefix == GUESSED_BREW_PREFIX:
-            self.brew_prefix = self._brew_prefixes()[0]
+        if self.install_root == GUESSED_BREW_PREFIX:
+            self.install_root = self._brew_prefixes()[0]
+            self.bin_dir = self.install_root / "bin"
         self.PATH = TypeAdapter(PATHStr).validate_python(bin_dirs)
         return self
 
@@ -361,6 +377,10 @@ class BrewProvider(BinProvider):
         if proc.returncode != 0:
             self._raise_proc_error("uninstall", install_args, proc)
 
+        linked_bin = self._linked_bin_path(bin_name)
+        if linked_bin is not None:
+            linked_bin.unlink(missing_ok=True)
+
         return True
 
     def default_abspath_handler(
@@ -373,10 +393,18 @@ class BrewProvider(BinProvider):
         if not self.PATH:
             return None
 
+        linked_bin = self._linked_bin_path(bin_name)
+        if linked_bin is not None:
+            linked_abspath = bin_abspath(bin_name, PATH=str(self.bin_dir))
+            if linked_abspath:
+                return linked_abspath
+
         search_paths = self._brew_search_paths(bin_name)
         abspath = bin_abspath(bin_name, PATH=search_paths)
         if abspath:
-            return abspath
+            if linked_bin is None or Path(abspath).parent == self.bin_dir:
+                return abspath
+            return self._refresh_bin_link(bin_name, abspath)
 
         if not self.INSTALLER_BIN_ABSPATH:
             return None
@@ -398,7 +426,12 @@ class BrewProvider(BinProvider):
                     if path.name != str(bin_name):
                         continue
                     if path.is_file() and os.access(path, os.X_OK):
-                        return bin_abspath(path)
+                        direct_abspath = bin_abspath(path)
+                        if not direct_abspath:
+                            continue
+                        if linked_bin is None or direct_abspath.parent == self.bin_dir:
+                            return direct_abspath
+                        return self._refresh_bin_link(bin_name, direct_abspath)
             except Exception:
                 pass
 

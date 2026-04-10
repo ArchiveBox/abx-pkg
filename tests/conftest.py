@@ -121,21 +121,26 @@ class TestMachine:
 
         provider = loaded.loaded_binprovider
         assert (
-            provider.get_abspath(loaded.name, quiet=True, nocache=True)
+            provider.get_abspath(loaded.name, quiet=True, no_cache=True)
             == loaded.loaded_abspath
         )
         assert (
-            provider.get_version(loaded.name, quiet=True, nocache=True)
+            provider.get_version(loaded.name, quiet=True, no_cache=True)
             == loaded.loaded_version
         )
         assert (
             provider.get_sha256(
                 loaded.name,
                 abspath=loaded.loaded_abspath,
-                nocache=True,
+                no_cache=True,
             )
             == loaded.loaded_sha256
         )
+        if provider.bin_dir is not None:
+            expected_abspath = provider.bin_dir / loaded.name
+            assert expected_abspath.exists()
+            assert expected_abspath == loaded.loaded_abspath
+            assert expected_abspath.parent == provider.bin_dir
 
         if expected_version is not None:
             assert loaded.loaded_version >= expected_version
@@ -150,12 +155,12 @@ class TestMachine:
                 assert loaded.loaded_version == parsed_version
 
     def assert_provider_missing(self, provider, bin_name: str) -> None:
-        assert provider.load(bin_name, quiet=True, nocache=True) is None
-        assert provider.get_abspath(bin_name, quiet=True, nocache=True) is None
+        assert provider.load(bin_name, quiet=True, no_cache=True) is None
+        assert provider.get_abspath(bin_name, quiet=True, no_cache=True) is None
 
     def assert_binary_missing(self, binary: Binary) -> None:
         with pytest.raises(BinaryLoadError):
-            self.unloaded_binary(binary).load(nocache=True)
+            self.unloaded_binary(binary).load(no_cache=True)
 
     def unloaded_binary(self, binary: Binary) -> Binary:
         return binary.model_copy(
@@ -189,23 +194,23 @@ class TestMachine:
 
         self.assert_provider_missing(provider, bin_name)
 
-        installed = provider.install(bin_name, nocache=True, **install_kwargs)
+        installed = provider.install(bin_name, no_cache=True, **install_kwargs)
         self.assert_shallow_binary_loaded(
             installed,
             version_args=version_args,
             assert_version_command=assert_version_command,
         )
 
-        loaded = provider.load(bin_name, nocache=True)
+        loaded = provider.load(bin_name, no_cache=True)
         self.assert_shallow_binary_loaded(
             loaded,
             version_args=version_args,
             assert_version_command=assert_version_command,
         )
 
-        loaded_or_installed = provider.load_or_install(
+        loaded_or_installed = provider.install(
             bin_name,
-            nocache=True,
+            no_cache=True,
             **install_kwargs,
         )
         self.assert_shallow_binary_loaded(
@@ -214,20 +219,20 @@ class TestMachine:
             assert_version_command=assert_version_command,
         )
 
-        updated = provider.update(bin_name, nocache=True, **update_kwargs)
+        updated = provider.update(bin_name, no_cache=True, **update_kwargs)
         self.assert_shallow_binary_loaded(
             updated,
             version_args=version_args,
             assert_version_command=assert_version_command,
         )
 
-        uninstall_result = provider.uninstall(bin_name, nocache=True, **install_kwargs)
+        uninstall_result = provider.uninstall(bin_name, no_cache=True, **install_kwargs)
         assert uninstall_result is expect_uninstall_result
         if expect_uninstall_result:
             self.assert_provider_missing(provider, bin_name)
         else:
             self.assert_shallow_binary_loaded(
-                provider.load(bin_name, nocache=True),
+                provider.load(bin_name, no_cache=True),
                 version_args=version_args,
                 assert_version_command=assert_version_command,
             )
@@ -251,14 +256,14 @@ class TestMachine:
             assert_version_command=assert_version_command,
         )
 
-        loaded = self.unloaded_binary(binary).load(nocache=True)
+        loaded = self.unloaded_binary(binary).load(no_cache=True)
         self.assert_shallow_binary_loaded(
             loaded,
             version_args=version_args,
             assert_version_command=assert_version_command,
         )
 
-        loaded_or_installed = self.unloaded_binary(binary).load_or_install(nocache=True)
+        loaded_or_installed = self.unloaded_binary(binary).install(no_cache=True)
         self.assert_shallow_binary_loaded(
             loaded_or_installed,
             version_args=version_args,
@@ -288,7 +293,7 @@ class TestMachine:
         expect_present_before: bool = False,
         stale_min_version: SemVer | None = None,
     ) -> None:
-        before = provider.load(bin_name, quiet=True, nocache=True)
+        before = provider.load(bin_name, quiet=True, no_cache=True)
         if expect_present_before:
             self.assert_shallow_binary_loaded(before, assert_version_command=False)
         else:
@@ -296,28 +301,28 @@ class TestMachine:
 
         dry_run_provider = provider.get_provider_with_overrides(dry_run=True)
         if before is None or stale_min_version is not None:
-            dry_loaded_or_installed = dry_run_provider.load_or_install(
+            dry_loaded_or_installed = dry_run_provider.install(
                 bin_name,
-                nocache=True,
+                no_cache=True,
                 min_version=stale_min_version,
             )
             assert dry_loaded_or_installed is not None
             assert dry_loaded_or_installed.loaded_version == SemVer("999.999.999")
             assert dry_loaded_or_installed.loaded_sha256 is not None
 
-        dry_installed = dry_run_provider.install(bin_name, nocache=True)
+        dry_installed = dry_run_provider.install(bin_name, no_cache=True)
         assert dry_installed is not None
         assert dry_installed.loaded_version == SemVer("999.999.999")
         assert dry_installed.loaded_sha256 is not None
 
-        dry_updated = dry_run_provider.update(bin_name, nocache=True)
+        dry_updated = dry_run_provider.update(bin_name, no_cache=True)
         assert dry_updated is not None
         assert dry_updated.loaded_version == SemVer("999.999.999")
         assert dry_updated.loaded_sha256 is not None
 
-        assert dry_run_provider.uninstall(bin_name, nocache=True) is True
+        assert dry_run_provider.uninstall(bin_name, no_cache=True) is True
 
-        after = provider.load(bin_name, quiet=True, nocache=True)
+        after = provider.load(bin_name, quiet=True, no_cache=True)
         if expect_present_before:
             self.assert_shallow_binary_loaded(after, assert_version_command=False)
             assert after.loaded_abspath == before.loaded_abspath
@@ -330,7 +335,7 @@ class TestMachine:
         for formula in ("hello", "tree", "rename", "jq", "watch", "fzy"):
             if _brew_formula_is_installed(formula):
                 continue
-            if provider.load(formula, quiet=True, nocache=True) is not None:
+            if provider.load(formula, quiet=True, no_cache=True) is not None:
                 continue
             return formula
         raise AssertionError(
@@ -343,15 +348,15 @@ class TestMachine:
         candidates: tuple[str, ...],
     ) -> str:
         for candidate in candidates:
-            if provider.load(candidate, quiet=True, nocache=True) is not None:
+            if provider.load(candidate, quiet=True, no_cache=True) is not None:
                 continue
             return candidate
         for candidate in candidates:
             try:
-                provider.uninstall(candidate, quiet=True, nocache=True)
+                provider.uninstall(candidate, quiet=True, no_cache=True)
             except Exception:
                 continue
-            if provider.load(candidate, quiet=True, nocache=True) is not None:
+            if provider.load(candidate, quiet=True, no_cache=True) is not None:
                 continue
             return candidate
         raise AssertionError(
@@ -363,17 +368,17 @@ class TestMachine:
         for package in ("tree", "rename", "jq", "tmux", "screen"):
             if _apt_package_is_installed(package):
                 continue
-            if provider.load(package, quiet=True, nocache=True) is not None:
+            if provider.load(package, quiet=True, no_cache=True) is not None:
                 continue
             return package
         for package in ("tree", "rename", "jq", "tmux", "screen"):
             try:
-                provider.uninstall(package, quiet=True, nocache=True)
+                provider.uninstall(package, quiet=True, no_cache=True)
             except Exception:
                 continue
             if _apt_package_is_installed(package):
                 continue
-            if provider.load(package, quiet=True, nocache=True) is not None:
+            if provider.load(package, quiet=True, no_cache=True) is not None:
                 continue
             return package
         raise AssertionError(

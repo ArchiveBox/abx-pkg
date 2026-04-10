@@ -5,9 +5,8 @@ import pytest
 
 from abx_pkg import Binary, BinProvider, EnvProvider, PipProvider, SemVer
 from abx_pkg.exceptions import (
-    BinaryInstallError,
     BinaryLoadError,
-    BinaryLoadOrInstallError,
+    BinaryInstallError,
     BinaryUninstallError,
     BinaryUpdateError,
 )
@@ -20,7 +19,7 @@ class TestBinary:
             binproviders=[
                 EnvProvider(postinstall_scripts=True, min_release_age=0),
             ],
-        ).load(nocache=True)
+        ).load(no_cache=True)
 
         assert binary.binproviders
         assert binary.binprovider == binary.loaded_binprovider
@@ -41,7 +40,7 @@ class TestBinary:
             empty_bin_dir.mkdir()
             env_provider = EnvProvider(PATH=str(empty_bin_dir))
             pip_provider = PipProvider(
-                pip_venv=Path(tmpdir) / "venv",
+                install_root=Path(tmpdir) / "venv",
                 postinstall_scripts=True,
                 min_release_age=0,
             )
@@ -65,11 +64,11 @@ class TestBinary:
             with pytest.raises(BinaryLoadError):
                 test_machine.unloaded_binary(binary).load(
                     binproviders=["env"],
-                    nocache=True,
+                    no_cache=True,
                 )
             loaded = test_machine.unloaded_binary(binary).load(
                 binproviders=["pip"],
-                nocache=True,
+                no_cache=True,
             )
             test_machine.assert_shallow_binary_loaded(loaded)
 
@@ -86,8 +85,6 @@ class TestBinary:
 
         with pytest.raises(BinaryLoadError):
             binary.load()
-        with pytest.raises(BinaryLoadOrInstallError):
-            binary.load_or_install()
         with pytest.raises(BinaryInstallError):
             binary.install()
         with pytest.raises(BinaryUpdateError):
@@ -95,7 +92,7 @@ class TestBinary:
         with pytest.raises(BinaryUninstallError):
             binary.uninstall()
 
-    def test_load_or_install_and_update_upgrade_real_installed_version(
+    def test_install_and_update_upgrade_real_installed_version(
         self,
         test_machine,
     ):
@@ -105,7 +102,7 @@ class TestBinary:
                 name="black",
                 binproviders=[
                     PipProvider(
-                        pip_venv=venv_path,
+                        install_root=venv_path,
                         postinstall_scripts=True,
                         min_release_age=0,
                     ),
@@ -124,7 +121,7 @@ class TestBinary:
                 name="black",
                 binproviders=[
                     PipProvider(
-                        pip_venv=venv_path,
+                        install_root=venv_path,
                         postinstall_scripts=True,
                         min_release_age=0,
                     ),
@@ -132,7 +129,7 @@ class TestBinary:
                 postinstall_scripts=True,
                 min_release_age=0,
                 min_version=SemVer("24.0.0"),
-            ).load_or_install()
+            ).install()
             test_machine.assert_shallow_binary_loaded(
                 upgraded,
                 expected_version=SemVer("24.0.0"),
@@ -142,7 +139,7 @@ class TestBinary:
                 name="black",
                 binproviders=[
                     PipProvider(
-                        pip_venv=venv_path,
+                        install_root=venv_path,
                         postinstall_scripts=True,
                         min_release_age=0,
                     ),
@@ -171,7 +168,6 @@ class TestBinary:
 
         assert binary.install(binproviders=[]) == binary
         assert binary.load(binproviders=[]) == binary
-        assert binary.load_or_install(binproviders=[]) == binary
         assert binary.update(binproviders=[]) == binary
         assert binary.uninstall(binproviders=[]) == binary
 
@@ -181,7 +177,7 @@ class TestBinary:
     ):
         with tempfile.TemporaryDirectory() as tmpdir:
             provider = PipProvider(
-                pip_venv=Path(tmpdir) / "venv",
+                install_root=Path(tmpdir) / "venv",
                 postinstall_scripts=False,
                 min_release_age=36500,
             ).get_provider_with_overrides(
@@ -205,7 +201,7 @@ class TestBinary:
                 name="black",
                 binproviders=[
                     PipProvider(
-                        pip_venv=Path(tmpdir) / "venv",
+                        install_root=Path(tmpdir) / "venv",
                         postinstall_scripts=False,
                         min_release_age=36500,
                     ),
@@ -213,7 +209,7 @@ class TestBinary:
                 postinstall_scripts=True,
                 min_release_age=0,
                 min_version=SemVer("24.0.0"),
-            ).load_or_install()
+            ).install()
             test_machine.assert_shallow_binary_loaded(
                 upgraded,
                 expected_version=SemVer("24.0.0"),
@@ -250,7 +246,7 @@ class TestBinary:
     def test_binary_dry_run_passes_through_to_provider_without_installing(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             provider = PipProvider(
-                pip_venv=Path(tmpdir) / "venv",
+                install_root=Path(tmpdir) / "venv",
                 postinstall_scripts=True,
                 min_release_age=0,
             )
@@ -263,28 +259,28 @@ class TestBinary:
 
             installed = binary.install(dry_run=True)
             assert installed.loaded_version == SemVer("999.999.999")
-            assert provider.load("black", quiet=True, nocache=True) is None
+            assert provider.load("black", quiet=True, no_cache=True) is None
 
-            loaded_or_installed = binary.load_or_install(dry_run=True)
-            assert loaded_or_installed.loaded_version == SemVer("999.999.999")
-            assert provider.load("black", quiet=True, nocache=True) is None
+            ensured = binary.install(dry_run=True)
+            assert ensured.loaded_version == SemVer("999.999.999")
+            assert provider.load("black", quiet=True, no_cache=True) is None
 
             updated = binary.update(dry_run=True)
             assert updated.loaded_version == SemVer("999.999.999")
-            assert provider.load("black", quiet=True, nocache=True) is None
+            assert provider.load("black", quiet=True, no_cache=True) is None
 
             removed = binary.uninstall(dry_run=True)
             assert removed.loaded_abspath is None
-            assert provider.load("black", quiet=True, nocache=True) is None
+            assert provider.load("black", quiet=True, no_cache=True) is None
 
-    def test_binary_dry_run_load_or_install_does_not_update_stale_existing_binary(self):
+    def test_binary_dry_run_install_does_not_update_stale_existing_binary(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             venv_path = Path(tmpdir) / "venv"
             old_binary = Binary(
                 name="black",
                 binproviders=[
                     PipProvider(
-                        pip_venv=venv_path,
+                        install_root=venv_path,
                         postinstall_scripts=True,
                         min_release_age=0,
                     ),
@@ -300,7 +296,7 @@ class TestBinary:
                 name="black",
                 binproviders=[
                     PipProvider(
-                        pip_venv=venv_path,
+                        install_root=venv_path,
                         postinstall_scripts=True,
                         min_release_age=0,
                     ),
@@ -309,16 +305,36 @@ class TestBinary:
                 min_release_age=0,
                 min_version=SemVer("24.0.0"),
             )
-            dry_loaded_or_installed = binary.load_or_install(dry_run=True)
-            assert dry_loaded_or_installed.loaded_version == SemVer("999.999.999")
+            dry_installed = binary.install(dry_run=True)
+            assert dry_installed.loaded_version == SemVer("999.999.999")
 
             loaded_after_dry_run = binary.get_binprovider("pip").load(
                 "black",
                 quiet=True,
-                nocache=True,
+                no_cache=True,
             )
             assert loaded_after_dry_run is not None
             assert loaded_after_dry_run.loaded_version == SemVer("23.1.0")
+
+    def test_binary_install_no_cache_bypasses_already_loaded_short_circuit(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            binary = Binary(
+                name="black",
+                binproviders=[
+                    PipProvider(
+                        install_root=Path(tmpdir) / "venv",
+                        postinstall_scripts=True,
+                        min_release_age=0,
+                    ),
+                ],
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+            installed = binary.install()
+            assert installed.is_valid
+
+            forced = installed.install(dry_run=True, no_cache=True)
+            assert forced.loaded_version == SemVer("999.999.999")
 
     def test_binary_action_args_override_binary_and_provider_defaults(
         self,
@@ -326,7 +342,7 @@ class TestBinary:
     ):
         with tempfile.TemporaryDirectory() as tmpdir:
             provider = PipProvider(
-                pip_venv=Path(tmpdir) / "venv",
+                install_root=Path(tmpdir) / "venv",
                 dry_run=True,
                 postinstall_scripts=False,
                 min_release_age=36500,

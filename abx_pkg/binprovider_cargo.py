@@ -5,8 +5,8 @@ import os
 
 from pathlib import Path
 
-from pydantic import model_validator, computed_field
-from typing import ClassVar, Self
+from pydantic import Field, model_validator, computed_field
+from typing import Self
 
 from .base_types import (
     BinProviderName,
@@ -26,40 +26,36 @@ DEFAULT_CARGO_HOME = Path(os.environ.get("CARGO_HOME", "~/.cargo")).expanduser()
 class CargoProvider(BinProvider):
     name: BinProviderName = "cargo"
     INSTALLER_BIN: BinName = "cargo"
-    INSTALL_ROOT_FIELD: ClassVar[str | None] = "cargo_root"
 
     PATH: PATHStr = ""
 
-    # Default: ABX_PKG_CARGO_ROOT > ABX_PKG_LIB_DIR/cargo > None.
-    cargo_root: Path | None = abx_pkg_install_root_default("cargo")
     cargo_home: Path = DEFAULT_CARGO_HOME
+    install_root: Path | None = Field(
+        default_factory=lambda: abx_pkg_install_root_default("cargo"),
+        validation_alias="cargo_root",
+    )
+    bin_dir: Path | None = None
     cargo_install_args: list[str] = ["--locked"]
 
     @computed_field
     @property
     def is_valid(self) -> bool:
-        if self.cargo_root:
-            cargo_bin_dir = self.cargo_root / "bin"
+        if self.install_root and self.install_root != self.cargo_home:
+            cargo_bin_dir = self.install_root / "bin"
             if not (cargo_bin_dir.is_dir() and os.access(cargo_bin_dir, os.R_OK)):
                 return False
 
         return bool(self.INSTALLER_BIN_ABSPATH)
 
-    @computed_field
-    @property
-    def install_root(self) -> Path:
-        return self.cargo_root or self.cargo_home
-
-    @computed_field
-    @property
-    def bin_dir(self) -> Path:
-        return self.install_root / "bin"
-
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
+        if self.install_root is None:
+            self.install_root = self.cargo_home
+        if self.bin_dir is None:
+            self.bin_dir = self.install_root / "bin"
         if self.euid is None:
             self.euid = self.detect_euid(
-                owner_paths=(self.cargo_root, self.cargo_home),
+                owner_paths=(self.install_root, self.cargo_home),
                 preserve_root=True,
             )
 
@@ -68,8 +64,10 @@ class CargoProvider(BinProvider):
     @model_validator(mode="after")
     def load_PATH_from_cargo_root(self) -> Self:
         cargo_bin_dirs = [self.cargo_home / "bin"]
-        if self.cargo_root:
-            cargo_bin_dirs.insert(0, self.cargo_root / "bin")
+        install_root = self.install_root
+        assert install_root is not None
+        if install_root != self.cargo_home:
+            cargo_bin_dirs.insert(0, install_root / "bin")
         self.PATH = self._merge_PATH(*cargo_bin_dirs, PATH=self.PATH, prepend=True)
         return self
 
@@ -79,27 +77,38 @@ class CargoProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
     ) -> None:
+        install_root = self.install_root
+        assert install_root is not None
         self.cargo_home.mkdir(parents=True, exist_ok=True)
         self._cargo_target_dir().mkdir(parents=True, exist_ok=True)
-        if self.cargo_root:
-            (self.cargo_root / "bin").mkdir(parents=True, exist_ok=True)
+        if install_root != self.cargo_home:
+            bin_dir = self.bin_dir
+            assert bin_dir is not None
+            bin_dir.mkdir(parents=True, exist_ok=True)
 
     def _cargo_target_dir(self) -> Path:
-        return (self.cargo_root or self.cargo_home) / "target"
+        install_root = self.install_root
+        assert install_root is not None
+        return install_root / "target"
 
     def _cargo_env(self) -> dict[str, str]:
+        install_root = self.install_root
+        assert install_root is not None
         env = os.environ.copy()
         env["CARGO_HOME"] = str(self.cargo_home)
         env["CARGO_TARGET_DIR"] = str(self._cargo_target_dir())
-        if self.cargo_root:
-            env["CARGO_INSTALL_ROOT"] = str(self.cargo_root)
+        if install_root != self.cargo_home:
+            env["CARGO_INSTALL_ROOT"] = str(install_root)
         return env
 
     def _cargo_install_args(self) -> list[str]:
+        install_root = self.install_root
+        assert install_root is not None
         install_args = [*self.cargo_install_args]
-        if self.cargo_root:
-            install_args.extend(["--root", str(self.cargo_root)])
+        if install_root != self.cargo_home:
+            install_args.extend(["--root", str(install_root)])
         return install_args
 
     def _cargo_package_specs(
@@ -230,7 +239,12 @@ class CargoProvider(BinProvider):
             bin_name=installer_bin,
             cmd=[
                 "uninstall",
-                *(["--root", str(self.cargo_root)] if self.cargo_root else []),
+                *(
+                    ["--root", str(self.install_root)]
+                    if self.install_root is not None
+                    and self.install_root != self.cargo_home
+                    else []
+                ),
                 *package_specs,
             ],
             env=self._cargo_env(),

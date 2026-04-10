@@ -14,7 +14,7 @@ class TestUvProvider:
     ):
         with tempfile.TemporaryDirectory() as tmpdir:
             provider = UvProvider(
-                uv_venv=Path(tmpdir) / "venv",
+                install_root=Path(tmpdir) / "venv",
                 cache_dir=Path(tmpdir) / "cache",
                 postinstall_scripts=True,
                 min_release_age=0,
@@ -25,7 +25,7 @@ class TestUvProvider:
             assert installed.loaded_abspath is not None
             assert installed.loaded_version is not None
             assert provider.INSTALLER_BIN_ABSPATH is not None
-            assert provider.uv_venv is not None
+            assert provider.install_root is not None
 
             metadata_proc = provider.exec(
                 bin_name=provider.INSTALLER_BIN_ABSPATH,
@@ -33,7 +33,7 @@ class TestUvProvider:
                     "pip",
                     "show",
                     "--python",
-                    str(provider.uv_venv / "bin" / "python"),
+                    str(provider.install_root / "bin" / "python"),
                     "saws",
                 ],
                 timeout=provider.version_timeout,
@@ -65,7 +65,7 @@ class TestUvProvider:
                     "saws",
                     abspath=installed.loaded_abspath,
                     quiet=True,
-                    nocache=True,
+                    no_cache=True,
                 )
                 == metadata_version
             )
@@ -74,7 +74,7 @@ class TestUvProvider:
         with tempfile.TemporaryDirectory() as temp_dir:
             venv_path = Path(temp_dir) / "venv"
             provider = UvProvider(
-                uv_venv=venv_path,
+                install_root=venv_path,
                 cache_dir=Path(temp_dir) / "cache",
                 postinstall_scripts=True,
                 min_release_age=36500,
@@ -135,7 +135,7 @@ class TestUvProvider:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_dir_path = Path(temp_dir)
             ambient_provider = UvProvider(
-                uv_venv=temp_dir_path / "ambient-venv",
+                install_root=temp_dir_path / "ambient-venv",
                 cache_dir=temp_dir_path / "cache",
                 postinstall_scripts=True,
                 min_release_age=0,
@@ -151,7 +151,7 @@ class TestUvProvider:
             install_root = temp_dir_path / "uv-venv"
             provider = UvProvider(
                 PATH=str(ambient_provider.bin_dir),
-                uv_venv=install_root,
+                install_root=install_root,
                 cache_dir=temp_dir_path / "cache",
                 postinstall_scripts=True,
                 min_release_age=0,
@@ -186,7 +186,7 @@ class TestUvProvider:
             cache_file.write_text("not-a-directory", encoding="utf-8")
 
             provider = UvProvider(
-                uv_venv=tmp_path / "venv",
+                install_root=tmp_path / "venv",
                 cache_dir=cache_file,
                 postinstall_scripts=True,
                 min_release_age=0,
@@ -202,7 +202,7 @@ class TestUvProvider:
     def test_provider_direct_methods_exercise_real_lifecycle(self, test_machine):
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = UvProvider(
-                uv_venv=Path(temp_dir) / "venv",
+                install_root=Path(temp_dir) / "venv",
                 cache_dir=Path(temp_dir) / "cache",
                 postinstall_scripts=True,
                 min_release_age=0,
@@ -224,7 +224,7 @@ class TestUvProvider:
             venv_path = Path(tmpdir) / "venv"
             cache_dir = Path(tmpdir) / "cache"
             old_provider = UvProvider(
-                uv_venv=venv_path,
+                install_root=venv_path,
                 cache_dir=cache_dir,
                 postinstall_scripts=True,
                 min_release_age=0,
@@ -239,11 +239,11 @@ class TestUvProvider:
             assert tuple(old_installed.loaded_version) < tuple(required_version)
 
             upgraded = UvProvider(
-                uv_venv=venv_path,
+                install_root=venv_path,
                 cache_dir=cache_dir,
                 postinstall_scripts=True,
                 min_release_age=0,
-            ).load_or_install("black", min_version=SemVer("24.0.0"))
+            ).install("black", min_version=SemVer("24.0.0"))
             test_machine.assert_shallow_binary_loaded(
                 upgraded,
                 expected_version=SemVer("24.0.0"),
@@ -254,7 +254,7 @@ class TestUvProvider:
             assert upgraded.loaded_version > old_installed.loaded_version
 
             updated = UvProvider(
-                uv_venv=venv_path,
+                install_root=venv_path,
                 cache_dir=cache_dir,
                 postinstall_scripts=True,
                 min_release_age=0,
@@ -270,7 +270,7 @@ class TestUvProvider:
     ):
         with tempfile.TemporaryDirectory() as tmpdir:
             strict_provider = UvProvider(
-                uv_venv=Path(tmpdir) / "strict-venv",
+                install_root=Path(tmpdir) / "strict-venv",
                 cache_dir=Path(tmpdir) / "strict-cache",
                 postinstall_scripts=True,
                 min_release_age=36500,
@@ -292,7 +292,7 @@ class TestUvProvider:
                 name="cowsay",
                 binproviders=[
                     UvProvider(
-                        uv_venv=Path(tmpdir) / "binary-venv",
+                        install_root=Path(tmpdir) / "binary-venv",
                         cache_dir=Path(tmpdir) / "binary-cache",
                         postinstall_scripts=True,
                         min_release_age=36500,
@@ -313,7 +313,7 @@ class TestUvProvider:
     ):
         with tempfile.TemporaryDirectory() as tmpdir:
             strict_provider = UvProvider(
-                uv_venv=Path(tmpdir) / "strict-venv",
+                install_root=Path(tmpdir) / "strict-venv",
                 cache_dir=Path(tmpdir) / "strict-cache",
                 postinstall_scripts=False,
                 min_release_age=0,
@@ -340,7 +340,7 @@ class TestUvProvider:
                 name="saws",
                 binproviders=[
                     UvProvider(
-                        uv_venv=Path(tmpdir) / "binary-venv",
+                        install_root=Path(tmpdir) / "binary-venv",
                         cache_dir=Path(tmpdir) / "binary-cache",
                         postinstall_scripts=False,
                         min_release_age=0,
@@ -359,7 +359,7 @@ class TestUvProvider:
                 name="saws",
                 binproviders=[
                     UvProvider(
-                        uv_venv=Path(tmpdir) / "failing-venv",
+                        install_root=Path(tmpdir) / "failing-venv",
                         cache_dir=Path(tmpdir) / "failing-cache",
                         postinstall_scripts=False,
                         min_release_age=0,
@@ -377,7 +377,7 @@ class TestUvProvider:
                 name="cowsay",
                 binproviders=[
                     UvProvider(
-                        uv_venv=Path(temp_dir) / "venv",
+                        install_root=Path(temp_dir) / "venv",
                         cache_dir=Path(temp_dir) / "cache",
                         postinstall_scripts=True,
                         min_release_age=0,
@@ -394,7 +394,7 @@ class TestUvProvider:
     def test_provider_dry_run_does_not_install_cowsay(self, test_machine):
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = UvProvider(
-                uv_venv=Path(temp_dir) / "venv",
+                install_root=Path(temp_dir) / "venv",
                 cache_dir=Path(temp_dir) / "cache",
                 postinstall_scripts=True,
                 min_release_age=0,
@@ -406,7 +406,7 @@ class TestUvProvider:
     def test_provider_action_args_override_provider_defaults(self, test_machine):
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = UvProvider(
-                uv_venv=Path(temp_dir) / "venv",
+                install_root=Path(temp_dir) / "venv",
                 cache_dir=Path(temp_dir) / "cache",
                 dry_run=True,
                 postinstall_scripts=False,
@@ -433,9 +433,9 @@ class TestUvProvider:
             tool_dir = Path(temp_dir) / "tools"
             tool_bin_dir = Path(temp_dir) / "bin"
             provider = UvProvider(
-                uv_venv=None,
+                install_root=None,
                 uv_tool_dir=tool_dir,
-                uv_tool_bin_dir=tool_bin_dir,
+                bin_dir=tool_bin_dir,
                 cache_dir=Path(temp_dir) / "cache",
                 postinstall_scripts=True,
                 min_release_age=0,
@@ -455,13 +455,13 @@ class TestUvProvider:
             assert (tool_dir / "cowsay" / "pyvenv.cfg").exists()
 
             assert provider.uninstall("cowsay") is True
-            assert provider.load("cowsay", quiet=True, nocache=True) is None
+            assert provider.load("cowsay", quiet=True, no_cache=True) is None
 
     def test_supports_methods_do_not_emit_unsupported_warnings(self, caplog):
         with tempfile.TemporaryDirectory() as tmpdir:
             with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
                 provider = UvProvider(
-                    uv_venv=Path(tmpdir) / "venv",
+                    install_root=Path(tmpdir) / "venv",
                     cache_dir=Path(tmpdir) / "cache",
                     postinstall_scripts=False,
                     min_release_age=0,
@@ -477,7 +477,7 @@ class TestUvProvider:
                 name="cowsay",
                 binproviders=[
                     UvProvider(
-                        uv_venv=Path(tmpdir) / "venv",
+                        install_root=Path(tmpdir) / "venv",
                         cache_dir=Path(tmpdir) / "cache",
                         postinstall_scripts=True,
                         min_release_age=36500,

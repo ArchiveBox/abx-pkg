@@ -1,23 +1,43 @@
 import logging
+import subprocess
+import tempfile
+
+from pathlib import Path
 
 import pytest
 
 from abx_pkg import Binary, BrewProvider, SemVer
-from abx_pkg.exceptions import BinaryLoadOrInstallError
+from abx_pkg.exceptions import BinaryInstallError
 
 
 def _pick_formula_for_live_cycle() -> str:
     probe = BrewProvider(postinstall_scripts=True, min_release_age=0)
     candidates = ("hello", "jq", "watch", "fzy")
     for formula in candidates:
-        if probe.load(formula, quiet=True, nocache=True) is None:
+        proc = subprocess.run(
+            [str(probe.INSTALLER_BIN_ABSPATH), "list", "--formula", formula],
+            capture_output=True,
+            text=True,
+        )
+        if (
+            proc.returncode != 0
+            and probe.get_abspath(formula, quiet=True, no_cache=True) is None
+        ):
             return formula
     for formula in candidates:
         try:
-            probe.uninstall(formula, quiet=True, nocache=True)
+            probe.uninstall(formula, quiet=True, no_cache=True)
         except Exception:
             continue
-        if probe.load(formula, quiet=True, nocache=True) is None:
+        proc = subprocess.run(
+            [str(probe.INSTALLER_BIN_ABSPATH), "list", "--formula", formula],
+            capture_output=True,
+            text=True,
+        )
+        if (
+            proc.returncode != 0
+            and probe.get_abspath(formula, quiet=True, no_cache=True) is None
+        ):
             return formula
     raise AssertionError(
         "Unable to find a brew formula candidate that can be installed on the test machine",
@@ -25,6 +45,37 @@ def _pick_formula_for_live_cycle() -> str:
 
 
 class TestBrewProvider:
+    def test_install_root_alias_symlinks_formula_into_requested_bin_dir(
+        self,
+        test_machine,
+    ):
+        test_machine.require_tool("brew")
+        formula = _pick_formula_for_live_cycle()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            install_root = Path(temp_dir) / "brew-root"
+            provider = BrewProvider(
+                install_root=install_root,
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+
+            installed = provider.install(formula, no_cache=True)
+            assert installed is not None
+            bin_dir = provider.bin_dir
+            assert bin_dir is not None
+
+            test_machine.assert_shallow_binary_loaded(installed)
+            assert provider.install_root == install_root
+            assert bin_dir == install_root / "bin"
+            assert installed.loaded_abspath is not None
+            assert installed.loaded_abspath == bin_dir / formula
+            assert installed.loaded_abspath.is_symlink()
+            assert installed.loaded_abspath.resolve() != installed.loaded_abspath
+
+            provider.uninstall(formula, quiet=True, no_cache=True)
+            assert not installed.loaded_abspath.exists()
+
     def test_provider_direct_methods_exercise_real_lifecycle(self, test_machine):
         test_machine.require_tool("brew")
         formula = _pick_formula_for_live_cycle()
@@ -34,10 +85,10 @@ class TestBrewProvider:
             provider,
             bin_name=formula,
         )
-        assert provider.install_root == provider.brew_prefix
-        assert provider.bin_dir == provider.brew_prefix / "bin"
+        assert provider.install_root is not None
+        assert provider.bin_dir == provider.install_root / "bin"
         assert installed.loaded_abspath is not None
-        assert installed.loaded_abspath.is_relative_to(provider.install_root)
+        assert installed.loaded_abspath.parent == provider.bin_dir
 
     def test_unsupported_min_release_age_warns_and_continues(
         self,
@@ -72,7 +123,7 @@ class TestBrewProvider:
             test_machine.assert_shallow_binary_loaded(installed)
             assert "ignoring unsupported min_release_age=1" in caplog.text
         finally:
-            provider_for_cleanup.uninstall(formula, quiet=True, nocache=True)
+            provider_for_cleanup.uninstall(formula, quiet=True, no_cache=True)
 
     def test_postinstall_disable_is_live_and_min_version_is_enforced(
         self,
@@ -86,7 +137,7 @@ class TestBrewProvider:
             formula,
             postinstall_scripts=False,
             min_release_age=0,
-            nocache=True,
+            no_cache=True,
         )
         test_machine.assert_shallow_binary_loaded(installed)
 
@@ -96,7 +147,7 @@ class TestBrewProvider:
                 postinstall_scripts=True,
                 min_release_age=0,
                 min_version=SemVer("999.0.0"),
-                nocache=True,
+                no_cache=True,
             )
 
         too_new = Binary(
@@ -108,8 +159,8 @@ class TestBrewProvider:
             min_release_age=0,
             min_version=SemVer("999.0.0"),
         )
-        with pytest.raises(BinaryLoadOrInstallError):
-            too_new.load_or_install(nocache=True)
+        with pytest.raises(BinaryInstallError):
+            too_new.install(no_cache=True)
 
     def test_helper_install_args_used_by_pyinfra_ansible_backends(self, test_machine):
         test_machine.require_tool("brew")
@@ -124,15 +175,21 @@ class TestBrewProvider:
         )
 
         for pkg in (primary, extra):
-            provider.uninstall(pkg, quiet=True, nocache=True)
+            try:
+                provider.uninstall(pkg, quiet=True, no_cache=True)
+            except Exception:
+                pass
 
-        installed = provider.install(primary, nocache=True)
+        installed = provider.install(primary, no_cache=True)
         test_machine.assert_shallow_binary_loaded(installed)
 
-        assert provider.load(extra, quiet=True, nocache=True) is not None
+        assert provider.load(extra, quiet=True, no_cache=True) is not None
 
-        provider.uninstall(primary, nocache=True)
-        provider.uninstall(extra, quiet=True, nocache=True)
+        for pkg in (primary, extra):
+            try:
+                provider.uninstall(pkg, quiet=True, no_cache=True)
+            except Exception:
+                pass
 
     def test_binary_direct_methods_exercise_real_lifecycle(self, test_machine):
         test_machine.require_tool("brew")

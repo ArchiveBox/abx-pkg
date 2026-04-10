@@ -3,6 +3,7 @@ __package__ = "abx_pkg"
 import functools
 import importlib.util
 import logging as py_logging
+import os
 import shlex
 from contextvars import ContextVar
 from pathlib import Path
@@ -116,7 +117,11 @@ def configure_rich_logging(
 
 
 def format_command(cmd: list[str] | tuple[str, ...]) -> str:
-    return shlex.join(str(part) for part in cmd)
+    rendered = shlex.join(str(part) for part in cmd)
+    current_home = os.path.expanduser("~")
+    if current_home and current_home != "/":
+        rendered = rendered.replace(current_home, "~")
+    return rendered
 
 
 def format_provider(provider: Any) -> str:
@@ -129,7 +134,8 @@ def format_loaded_binary(
     version: Any,
     provider: Any,
 ) -> str:
-    return f"{action} {abspath} v{version} via {format_provider(provider)}"
+    provider_name = getattr(provider, "name", None) or format_provider(provider)
+    return f"{version} {abspath} ({provider_name})"
 
 
 def format_named_value(value: Any) -> str:

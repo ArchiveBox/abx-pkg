@@ -5,9 +5,9 @@ __package__ = "abx_pkg"
 import os
 import shlex
 from pathlib import Path
-from typing import Any, ClassVar, Self
+from typing import Any, Self
 
-from pydantic import Field, TypeAdapter, computed_field, model_validator
+from pydantic import Field, TypeAdapter, model_validator
 
 from .base_types import (
     DEFAULT_LIB_DIR,
@@ -35,16 +35,16 @@ DEFAULT_BASH_ROOT = DEFAULT_LIB_DIR / "bash"
 class BashProvider(EnvProvider):
     name: BinProviderName = "bash"
     INSTALLER_BIN: BinName = "sh"
-    INSTALL_ROOT_FIELD: ClassVar[str | None] = "bash_root"
-    BIN_DIR_FIELD: ClassVar[str | None] = "bash_bin_dir"
 
     PATH: PATHStr = ""
     postinstall_scripts: bool | None = Field(default=None, repr=False)
     min_release_age: float | None = Field(default=None, repr=False)
 
-    # Default: ABX_PKG_BASH_ROOT > ABX_PKG_LIB_DIR/bash > None.
-    bash_root: Path | None = abx_pkg_install_root_default("bash")
-    bash_bin_dir: Path | None = None
+    install_root: Path | None = Field(
+        default_factory=lambda: abx_pkg_install_root_default("bash"),
+        validation_alias="bash_root",
+    )
+    bin_dir: Path | None = Field(default=None, validation_alias="bash_bin_dir")
 
     overrides: BinProviderOverrides = {
         "*": {
@@ -57,22 +57,12 @@ class BashProvider(EnvProvider):
         },
     }
 
-    @computed_field
-    @property
-    def install_root(self) -> Path:
-        if self.bash_root:
-            return self.bash_root
-        if self.bash_bin_dir:
-            return self.bash_bin_dir.parent
-        return DEFAULT_BASH_ROOT
-
-    @computed_field
-    @property
-    def bin_dir(self) -> Path:
-        return self.bash_bin_dir or (self.install_root / "bin")
-
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
+        if self.install_root is None:
+            self.install_root = DEFAULT_BASH_ROOT
+        if self.bin_dir is None:
+            self.bin_dir = self.install_root / "bin"
         if self.euid is None:
             self.euid = self.detect_euid(
                 owner_paths=(self.bin_dir, self.install_root),
@@ -82,7 +72,9 @@ class BashProvider(EnvProvider):
 
     @model_validator(mode="after")
     def load_PATH_from_bash_bin_dir(self) -> Self:
-        self.PATH = self._merge_PATH(self.bin_dir, PATH=self.PATH, prepend=True)
+        bin_dir = self.bin_dir
+        assert bin_dir is not None
+        self.PATH = self._merge_PATH(bin_dir, PATH=self.PATH, prepend=True)
         return self
 
     def supports_postinstall_disable(self, action) -> bool:
@@ -94,9 +86,14 @@ class BashProvider(EnvProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version=None,
+        no_cache: bool = False,
     ) -> None:
-        self.install_root.mkdir(parents=True, exist_ok=True)
-        self.bin_dir.mkdir(parents=True, exist_ok=True)
+        install_root = self.install_root
+        bin_dir = self.bin_dir
+        assert install_root is not None
+        assert bin_dir is not None
+        install_root.mkdir(parents=True, exist_ok=True)
+        bin_dir.mkdir(parents=True, exist_ok=True)
 
     def _literal_override_value(
         self,
@@ -144,15 +141,6 @@ class BashProvider(EnvProvider):
                 return getattr(self, f"default_{handler_type}_handler")
         return super()._get_handler_for_action(bin_name, handler_type)
 
-    def _bash_env(self) -> dict[str, str]:
-        return {
-            **os.environ,
-            "INSTALL_ROOT": str(self.install_root),
-            "BIN_DIR": str(self.bin_dir),
-            "BASH_INSTALL_ROOT": str(self.install_root),
-            "BASH_BIN_DIR": str(self.bin_dir),
-        }
-
     def bash_version_handler(
         self,
         bin_name: str,
@@ -193,13 +181,23 @@ class BashProvider(EnvProvider):
             raise ValueError(
                 "BashProvider requires a literal overrides.install shell command",
             )
+        install_root = self.install_root
+        bin_dir = self.bin_dir
+        assert install_root is not None
+        assert bin_dir is not None
 
         proc = self.exec(
             bin_name=self._require_installer_bin(),
             cmd=["-c", command],
-            cwd=self.install_root,
+            cwd=install_root,
             timeout=timeout if timeout is not None else self.install_timeout,
-            env=self._bash_env(),
+            env={
+                **os.environ,
+                "INSTALL_ROOT": str(install_root),
+                "BIN_DIR": str(bin_dir),
+                "BASH_INSTALL_ROOT": str(install_root),
+                "BASH_BIN_DIR": str(bin_dir),
+            },
         )
         if proc.returncode != 0:
             self._raise_proc_error("install", bin_name, proc)
@@ -224,13 +222,23 @@ class BashProvider(EnvProvider):
             raise ValueError(
                 "BashProvider requires a literal overrides.install or overrides.update shell command",
             )
+        install_root = self.install_root
+        bin_dir = self.bin_dir
+        assert install_root is not None
+        assert bin_dir is not None
 
         proc = self.exec(
             bin_name=self._require_installer_bin(),
             cmd=["-c", command],
-            cwd=self.install_root,
+            cwd=install_root,
             timeout=timeout if timeout is not None else self.install_timeout,
-            env=self._bash_env(),
+            env={
+                **os.environ,
+                "INSTALL_ROOT": str(install_root),
+                "BIN_DIR": str(bin_dir),
+                "BASH_INSTALL_ROOT": str(install_root),
+                "BASH_BIN_DIR": str(bin_dir),
+            },
         )
         if proc.returncode != 0:
             self._raise_proc_error("update", bin_name, proc)
@@ -245,16 +253,26 @@ class BashProvider(EnvProvider):
         **context,
     ) -> bool:
         command = self._get_shell_command(str(bin_name), "uninstall")
+        install_root = self.install_root
+        bin_dir = self.bin_dir
+        assert install_root is not None
+        assert bin_dir is not None
         if command:
             proc = self.exec(
                 bin_name=self._require_installer_bin(),
                 cmd=["-c", command],
-                cwd=self.install_root,
+                cwd=install_root,
                 timeout=timeout if timeout is not None else self.install_timeout,
-                env=self._bash_env(),
+                env={
+                    **os.environ,
+                    "INSTALL_ROOT": str(install_root),
+                    "BIN_DIR": str(bin_dir),
+                    "BASH_INSTALL_ROOT": str(install_root),
+                    "BASH_BIN_DIR": str(bin_dir),
+                },
             )
             if proc.returncode != 0:
                 self._raise_proc_error("uninstall", bin_name, proc)
 
-        (self.bin_dir / str(bin_name)).unlink(missing_ok=True)
+        (bin_dir / str(bin_name)).unlink(missing_ok=True)
         return True

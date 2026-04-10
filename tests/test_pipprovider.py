@@ -14,7 +14,7 @@ class TestPipProvider:
     ):
         with tempfile.TemporaryDirectory() as tmpdir:
             provider = PipProvider(
-                pip_venv=Path(tmpdir) / "venv",
+                install_root=Path(tmpdir) / "venv",
                 postinstall_scripts=True,
                 min_release_age=0,
             )
@@ -57,7 +57,7 @@ class TestPipProvider:
                     "saws",
                     abspath=installed.loaded_abspath,
                     quiet=True,
-                    nocache=True,
+                    no_cache=True,
                 )
                 == metadata_version
             )
@@ -89,7 +89,7 @@ class TestPipProvider:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_dir_path = Path(temp_dir)
             ambient_provider = PipProvider(
-                pip_venv=temp_dir_path / "ambient-venv",
+                install_root=temp_dir_path / "ambient-venv",
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -104,7 +104,7 @@ class TestPipProvider:
             install_root = temp_dir_path / "pip-root"
             provider = PipProvider(
                 PATH=str(ambient_provider.bin_dir),
-                pip_venv=install_root,
+                install_root=install_root,
                 postinstall_scripts=True,
                 min_release_age=0,
             )
@@ -131,7 +131,7 @@ class TestPipProvider:
             cache_file.write_text("not-a-directory", encoding="utf-8")
 
             provider = PipProvider(
-                pip_venv=tmp_path / "venv",
+                install_root=tmp_path / "venv",
                 cache_dir=cache_file,
                 postinstall_scripts=True,
                 min_release_age=0,
@@ -144,7 +144,7 @@ class TestPipProvider:
     def test_provider_direct_methods_exercise_real_lifecycle(self, test_machine):
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = PipProvider(
-                pip_venv=Path(temp_dir) / "venv",
+                install_root=Path(temp_dir) / "venv",
                 postinstall_scripts=True,
                 min_release_age=0,
             )
@@ -157,7 +157,7 @@ class TestPipProvider:
         with tempfile.TemporaryDirectory() as tmpdir:
             venv_path = Path(tmpdir) / "venv"
             old_provider = PipProvider(
-                pip_venv=venv_path,
+                install_root=venv_path,
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -171,17 +171,17 @@ class TestPipProvider:
             assert tuple(old_installed.loaded_version) < tuple(required_version)
 
             upgraded = PipProvider(
-                pip_venv=venv_path,
+                install_root=venv_path,
                 postinstall_scripts=True,
                 min_release_age=0,
-            ).load_or_install("black", min_version=SemVer("24.0.0"))
+            ).install("black", min_version=SemVer("24.0.0"))
             test_machine.assert_shallow_binary_loaded(
                 upgraded,
                 expected_version=SemVer("24.0.0"),
             )
 
             updated = PipProvider(
-                pip_venv=venv_path,
+                install_root=venv_path,
                 postinstall_scripts=True,
                 min_release_age=0,
             ).update("black", min_version=SemVer("24.0.0"))
@@ -190,13 +190,50 @@ class TestPipProvider:
                 expected_version=SemVer("24.0.0"),
             )
 
+    def test_provider_install_no_cache_forces_reinstall_with_new_install_args(
+        self,
+        test_machine,
+    ):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            venv_path = Path(tmpdir) / "venv"
+            old_provider = PipProvider(
+                install_root=venv_path,
+                postinstall_scripts=True,
+                min_release_age=0,
+            ).get_provider_with_overrides(
+                overrides={"black": {"install_args": ["black==23.1.0"]}},
+            )
+            old_installed = old_provider.install("black")
+            assert old_installed is not None
+            assert old_installed.loaded_version == SemVer("23.1.0")
+
+            provider = PipProvider(
+                install_root=venv_path,
+                postinstall_scripts=True,
+                min_release_age=0,
+            ).get_provider_with_overrides(
+                overrides={"black": {"install_args": ["black==24.4.2"]}},
+            )
+
+            loaded = provider.install("black")
+            test_machine.assert_shallow_binary_loaded(
+                loaded,
+                expected_version=SemVer("23.1.0"),
+            )
+
+            forced = provider.install("black", no_cache=True)
+            test_machine.assert_shallow_binary_loaded(
+                forced,
+                expected_version=SemVer("24.4.2"),
+            )
+
     def test_provider_defaults_and_binary_overrides_enforce_min_release_age(
         self,
         test_machine,
     ):
         with tempfile.TemporaryDirectory() as tmpdir:
             strict_provider = PipProvider(
-                pip_venv=Path(tmpdir) / "strict-venv",
+                install_root=Path(tmpdir) / "strict-venv",
                 postinstall_scripts=True,
                 min_release_age=36500,
             )
@@ -212,7 +249,7 @@ class TestPipProvider:
                 name="black",
                 binproviders=[
                     PipProvider(
-                        pip_venv=Path(tmpdir) / "binary-venv",
+                        install_root=Path(tmpdir) / "binary-venv",
                         postinstall_scripts=True,
                         min_release_age=36500,
                     ),
@@ -229,7 +266,7 @@ class TestPipProvider:
     ):
         with tempfile.TemporaryDirectory() as tmpdir:
             strict_provider = PipProvider(
-                pip_venv=Path(tmpdir) / "strict-venv",
+                install_root=Path(tmpdir) / "strict-venv",
                 postinstall_scripts=False,
                 min_release_age=0,
             )
@@ -251,7 +288,7 @@ class TestPipProvider:
                 name="saws",
                 binproviders=[
                     PipProvider(
-                        pip_venv=Path(tmpdir) / "binary-venv",
+                        install_root=Path(tmpdir) / "binary-venv",
                         postinstall_scripts=False,
                         min_release_age=0,
                     ),
@@ -269,7 +306,7 @@ class TestPipProvider:
                 name="saws",
                 binproviders=[
                     PipProvider(
-                        pip_venv=Path(tmpdir) / "failing-venv",
+                        install_root=Path(tmpdir) / "failing-venv",
                         postinstall_scripts=False,
                         min_release_age=0,
                     ),
@@ -286,7 +323,7 @@ class TestPipProvider:
                 name="black",
                 binproviders=[
                     PipProvider(
-                        pip_venv=Path(temp_dir) / "venv",
+                        install_root=Path(temp_dir) / "venv",
                         postinstall_scripts=True,
                         min_release_age=0,
                     ),
@@ -299,7 +336,7 @@ class TestPipProvider:
     def test_provider_dry_run_does_not_install_black(self, test_machine):
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = PipProvider(
-                pip_venv=Path(temp_dir) / "venv",
+                install_root=Path(temp_dir) / "venv",
                 postinstall_scripts=True,
                 min_release_age=0,
             )
@@ -308,7 +345,7 @@ class TestPipProvider:
     def test_provider_action_args_override_provider_defaults(self, test_machine):
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = PipProvider(
-                pip_venv=Path(temp_dir) / "venv",
+                install_root=Path(temp_dir) / "venv",
                 dry_run=True,
                 postinstall_scripts=False,
                 min_release_age=36500,

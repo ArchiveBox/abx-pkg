@@ -99,10 +99,10 @@ class FakeBinary:
     loaded_binprovider = SimpleNamespace(name="pnpm")
 
     def __init__(self):
-        self.calls: list[tuple[str, bool | None]] = []
+        self.calls: list[tuple[str, bool | None, bool | None]] = []
 
-    def install(self, dry_run=None):
-        self.calls.append(("install", dry_run))
+    def install(self, dry_run=None, no_cache=None):
+        self.calls.append(("install", dry_run, no_cache))
         return self
 
 
@@ -179,7 +179,7 @@ def test_install_command_uses_env_defaults(monkeypatch, tmp_path):
     assert captured["options"].dry_run is True
     assert captured["options"].debug is False
     assert captured["provider_dry_run"] is True
-    assert fake_binary.calls == [("install", True)]
+    assert fake_binary.calls == [("install", True, False)]
 
 
 def test_install_command_uses_debug_env_default(monkeypatch, tmp_path):
@@ -228,6 +228,59 @@ def test_install_command_uses_debug_flag(monkeypatch, tmp_path):
     assert result.exit_code == 0
     assert captured["binary_name"] == "prettier"
     assert captured["options"].debug is True
+
+
+def test_install_command_uses_no_cache_env_default(monkeypatch, tmp_path):
+    captured = {}
+    fake_binary = FakeBinary()
+
+    def fake_build_binary(binary_name, options, *, dry_run):
+        captured["binary_name"] = binary_name
+        captured["options"] = options
+        return fake_binary
+
+    monkeypatch.setattr(cli_module, "build_binary", fake_build_binary)
+
+    result = CliRunner().invoke(
+        cli_module.cli,
+        ["install", "prettier"],
+        env={
+            "ABX_PKG_LIB_DIR": str(tmp_path),
+            "ABX_PKG_NO_CACHE": "1",
+        },
+    )
+
+    assert result.exit_code == 0
+    assert captured["binary_name"] == "prettier"
+    assert captured["options"].no_cache is True
+    assert fake_binary.calls == [("install", False, True)]
+
+
+def test_clear_command_removes_explicit_lib_dir(tmp_path):
+    (tmp_path / "pip" / "venv").mkdir(parents=True)
+    (tmp_path / "pip" / "venv" / "marker").write_text("x")
+
+    result = CliRunner().invoke(
+        cli_module.cli,
+        ["clear", f"--lib={tmp_path}"],
+    )
+
+    assert result.exit_code == 0
+    assert not tmp_path.exists()
+
+
+def test_clear_command_uses_env_lib_dir(tmp_path):
+    (tmp_path / "uv" / "venv").mkdir(parents=True)
+    (tmp_path / "uv" / "venv" / "marker").write_text("x")
+
+    result = CliRunner().invoke(
+        cli_module.cli,
+        ["clear"],
+        env={"ABX_PKG_LIB_DIR": str(tmp_path)},
+    )
+
+    assert result.exit_code == 0
+    assert not tmp_path.exists()
 
 
 def test_version_flag_and_command_render_same_report(monkeypatch, tmp_path):
@@ -319,13 +372,9 @@ def test_configure_cli_logging_uses_debug_level_when_enabled(monkeypatch):
 def test_configure_cli_logging_uses_rich_logging_for_tty(monkeypatch):
     captured = {}
     sentinel_console = object()
-    fake_logger = logging.getLogger("test.rich.cli")
-    fake_handler = logging.StreamHandler()
-    fake_logger.handlers = [fake_handler]
 
-    def fake_configure_rich_logging(**kwargs):
+    def fake_configure_logging(**kwargs):
         captured.update(kwargs)
-        return fake_logger
 
     monkeypatch.setattr(cli_module, "RICH_INSTALLED", True)
     monkeypatch.setattr(
@@ -333,23 +382,15 @@ def test_configure_cli_logging_uses_rich_logging_for_tty(monkeypatch):
         "_console_for_stream",
         lambda *, err: sentinel_console if err else None,
     )
-    monkeypatch.setattr(
-        cli_module,
-        "configure_rich_logging",
-        fake_configure_rich_logging,
-    )
+    monkeypatch.setattr(cli_module, "configure_logging", fake_configure_logging)
 
     cli_module.configure_cli_logging(debug=True)
 
     assert captured["level"] == "DEBUG"
-    assert captured["console"] is sentinel_console
     assert captured["fmt"] == "%(message)s"
-    assert captured["markup"] is True
     assert captured["replace_handlers"] is True
-    assert captured["show_time"] is False
-    assert captured["show_level"] is False
-    assert captured["show_path"] is False
-    assert isinstance(fake_handler.formatter, cli_module._CliRichLogFormatter)
+    assert isinstance(captured["handler"], cli_module._CliRichHandler)
+    assert captured["handler"].console is sentinel_console
 
 
 def test_echo_uses_rich_console_for_tty(monkeypatch):
@@ -368,7 +409,8 @@ def test_echo_uses_rich_console_for_tty(monkeypatch):
 
     cli_module._echo("/tmp/bin 1.2.3 env")
 
-    assert printed == {"message": "/tmp/bin 1.2.3 env", "highlight": True}
+    assert printed["message"].plain == "/tmp/bin 1.2.3 env"
+    assert printed["highlight"] is False
 
 
 def test_expand_bare_bool_flags_rewrites_debug_before_run():
@@ -400,7 +442,32 @@ def test_run_executes_preinstalled_binary_via_env_provider():
 
     assert proc.returncode == 0, proc.stderr
     assert proc.stdout.strip() == "abx-run-ok"
-    assert "Loading python3 binary" in proc.stderr
+    assert proc.stderr == ""
+
+
+def test_run_accepts_update_flag_after_subcommand_for_env_provider():
+    proc = _run_abx_pkg_cli(
+        "--binproviders=env",
+        "run",
+        "--update",
+        "python3",
+        "--version",
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.strip().startswith("Python "), proc.stdout
+
+
+def test_run_accepts_binproviders_flag_after_subcommand():
+    proc = _run_abx_pkg_cli(
+        "run",
+        "--binproviders=env",
+        "python3",
+        "--version",
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.strip().startswith("Python "), proc.stdout
 
 
 def test_version_subcommand_loads_normal_binary_via_env_provider():
@@ -408,7 +475,7 @@ def test_version_subcommand_loads_normal_binary_via_env_provider():
 
     assert proc.returncode == 0, proc.stderr
     assert "python3" in proc.stdout
-    assert "Loading python3 binary" in proc.stderr
+    assert proc.stderr == ""
 
 
 def test_version_subcommand_loads_installer_binary_via_env_provider():
@@ -416,7 +483,7 @@ def test_version_subcommand_loads_installer_binary_via_env_provider():
 
     assert proc.returncode == 0, proc.stderr
     assert "uv" in proc.stdout
-    assert "Loading uv binary" in proc.stderr
+    assert proc.stderr == ""
 
 
 def test_run_passes_flag_args_through_without_requiring_dash_dash():
@@ -430,7 +497,7 @@ def test_run_passes_flag_args_through_without_requiring_dash_dash():
 
     assert proc.returncode == 0, proc.stderr
     assert proc.stdout.strip().startswith("Python "), proc.stdout
-    assert "Loading python3 binary" in proc.stderr
+    assert proc.stderr == ""
 
 
 def test_run_propagates_nonzero_exit_code_from_underlying_binary():
@@ -447,6 +514,66 @@ def test_run_propagates_nonzero_exit_code_from_underlying_binary():
     assert proc.returncode == 7
     assert proc.stdout == ""
     assert "boom" in proc.stderr
+
+
+def test_run_update_skips_env_for_the_update_step(monkeypatch, tmp_path):
+    calls: list[tuple[str, object]] = []
+
+    class FakeLoadedProvider:
+        def __init__(self, name: str):
+            self.name = name
+
+        def exec(self, bin_name, cmd=(), capture_output=False):
+            calls.append(
+                ("exec", (self.name, str(bin_name), tuple(cmd), capture_output)),
+            )
+            return subprocess.CompletedProcess(
+                [str(bin_name), *cmd],
+                0,
+                "",
+                "",
+            )
+
+    class FakeRunBinary:
+        def __init__(self):
+            self.loaded_abspath = Path("/tmp/fake-bin")
+            self.loaded_version = SemVer("1.2.3")
+            self.loaded_binprovider = FakeLoadedProvider("env")
+            self.is_valid = True
+
+        def install(self, dry_run=None, no_cache=None):
+            calls.append(("install", (dry_run, no_cache)))
+            return self
+
+        def update(self, binproviders=None, dry_run=None, no_cache=None):
+            calls.append(("update", (tuple(binproviders or ()), dry_run, no_cache)))
+            self.loaded_binprovider = FakeLoadedProvider("brew")
+            return self
+
+    monkeypatch.setattr(
+        cli_module,
+        "build_binary",
+        lambda *args, **kwargs: FakeRunBinary(),
+    )
+
+    result = CliRunner().invoke(
+        cli_module.cli,
+        [
+            f"--lib={tmp_path}",
+            "--binproviders=env,brew",
+            "run",
+            "--update",
+            "python3",
+            "--version",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert calls == [
+        ("install", (False, False)),
+        ("update", (("brew",), False, False)),
+        ("exec", ("brew", "/tmp/fake-bin", ("--version",), False)),
+    ]
 
 
 def test_run_stdout_stderr_are_separated_and_not_buffered(tmp_path):
@@ -531,7 +658,7 @@ def test_run_binproviders_flag_overrides_env_var():
 
 
 def test_run_with_install_flag_installs_binary_before_executing(tmp_path):
-    """`--install` should load_or_install via selected providers, then exec."""
+    """`--install` should install the binary if needed, then exec."""
 
     proc = _run_abx_pkg_cli(
         f"--lib={tmp_path}",
@@ -555,7 +682,7 @@ def test_run_with_install_flag_installs_binary_before_executing(tmp_path):
 
 
 def test_run_with_update_flag_installs_and_updates_before_executing(tmp_path):
-    """`--update` should load_or_install + update via selected providers."""
+    """`--update` should ensure the binary is available, then update it."""
 
     proc = _run_abx_pkg_cli(
         f"--lib={tmp_path}",
@@ -676,7 +803,7 @@ def test_run_forwards_variadic_positional_args_to_binary(
 
 
 # ---------------------------------------------------------------------------
-# `abx` — thin alias for `abx-pkg --install run ...` (argv-rewriting wrapper)
+# `abx` — thin alias for `abx-pkg run --install ...` (argv-rewriting wrapper)
 # ---------------------------------------------------------------------------
 
 
@@ -770,7 +897,7 @@ def test_abx_passes_flag_args_through_to_underlying_binary():
 
     assert proc.returncode == 0, proc.stderr
     assert proc.stdout.strip().startswith("Python "), proc.stdout
-    assert "Loading or installing python3 binary" in proc.stderr
+    assert proc.stderr == ""
 
 
 def test_abx_propagates_underlying_exit_code():
@@ -815,7 +942,7 @@ def test_abx_without_any_args_prints_usage_and_exits_two():
     assert proc.returncode == 2
     assert proc.stdout == ""
     assert "Usage: abx" in proc.stderr
-    assert "--install run" in proc.stderr
+    assert "run --install" in proc.stderr
 
 
 def test_abx_installs_missing_binary_via_selected_provider(tmp_path):
@@ -846,7 +973,7 @@ def test_abx_installs_missing_binary_via_selected_provider(tmp_path):
 
 
 def test_abx_update_flag_is_forwarded_and_runs_after_update(tmp_path):
-    """`abx --update BIN ARGS` must trigger load_or_install+update then exec."""
+    """`abx --update BIN ARGS` must ensure the binary is available, then update it."""
 
     proc = _run_abx_cli(
         f"--lib={tmp_path}",
@@ -881,6 +1008,7 @@ def test_build_cli_options_passes_typed_values_through(tmp_path):
         binproviders="env,pip",
         dry_run=True,
         debug=False,
+        no_cache=True,
         min_version="1.2.3",
         postinstall_scripts=False,
         min_release_age=14.0,
@@ -896,6 +1024,7 @@ def test_build_cli_options_passes_typed_values_through(tmp_path):
     assert options.provider_names == ["env", "pip"]
     assert options.dry_run is True
     assert options.debug is False
+    assert options.no_cache is True
     assert options.min_version == "1.2.3"
     assert options.postinstall_scripts is False
     assert options.min_release_age == 14.0
@@ -917,6 +1046,7 @@ def test_build_cli_options_nones_all_leave_fields_at_default(tmp_path):
         binproviders="env",
         dry_run=None,
         debug=None,
+        no_cache=None,
         min_version=None,
         postinstall_scripts=None,
         min_release_age=None,
@@ -929,6 +1059,7 @@ def test_build_cli_options_nones_all_leave_fields_at_default(tmp_path):
     )
 
     assert options.debug is False
+    assert options.no_cache is False
     assert options.min_version is None
     assert options.postinstall_scripts is None
     assert options.min_release_age is None
@@ -962,95 +1093,36 @@ def test_build_providers_passes_provider_level_flags_through(tmp_path):
     assert pip_provider.euid == 1000
     assert pip_provider.install_timeout == 300
     assert pip_provider.version_timeout == 25
-    # pip has INSTALL_ROOT_FIELD=pip_venv so install_root is honored.
-    assert pip_provider.pip_venv == (tmp_path / "custom-root").resolve()
+    assert pip_provider.install_root == (tmp_path / "custom-root").resolve()
+    assert pip_provider.bin_dir == (tmp_path / "custom-bin").resolve()
 
-    # env has no INSTALL_ROOT_FIELD or BIN_DIR_FIELD, but build_providers
-    # passes install_root/bin_dir blindly; BinProvider.__init__ should
-    # have warn-and-ignored rather than raising.
     assert env_provider.dry_run is True
     assert env_provider.euid == 1000
     assert env_provider.install_timeout == 300
     assert env_provider.version_timeout == 25
 
 
-def test_build_providers_warn_ignores_install_root_on_unsupporting_provider(
-    tmp_path,
-    caplog,
-):
-    """Warning should fire on providers without INSTALL_ROOT_FIELD."""
+def test_build_providers_constructs_every_builtin_provider(tmp_path):
+    """Smoke-test: every builtin provider can be constructed with every CLI flag."""
 
-    # Earlier tests in this file may have called configure_logging which
-    # disables propagation on the ``abx_pkg`` package logger. Re-enable
-    # it so pytest's root-attached caplog handler sees child records.
-    import logging as _logging
-
-    _logging.getLogger("abx_pkg").propagate = True
-
-    with caplog.at_level("WARNING", logger="abx_pkg.binprovider"):
-        providers = cli_module.build_providers(
-            ["env", "apt"],
-            tmp_path,
-            install_root=tmp_path / "ignored",
-        )
-
-    assert len(providers) == 2
-    warning_messages = [record.message for record in caplog.records]
-    assert any(
-        "EnvProvider ignoring unsupported install_root" in msg
-        for msg in warning_messages
-    ), warning_messages
-    assert any(
-        "AptProvider ignoring unsupported install_root" in msg
-        for msg in warning_messages
-    ), warning_messages
-
-
-def test_build_providers_constructs_every_builtin_provider(tmp_path, caplog):
-    """Smoke-test: every builtin provider can be constructed with every CLI flag.
-
-    Ensures we don't regress the warn-and-ignore contract across the full
-    set of providers abx-pkg ships — no provider should raise when given
-    an install_root/bin_dir it doesn't support, and every provider must
-    accept the base-class kwargs (dry_run/euid/install_timeout/version_timeout).
-    """
-
-    import logging as _logging
-
-    _logging.getLogger("abx_pkg").propagate = True
-
-    with caplog.at_level("WARNING", logger="abx_pkg.binprovider"):
-        providers = cli_module.build_providers(
-            list(cli_module.ALL_PROVIDER_NAMES),
-            tmp_path,
-            dry_run=True,
-            install_root=tmp_path / "shared-root",
-            bin_dir=tmp_path / "shared-bin",
-            euid=1000,
-            install_timeout=42,
-            version_timeout=7,
-        )
-
+    providers = cli_module.build_providers(
+        list(cli_module.ALL_PROVIDER_NAMES),
+        tmp_path,
+        dry_run=True,
+        install_root=tmp_path / "shared-root",
+        bin_dir=tmp_path / "shared-bin",
+        euid=1000,
+        install_timeout=42,
+        version_timeout=7,
+    )
     assert len(providers) == len(cli_module.ALL_PROVIDER_NAMES)
     for provider in providers:
         assert provider.dry_run is True
         assert provider.euid == 1000
         assert provider.install_timeout == 42
         assert provider.version_timeout == 7
-
-    unsupported_warnings = [
-        record.message
-        for record in caplog.records
-        if "ignoring unsupported install_root" in record.message
-        or "ignoring unsupported bin_dir" in record.message
-    ]
-    # Every provider without INSTALL_ROOT_FIELD should have emitted a warning.
-    env_provider_class = cli_module.PROVIDER_CLASS_BY_NAME["env"]
-    assert env_provider_class.INSTALL_ROOT_FIELD is None
-    assert any(
-        "EnvProvider ignoring unsupported install_root" in msg
-        for msg in unsupported_warnings
-    ), unsupported_warnings
+        assert provider.install_root == (tmp_path / "shared-root").resolve()
+        assert provider.bin_dir == (tmp_path / "shared-bin").resolve()
 
 
 def test_build_binary_forwards_binary_level_fields(tmp_path):
@@ -1062,6 +1134,7 @@ def test_build_binary_forwards_binary_level_fields(tmp_path):
         provider_names=["env", "pip"],
         dry_run=False,
         debug=False,
+        no_cache=False,
         min_version="2.0.0",
         postinstall_scripts=False,
         min_release_age=30.0,
@@ -1228,8 +1301,18 @@ def test_parse_cli_int_rejects_non_integer_floats_and_garbage():
             ["--postinstall-scripts=False", "install", "python3"],
         ),
         (
-            ["--dry-run", "--postinstall-scripts", "install", "python3"],
-            ["--dry-run=True", "--postinstall-scripts=True", "install", "python3"],
+            ["--no-cache", "install", "python3"],
+            ["--no-cache=True", "install", "python3"],
+        ),
+        (
+            ["--dry-run", "--postinstall-scripts", "--no-cache", "install", "python3"],
+            [
+                "--dry-run=True",
+                "--postinstall-scripts=True",
+                "--no-cache=True",
+                "install",
+                "python3",
+            ],
         ),
     ],
 )
@@ -1269,6 +1352,9 @@ def test_expand_bare_bool_flags_rewrites_bare_forms_in_place(argv, expected):
         ("--dry-run=True",),
         ("--dry-run=False",),
         ("--dry-run=None",),
+        ("--no-cache=True",),
+        ("--no-cache=False",),
+        ("--no-cache=None",),
     ],
 )
 def test_install_command_accepts_every_supported_flag_form(extra_flag, tmp_path):
@@ -1290,7 +1376,7 @@ def test_install_command_accepts_every_supported_flag_form(extra_flag, tmp_path)
 
 @pytest.mark.parametrize(
     "subcommand",
-    ["install", "load", "load-or-install", "load_or_install"],
+    ["install", "load"],
 )
 def test_every_subcommand_accepts_the_full_option_surface(subcommand, tmp_path):
     """Every subcommand honours every option by reusing shared_options."""
@@ -1301,6 +1387,7 @@ def test_every_subcommand_accepts_the_full_option_surface(subcommand, tmp_path):
         "--min-version=0.0.0",
         "--postinstall-scripts=False",
         "--min-release-age=0",
+        "--no-cache=False",
         "--install-timeout=60",
         "--version-timeout=10",
         "--dry-run=False",

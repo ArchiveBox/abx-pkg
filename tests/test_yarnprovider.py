@@ -59,7 +59,7 @@ class TestYarnProvider:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_dir_path = Path(temp_dir)
             ambient_provider = YarnProvider(
-                yarn_prefix=temp_dir_path / "ambient-yarn",
+                install_root=temp_dir_path / "ambient-yarn",
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -76,7 +76,7 @@ class TestYarnProvider:
             install_root = temp_dir_path / "yarn-root"
             provider = YarnProvider(
                 PATH=str(ambient_provider.bin_dir),
-                yarn_prefix=install_root,
+                install_root=install_root,
                 postinstall_scripts=True,
                 min_release_age=0,
             )
@@ -97,7 +97,7 @@ class TestYarnProvider:
     def test_provider_direct_methods_exercise_real_lifecycle(self, test_machine):
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = YarnProvider(
-                yarn_prefix=Path(temp_dir) / "yarn",
+                install_root=Path(temp_dir) / "yarn",
                 postinstall_scripts=True,
                 min_release_age=0,
             )
@@ -117,7 +117,7 @@ class TestYarnProvider:
         with tempfile.TemporaryDirectory() as tmpdir:
             yarn_prefix = Path(tmpdir) / "yarn"
             old_provider = YarnProvider(
-                yarn_prefix=yarn_prefix,
+                install_root=yarn_prefix,
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -128,7 +128,7 @@ class TestYarnProvider:
             assert old_installed.loaded_version == SemVer("7.2.3")
 
             upgraded = YarnProvider(
-                yarn_prefix=yarn_prefix,
+                install_root=yarn_prefix,
                 postinstall_scripts=True,
                 min_release_age=0,
             ).install("zx", min_version=SemVer("8.8.0"))
@@ -147,7 +147,7 @@ class TestYarnProvider:
     ):
         with tempfile.TemporaryDirectory() as tmpdir:
             strict_provider = YarnProvider(
-                yarn_prefix=Path(tmpdir) / "strict-yarn",
+                install_root=Path(tmpdir) / "strict-yarn",
                 postinstall_scripts=True,
                 min_release_age=36500,
             )
@@ -174,7 +174,7 @@ class TestYarnProvider:
                 name="zx",
                 binproviders=[
                     YarnProvider(
-                        yarn_prefix=Path(tmpdir) / "binary-yarn",
+                        install_root=Path(tmpdir) / "binary-yarn",
                         postinstall_scripts=True,
                         min_release_age=36500,
                     ),
@@ -188,7 +188,7 @@ class TestYarnProvider:
     def test_min_release_age_pins_to_older_version_when_strict(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             strict_provider = YarnProvider(
-                yarn_prefix=Path(tmpdir) / "yarn",
+                install_root=Path(tmpdir) / "yarn",
                 postinstall_scripts=True,
                 min_release_age=365,
             )
@@ -210,7 +210,7 @@ class TestYarnProvider:
     ):
         with tempfile.TemporaryDirectory() as tmpdir:
             strict_provider = YarnProvider(
-                yarn_prefix=Path(tmpdir) / "strict-yarn",
+                install_root=Path(tmpdir) / "strict-yarn",
                 postinstall_scripts=False,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -232,7 +232,7 @@ class TestYarnProvider:
             # Use a fresh prefix for the override case so we don't reuse the
             # cached package from the previous --mode skip-build run.
             override_provider = YarnProvider(
-                yarn_prefix=Path(tmpdir) / "override-yarn",
+                install_root=Path(tmpdir) / "override-yarn",
                 postinstall_scripts=False,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -255,7 +255,7 @@ class TestYarnProvider:
                 name="optipng",
                 binproviders=[
                     YarnProvider(
-                        yarn_prefix=Path(tmpdir) / "binary-yarn",
+                        install_root=Path(tmpdir) / "binary-yarn",
                         postinstall_scripts=False,
                         min_release_age=0,
                     ).get_provider_with_overrides(
@@ -277,7 +277,7 @@ class TestYarnProvider:
                 name="zx",
                 binproviders=[
                     YarnProvider(
-                        yarn_prefix=Path(temp_dir) / "yarn",
+                        install_root=Path(temp_dir) / "yarn",
                         postinstall_scripts=True,
                         min_release_age=0,
                     ),
@@ -290,7 +290,7 @@ class TestYarnProvider:
     def test_provider_dry_run_does_not_install_zx(self, test_machine):
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = YarnProvider(
-                yarn_prefix=Path(temp_dir) / "yarn",
+                install_root=Path(temp_dir) / "yarn",
                 postinstall_scripts=True,
                 min_release_age=0,
             )
@@ -306,7 +306,7 @@ class TestYarnProvider:
         with tempfile.TemporaryDirectory() as tmpdir:
             yarn_prefix = Path(tmpdir) / "yarn"
             provider = YarnProvider(
-                yarn_prefix=yarn_prefix,
+                install_root=yarn_prefix,
                 postinstall_scripts=True,
                 min_release_age=0,
             )
@@ -327,7 +327,7 @@ class TestYarnProvider:
         with tempfile.TemporaryDirectory() as tmpdir:
             with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
                 provider = YarnProvider(
-                    yarn_prefix=Path(tmpdir) / "yarn",
+                    install_root=Path(tmpdir) / "yarn",
                     postinstall_scripts=False,
                     min_release_age=0,
                 )
@@ -345,7 +345,7 @@ class TestYarnProvider:
                 name="zx",
                 binproviders=[
                     YarnProvider(
-                        yarn_prefix=Path(tmpdir) / "yarn",
+                        install_root=Path(tmpdir) / "yarn",
                         postinstall_scripts=True,
                         min_release_age=36500,
                     ),

@@ -58,10 +58,12 @@ class TestChromeWebstoreProvider:
 
             assert_extension_binary_loaded(installed)
             assert installed is not None
+            bin_dir = provider.bin_dir
+            assert bin_dir is not None
             assert provider.install_root == install_root
-            assert provider.bin_dir == install_root / "extensions"
+            assert bin_dir == install_root / "extensions"
             assert installed.loaded_abspath is not None
-            assert installed.loaded_abspath.is_relative_to(provider.bin_dir)
+            assert installed.loaded_abspath.is_relative_to(bin_dir)
 
     def test_install_root_and_bin_dir_aliases_install_into_the_requested_paths(
         self,
@@ -92,10 +94,11 @@ class TestChromeWebstoreProvider:
 
             assert_extension_binary_loaded(installed)
             assert installed is not None
+            assert bin_dir is not None
             assert provider.install_root == install_root
             assert provider.bin_dir == bin_dir
             assert installed.loaded_abspath is not None
-            assert installed.loaded_abspath.is_relative_to(provider.bin_dir)
+            assert installed.loaded_abspath.is_relative_to(bin_dir)
 
     def test_provider_direct_methods_exercise_real_lifecycle(self, test_machine):
         test_machine.require_tool("node")
@@ -103,8 +106,8 @@ class TestChromeWebstoreProvider:
 
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = ChromeWebstoreProvider(
-                extensions_root=Path(temp_dir) / "chromewebstore-root",
-                extensions_dir=Path(temp_dir) / "chromewebstore-root/extensions",
+                install_root=Path(temp_dir) / "chromewebstore-root",
+                bin_dir=Path(temp_dir) / "chromewebstore-root/extensions",
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -120,22 +123,22 @@ class TestChromeWebstoreProvider:
                 min_release_age=0,
                 min_version=None,
             )
-            assert provider.load("ublock", quiet=True, nocache=True) is None
+            assert provider.load("ublock", quiet=True, no_cache=True) is None
 
-            installed = provider.install("ublock", nocache=True)
+            installed = provider.install("ublock", no_cache=True)
             assert_extension_binary_loaded(installed)
 
-            loaded = provider.load("ublock", nocache=True)
+            loaded = provider.load("ublock", no_cache=True)
             assert_extension_binary_loaded(loaded)
 
-            loaded_or_installed = provider.load_or_install("ublock", nocache=True)
+            loaded_or_installed = provider.install("ublock", no_cache=True)
             assert_extension_binary_loaded(loaded_or_installed)
 
-            updated = provider.update("ublock", nocache=True)
+            updated = provider.update("ublock", no_cache=True)
             assert_extension_binary_loaded(updated)
 
-            assert provider.uninstall("ublock", nocache=True) is True
-            assert provider.load("ublock", quiet=True, nocache=True) is None
+            assert provider.uninstall("ublock", no_cache=True) is True
+            assert provider.load("ublock", quiet=True, no_cache=True) is None
 
     def test_binary_direct_methods_exercise_real_lifecycle(self, test_machine):
         test_machine.require_tool("node")
@@ -146,9 +149,8 @@ class TestChromeWebstoreProvider:
                 name="ublock",
                 binproviders=[
                     ChromeWebstoreProvider(
-                        extensions_root=Path(temp_dir) / "chromewebstore-root",
-                        extensions_dir=Path(temp_dir)
-                        / "chromewebstore-root/extensions",
+                        install_root=Path(temp_dir) / "chromewebstore-root",
+                        bin_dir=Path(temp_dir) / "chromewebstore-root/extensions",
                         postinstall_scripts=True,
                         min_release_age=0,
                     ),
@@ -168,11 +170,11 @@ class TestChromeWebstoreProvider:
             installed = fresh.install()
             assert_extension_binary_loaded(installed)
 
-            loaded = test_machine.unloaded_binary(binary).load(nocache=True)
+            loaded = test_machine.unloaded_binary(binary).load(no_cache=True)
             assert_extension_binary_loaded(loaded)
 
-            loaded_or_installed = test_machine.unloaded_binary(binary).load_or_install(
-                nocache=True,
+            loaded_or_installed = test_machine.unloaded_binary(binary).install(
+                no_cache=True,
             )
             assert_extension_binary_loaded(loaded_or_installed)
 

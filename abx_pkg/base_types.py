@@ -13,12 +13,12 @@ from platformdirs import user_config_path
 from pydantic import TypeAdapter, AfterValidator, BeforeValidator, ValidationError
 
 
-# Read once at import time. When set, every provider with an
-# ``INSTALL_ROOT_FIELD`` defaults its install root to
-# ``ABX_PKG_LIB_DIR / <provider name>`` (e.g. ``<lib>/npm``,
-# ``<lib>/pip``, ``<lib>/gem``). Per-provider ``ABX_PKG_<NAME>_ROOT``
-# env vars override this for their own provider; explicit constructor
-# kwargs override both.
+# Read once at import time. When set, providers that opt into
+# ``abx_pkg_install_root_default("<provider>")`` default their
+# ``install_root`` to ``ABX_PKG_LIB_DIR / <provider name>`` (e.g.
+# ``<lib>/npm``, ``<lib>/pip``, ``<lib>/gem``). Per-provider
+# ``ABX_PKG_<NAME>_ROOT`` env vars override this for their own
+# provider; explicit constructor kwargs override both.
 DEFAULT_LIB_DIR: Path = user_config_path("abx") / "lib"
 
 _lib_dir_env = os.environ.get("ABX_PKG_LIB_DIR", "").strip()

@@ -9,7 +9,7 @@ class TestInstall:
         provider = EnvProvider(postinstall_scripts=True, min_release_age=0)
         loaded = provider.load("python")
         installed = provider.install("python")
-        loaded_or_installed = provider.load_or_install("python")
+        loaded_or_installed = provider.install("python")
         updated = provider.update("python")
         uninstalled = provider.uninstall("python")
 
@@ -25,7 +25,7 @@ class TestInstall:
                 name="black",
                 binproviders=[
                     PipProvider(
-                        pip_venv=Path(tmpdir) / "venv",
+                        install_root=Path(tmpdir) / "venv",
                         postinstall_scripts=True,
                         min_release_age=0,
                     ),
@@ -41,7 +41,7 @@ class TestInstall:
                 name="zx",
                 binproviders=[
                     NpmProvider(
-                        npm_prefix=Path(tmpdir) / "npm",
+                        install_root=Path(tmpdir) / "npm",
                         postinstall_scripts=True,
                         min_release_age=0,
                     ),

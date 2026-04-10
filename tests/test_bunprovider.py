@@ -71,7 +71,7 @@ class TestBunProvider:
         with tempfile.TemporaryDirectory() as temp_dir:
             bun_prefix = Path(temp_dir) / "bun"
             provider = BunProvider(
-                bun_prefix=bun_prefix,
+                install_root=bun_prefix,
                 postinstall_scripts=True,
                 min_release_age=36500,
             ).get_provider_with_overrides(
@@ -140,7 +140,7 @@ class TestBunProvider:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_dir_path = Path(temp_dir)
             ambient_provider = BunProvider(
-                bun_prefix=temp_dir_path / "ambient-bun",
+                install_root=temp_dir_path / "ambient-bun",
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -157,7 +157,7 @@ class TestBunProvider:
             install_root = temp_dir_path / "bun-root"
             provider = BunProvider(
                 PATH=str(ambient_provider.bin_dir),
-                bun_prefix=install_root,
+                install_root=install_root,
                 postinstall_scripts=True,
                 min_release_age=0,
             )
@@ -185,7 +185,7 @@ class TestBunProvider:
             cache_file.write_text("not-a-directory", encoding="utf-8")
 
             provider = BunProvider(
-                bun_prefix=tmp_path / "bun",
+                install_root=tmp_path / "bun",
                 cache_dir=cache_file,
                 postinstall_scripts=True,
                 min_release_age=0,
@@ -198,7 +198,7 @@ class TestBunProvider:
     def test_provider_direct_methods_exercise_real_lifecycle(self, test_machine):
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = BunProvider(
-                bun_prefix=Path(temp_dir) / "bun",
+                install_root=Path(temp_dir) / "bun",
                 postinstall_scripts=True,
                 min_release_age=0,
             )
@@ -216,7 +216,7 @@ class TestBunProvider:
         with tempfile.TemporaryDirectory() as tmpdir:
             bun_prefix = Path(tmpdir) / "bun"
             old_provider = BunProvider(
-                bun_prefix=bun_prefix,
+                install_root=bun_prefix,
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -227,7 +227,7 @@ class TestBunProvider:
             assert old_installed.loaded_version == SemVer("7.2.3")
 
             upgraded = BunProvider(
-                bun_prefix=bun_prefix,
+                install_root=bun_prefix,
                 postinstall_scripts=True,
                 min_release_age=0,
             ).install("zx", min_version=SemVer("8.8.0"))
@@ -246,7 +246,7 @@ class TestBunProvider:
     ):
         with tempfile.TemporaryDirectory() as tmpdir:
             strict_provider = BunProvider(
-                bun_prefix=Path(tmpdir) / "strict-bun",
+                install_root=Path(tmpdir) / "strict-bun",
                 postinstall_scripts=True,
                 min_release_age=36500,
             )
@@ -264,7 +264,7 @@ class TestBunProvider:
                 name="zx",
                 binproviders=[
                     BunProvider(
-                        bun_prefix=Path(tmpdir) / "binary-bun",
+                        install_root=Path(tmpdir) / "binary-bun",
                         postinstall_scripts=True,
                         min_release_age=36500,
                     ),
@@ -278,7 +278,7 @@ class TestBunProvider:
     def test_min_release_age_pins_to_older_version_when_strict(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             strict_provider = BunProvider(
-                bun_prefix=Path(tmpdir) / "bun",
+                install_root=Path(tmpdir) / "bun",
                 postinstall_scripts=True,
                 min_release_age=365,
             )
@@ -296,7 +296,7 @@ class TestBunProvider:
     ):
         with tempfile.TemporaryDirectory() as tmpdir:
             strict_provider = BunProvider(
-                bun_prefix=Path(tmpdir) / "strict-bun",
+                install_root=Path(tmpdir) / "strict-bun",
                 postinstall_scripts=False,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -310,7 +310,7 @@ class TestBunProvider:
             assert strict_proc.returncode != 0
 
             override_provider = BunProvider(
-                bun_prefix=Path(tmpdir) / "override-bun",
+                install_root=Path(tmpdir) / "override-bun",
                 postinstall_scripts=False,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -348,7 +348,7 @@ class TestBunProvider:
                 name="zx",
                 binproviders=[
                     BunProvider(
-                        bun_prefix=Path(temp_dir) / "bun",
+                        install_root=Path(temp_dir) / "bun",
                         postinstall_scripts=True,
                         min_release_age=0,
                     ),
@@ -361,7 +361,7 @@ class TestBunProvider:
     def test_provider_dry_run_does_not_install_zx(self, test_machine):
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = BunProvider(
-                bun_prefix=Path(temp_dir) / "bun",
+                install_root=Path(temp_dir) / "bun",
                 postinstall_scripts=True,
                 min_release_age=0,
             )
@@ -375,7 +375,7 @@ class TestBunProvider:
     def test_provider_action_args_override_provider_defaults(self, test_machine):
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = BunProvider(
-                bun_prefix=Path(temp_dir) / "bun",
+                install_root=Path(temp_dir) / "bun",
                 dry_run=True,
                 postinstall_scripts=False,
                 min_release_age=36500,
@@ -396,7 +396,7 @@ class TestBunProvider:
         with tempfile.TemporaryDirectory() as tmpdir:
             with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
                 provider = BunProvider(
-                    bun_prefix=Path(tmpdir) / "bun",
+                    install_root=Path(tmpdir) / "bun",
                     postinstall_scripts=False,
                     min_release_age=0,
                 )
@@ -411,7 +411,7 @@ class TestBunProvider:
                 name="zx",
                 binproviders=[
                     BunProvider(
-                        bun_prefix=Path(tmpdir) / "bun",
+                        install_root=Path(tmpdir) / "bun",
                         postinstall_scripts=True,
                         min_release_age=36500,
                     ),

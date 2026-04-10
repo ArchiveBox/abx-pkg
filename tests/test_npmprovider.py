@@ -11,7 +11,7 @@ class TestNpmProvider:
         with tempfile.TemporaryDirectory() as temp_dir:
             npm_prefix = Path(temp_dir) / "npm"
             provider = NpmProvider(
-                npm_prefix=npm_prefix,
+                install_root=npm_prefix,
                 postinstall_scripts=True,
                 min_release_age=36500,
             ).get_provider_with_overrides(
@@ -48,9 +48,13 @@ class TestNpmProvider:
             test_machine.assert_shallow_binary_loaded(installed)
             assert installed is not None
             assert installed.loaded_abspath is not None
+            bin_dir = provider.bin_dir
+            assert bin_dir is not None
             assert provider.install_root == install_root
-            assert provider.bin_dir == install_root / "node_modules" / ".bin"
-            assert installed.loaded_abspath.parent == provider.bin_dir
+            assert bin_dir == install_root / "node_modules" / ".bin"
+            assert bin_dir.exists()
+            assert installed.loaded_abspath == bin_dir / "zx"
+            assert installed.loaded_abspath.parent == bin_dir
 
     def test_explicit_prefix_bin_dir_takes_precedence_over_existing_PATH_entries(
         self,
@@ -59,7 +63,7 @@ class TestNpmProvider:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_dir_path = Path(temp_dir)
             ambient_provider = NpmProvider(
-                npm_prefix=temp_dir_path / "ambient-npm",
+                install_root=temp_dir_path / "ambient-npm",
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -74,7 +78,7 @@ class TestNpmProvider:
             install_root = temp_dir_path / "npm-root"
             provider = NpmProvider(
                 PATH=str(ambient_provider.bin_dir),
-                npm_prefix=install_root,
+                install_root=install_root,
                 postinstall_scripts=True,
                 min_release_age=0,
             )
@@ -84,9 +88,13 @@ class TestNpmProvider:
             test_machine.assert_shallow_binary_loaded(installed)
             assert installed is not None
             assert installed.loaded_abspath is not None
+            bin_dir = provider.bin_dir
+            assert bin_dir is not None
             assert provider.install_root == install_root
-            assert provider.bin_dir == install_root / "node_modules" / ".bin"
-            assert installed.loaded_abspath.parent == provider.bin_dir
+            assert bin_dir == install_root / "node_modules" / ".bin"
+            assert bin_dir.exists()
+            assert installed.loaded_abspath == bin_dir / "zx"
+            assert installed.loaded_abspath.parent == bin_dir
             assert installed.loaded_version is not None
             assert ambient_installed.loaded_version is not None
             assert installed.loaded_version > ambient_installed.loaded_version
@@ -101,7 +109,7 @@ class TestNpmProvider:
             cache_file.write_text("not-a-directory", encoding="utf-8")
 
             provider = NpmProvider(
-                npm_prefix=tmp_path / "npm",
+                install_root=tmp_path / "npm",
                 cache_dir=cache_file,
                 postinstall_scripts=True,
                 min_release_age=0,
@@ -114,7 +122,7 @@ class TestNpmProvider:
     def test_provider_direct_methods_exercise_real_lifecycle(self, test_machine):
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = NpmProvider(
-                npm_prefix=Path(temp_dir) / "npm",
+                install_root=Path(temp_dir) / "npm",
                 postinstall_scripts=True,
                 min_release_age=0,
             )
@@ -127,7 +135,7 @@ class TestNpmProvider:
         with tempfile.TemporaryDirectory() as tmpdir:
             npm_prefix = Path(tmpdir) / "npm"
             old_provider = NpmProvider(
-                npm_prefix=npm_prefix,
+                install_root=npm_prefix,
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -138,7 +146,7 @@ class TestNpmProvider:
             assert old_installed.loaded_version == SemVer("7.2.3")
 
             upgraded = NpmProvider(
-                npm_prefix=npm_prefix,
+                install_root=npm_prefix,
                 postinstall_scripts=True,
                 min_release_age=0,
             ).install("zx", min_version=SemVer("8.8.0"))
@@ -149,7 +157,7 @@ class TestNpmProvider:
 
             with pytest.raises(Exception):
                 NpmProvider(
-                    npm_prefix=npm_prefix,
+                    install_root=npm_prefix,
                     postinstall_scripts=True,
                     min_release_age=0,
                 ).update("zx", min_version=SemVer("999.0.0"))
@@ -161,7 +169,7 @@ class TestNpmProvider:
     ):
         with tempfile.TemporaryDirectory() as tmpdir:
             strict_provider = NpmProvider(
-                npm_prefix=Path(tmpdir) / "strict-npm",
+                install_root=Path(tmpdir) / "strict-npm",
                 postinstall_scripts=True,
                 min_release_age=36500,
             )
@@ -186,7 +194,7 @@ class TestNpmProvider:
                 name="zx",
                 binproviders=[
                     NpmProvider(
-                        npm_prefix=Path(tmpdir) / "binary-npm",
+                        install_root=Path(tmpdir) / "binary-npm",
                         postinstall_scripts=True,
                         min_release_age=36500,
                     ),
@@ -200,7 +208,7 @@ class TestNpmProvider:
     def test_provider_defaults_and_binary_overrides_enforce_postinstall_scripts(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             strict_provider = NpmProvider(
-                npm_prefix=Path(tmpdir) / "strict-npm",
+                install_root=Path(tmpdir) / "strict-npm",
                 postinstall_scripts=False,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -224,7 +232,7 @@ class TestNpmProvider:
                 name="optipng",
                 binproviders=[
                     NpmProvider(
-                        npm_prefix=Path(tmpdir) / "binary-npm",
+                        install_root=Path(tmpdir) / "binary-npm",
                         postinstall_scripts=False,
                         min_release_age=0,
                     ).get_provider_with_overrides(
@@ -242,7 +250,7 @@ class TestNpmProvider:
                 name="optipng",
                 binproviders=[
                     NpmProvider(
-                        npm_prefix=Path(tmpdir) / "failing-npm",
+                        install_root=Path(tmpdir) / "failing-npm",
                         postinstall_scripts=False,
                         min_release_age=0,
                     ).get_provider_with_overrides(
@@ -263,7 +271,7 @@ class TestNpmProvider:
                 name="zx",
                 binproviders=[
                     NpmProvider(
-                        npm_prefix=Path(temp_dir) / "npm",
+                        install_root=Path(temp_dir) / "npm",
                         postinstall_scripts=True,
                         min_release_age=0,
                     ),
@@ -276,7 +284,7 @@ class TestNpmProvider:
     def test_provider_dry_run_does_not_install_zx(self, test_machine):
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = NpmProvider(
-                npm_prefix=Path(temp_dir) / "npm",
+                install_root=Path(temp_dir) / "npm",
                 postinstall_scripts=True,
                 min_release_age=0,
             )

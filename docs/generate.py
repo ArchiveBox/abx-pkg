@@ -112,7 +112,7 @@ PROVIDER_METADATA: dict[str, dict[str, Any]] = {
         "category": CATEGORY_LANGUAGE,
         "summary": (
             "Installs Python packages via uv. Two modes: hermetic venv mode "
-            "(uv_venv=Path(...)) or global tool mode (uv tool install). Full "
+            "(install_root=Path(...)) or global tool mode (uv tool install). Full "
             "support for postinstall_scripts=False and min_release_age."
         ),
         "tags": ["python", "venv-support", "tool-mode", "security-controls"],
@@ -350,6 +350,15 @@ GLOBAL_ENV_VARS: list[dict[str, str]] = [
         "default": "0",
         "description": (
             "Alternative dry-run toggle. ABX_PKG_DRY_RUN wins if both are set."
+        ),
+    },
+    {
+        "name": "ABX_PKG_NO_CACHE",
+        "default": "0",
+        "description": (
+            "Flips the shared no_cache default. install() skips the initial "
+            "load() check and forces a fresh install path; load()/update()/"
+            "uninstall() bypass cached probe results."
         ),
     },
     {
@@ -610,7 +619,7 @@ def build_provider(cls: type[BinProvider]) -> dict[str, Any]:
         ),
         "python": (
             f"from abx_pkg import Binary, {short_name}\n\n"
-            f"bin = Binary(name={example_binary!r}, binproviders=[{short_name}]).load_or_install()\n"
+            f"bin = Binary(name={example_binary!r}, binproviders=[{short_name}]).install()\n"
             f"bin.exec(cmd=[{example_arg!r}])"
         ),
     }

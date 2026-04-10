@@ -14,9 +14,9 @@ class TestPlaywrightProvider:
 
         with tempfile.TemporaryDirectory() as temp_dir:
             playwright_root = Path(temp_dir) / "playwright-root"
-            provider = PlaywrightProvider(playwright_root=playwright_root)
+            provider = PlaywrightProvider(install_root=playwright_root)
 
-            installed = provider.install("chromium", nocache=True)
+            installed = provider.install("chromium", no_cache=True)
             assert installed is not None
             test_machine.assert_shallow_binary_loaded(
                 installed,
@@ -39,7 +39,7 @@ class TestPlaywrightProvider:
                 if child.is_dir()
             )
 
-            loaded = provider.load("chromium", nocache=True)
+            loaded = provider.load("chromium", no_cache=True)
             test_machine.assert_shallow_binary_loaded(
                 loaded,
                 assert_version_command=False,
@@ -48,7 +48,7 @@ class TestPlaywrightProvider:
             assert loaded.loaded_abspath is not None
             assert loaded.loaded_abspath.resolve() == installed.loaded_abspath.resolve()
 
-            loaded_or_installed = provider.load_or_install("chromium", nocache=True)
+            loaded_or_installed = provider.install("chromium", no_cache=True)
             test_machine.assert_shallow_binary_loaded(
                 loaded_or_installed,
                 assert_version_command=False,
@@ -129,7 +129,7 @@ class TestPlaywrightProvider:
                 if child.is_dir()
             )
 
-    def test_explicit_browser_bin_dir_takes_precedence_over_existing_PATH_entries(
+    def test_explicit_bin_dir_takes_precedence_over_existing_PATH_entries(
         self,
         test_machine,
     ):
@@ -139,8 +139,8 @@ class TestPlaywrightProvider:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_dir_path = Path(temp_dir)
             ambient_provider = PlaywrightProvider(
-                playwright_root=temp_dir_path / "ambient-root",
-                browser_bin_dir=temp_dir_path / "ambient-root/bin",
+                install_root=temp_dir_path / "ambient-root",
+                bin_dir=temp_dir_path / "ambient-root/bin",
             )
             ambient_installed = ambient_provider.install("chromium")
             assert ambient_installed is not None
@@ -149,8 +149,8 @@ class TestPlaywrightProvider:
 
             provider = PlaywrightProvider(
                 PATH=str(ambient_provider.bin_dir),
-                playwright_root=temp_dir_path / "playwright-root",
-                browser_bin_dir=temp_dir_path / "custom-bin",
+                install_root=temp_dir_path / "playwright-root",
+                bin_dir=temp_dir_path / "custom-bin",
             )
 
             installed = provider.install("chromium")
@@ -179,7 +179,7 @@ class TestPlaywrightProvider:
             # is a real playwright install flag we can verify by checking
             # that ``chromium_headless_shell-*`` does NOT end up on disk.
             provider = PlaywrightProvider(
-                playwright_root=playwright_root,
+                install_root=playwright_root,
             ).get_provider_with_overrides(
                 overrides={"chromium": {"install_args": ["chromium", "--no-shell"]}},
             )
@@ -218,7 +218,7 @@ class TestPlaywrightProvider:
 
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = PlaywrightProvider(
-                playwright_root=Path(temp_dir) / "playwright-root",
+                install_root=Path(temp_dir) / "playwright-root",
             )
 
             test_machine.exercise_provider_lifecycle(
@@ -236,7 +236,7 @@ class TestPlaywrightProvider:
                 name="chromium",
                 binproviders=[
                     PlaywrightProvider(
-                        playwright_root=Path(temp_dir) / "playwright-root",
+                        install_root=Path(temp_dir) / "playwright-root",
                     ),
                 ],
             )
@@ -252,15 +252,15 @@ class TestPlaywrightProvider:
 
         with tempfile.TemporaryDirectory() as temp_dir:
             playwright_root = Path(temp_dir) / "playwright-root"
-            provider = PlaywrightProvider(playwright_root=playwright_root)
+            provider = PlaywrightProvider(install_root=playwright_root)
 
-            installed = provider.install("chromium", nocache=True)
+            installed = provider.install("chromium", no_cache=True)
             assert installed is not None
             assert installed.loaded_abspath is not None
             original_target = installed.loaded_abspath.resolve()
             assert original_target.exists()
 
-            updated = provider.update("chromium", nocache=True)
+            updated = provider.update("chromium", no_cache=True)
             test_machine.assert_shallow_binary_loaded(
                 updated,
                 assert_version_command=False,
@@ -287,7 +287,7 @@ class TestPlaywrightProvider:
 
         with tempfile.TemporaryDirectory() as temp_dir:
             playwright_root = Path(temp_dir) / "playwright-root"
-            provider = PlaywrightProvider(playwright_root=playwright_root)
+            provider = PlaywrightProvider(install_root=playwright_root)
 
             test_machine.exercise_provider_dry_run(provider, bin_name="chromium")
             # dry_run must not have actually downloaded any browsers.

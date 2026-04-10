@@ -7,7 +7,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from typing import ClassVar, Self
+from typing import Self
 
 from platformdirs import user_cache_path
 from pydantic import Field, TypeAdapter, computed_field, model_validator
@@ -49,7 +49,6 @@ class BunProvider(BinProvider):
 
     name: BinProviderName = "bun"
     INSTALLER_BIN: BinName = "bun"
-    INSTALL_ROOT_FIELD: ClassVar[str | None] = "bun_prefix"
 
     PATH: PATHStr = ""
     postinstall_scripts: bool | None = Field(
@@ -63,7 +62,11 @@ class BunProvider(BinProvider):
 
     # None = inherit BUN_INSTALL / ~/.bun, otherwise a managed prefix.
     # Default: ABX_PKG_BUN_ROOT > ABX_PKG_LIB_DIR/bun > None.
-    bun_prefix: Path | None = abx_pkg_install_root_default("bun")
+    install_root: Path | None = Field(
+        default_factory=lambda: abx_pkg_install_root_default("bun"),
+        validation_alias="bun_prefix",
+    )
+    bin_dir: Path | None = None
 
     cache_dir: Path = USER_CACHE_PATH
     cache_arg: str = ""  # re-derived per-instance from cache_dir in detect_cache_arg
@@ -100,21 +103,11 @@ class BunProvider(BinProvider):
     @computed_field
     @property
     def is_valid(self) -> bool:
-        if self.bun_prefix:
-            bin_dir = self.bun_prefix / "bin"
-            if not (bin_dir.is_dir() and os.access(bin_dir, os.R_OK)):
-                return False
+        if self.bin_dir and not (
+            self.bin_dir.is_dir() and os.access(self.bin_dir, os.R_OK)
+        ):
+            return False
         return bool(self.INSTALLER_BIN_ABSPATH)
-
-    @computed_field
-    @property
-    def install_root(self) -> Path | None:
-        return self.bun_prefix
-
-    @computed_field
-    @property
-    def bin_dir(self) -> Path | None:
-        return self.bun_prefix / "bin" if self.bun_prefix else None
 
     @computed_field
     @property
@@ -147,17 +140,19 @@ class BunProvider(BinProvider):
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
+        if self.bin_dir is None and self.install_root is not None:
+            self.bin_dir = self.install_root / "bin"
         if self.euid is None:
             self.euid = self.detect_euid(
-                owner_paths=(self.bun_prefix,),
+                owner_paths=(self.install_root,),
                 preserve_root=True,
             )
         return self
 
     @model_validator(mode="after")
     def load_PATH_from_bun_prefix(self) -> Self:
-        if self.bun_prefix:
-            self.PATH = self._merge_PATH(self.bun_prefix / "bin")
+        if self.bin_dir:
+            self.PATH = self._merge_PATH(self.bin_dir)
         else:
             default_bun = (
                 Path(os.environ.get("BUN_INSTALL") or (Path("~").expanduser() / ".bun"))
@@ -166,15 +161,24 @@ class BunProvider(BinProvider):
             self.PATH = self._merge_PATH(default_bun, PATH=self.PATH)
         return self
 
-    def exec(self, bin_name, cmd=(), cwd: Path | str = ".", quiet=False, **kwargs):
+    def exec(
+        self,
+        bin_name,
+        cmd=(),
+        cwd: Path | str = ".",
+        quiet=False,
+        should_log_command: bool = True,
+        **kwargs,
+    ):
         # Inject BUN_INSTALL so global installs land in bun_prefix.
         env = (kwargs.pop("env", None) or os.environ.copy()).copy()
-        if self.bun_prefix:
-            self.bun_prefix.mkdir(parents=True, exist_ok=True)
-            (self.bun_prefix / "bin").mkdir(parents=True, exist_ok=True)
-            env["BUN_INSTALL"] = str(self.bun_prefix)
+        if self.install_root:
+            self.install_root.mkdir(parents=True, exist_ok=True)
+            assert self.bin_dir is not None
+            self.bin_dir.mkdir(parents=True, exist_ok=True)
+            env["BUN_INSTALL"] = str(self.install_root)
             path_entries = [e for e in env.get("PATH", "").split(":") if e]
-            bin_str = str(self.bun_prefix / "bin")
+            bin_str = str(self.bin_dir)
             if bin_str not in path_entries:
                 env["PATH"] = ":".join([bin_str, *path_entries])
         return super().exec(
@@ -182,6 +186,7 @@ class BunProvider(BinProvider):
             cmd=cmd,
             cwd=cwd,
             quiet=quiet,
+            should_log_command=should_log_command,
             env=env,
             **kwargs,
         )
@@ -192,12 +197,14 @@ class BunProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
     ) -> None:
         if not self._ensure_writable_cache_dir(self.cache_dir):
             self.cache_arg = "--no-cache"
-        if self.bun_prefix:
-            (self.bun_prefix / "bin").mkdir(parents=True, exist_ok=True)
-            (self.bun_prefix / "install").mkdir(parents=True, exist_ok=True)
+        if self.install_root:
+            assert self.bin_dir is not None
+            self.bin_dir.mkdir(parents=True, exist_ok=True)
+            (self.install_root / "install").mkdir(parents=True, exist_ok=True)
 
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(
@@ -207,9 +214,10 @@ class BunProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        self.setup()
+        self.setup(no_cache=no_cache)
         installer_bin = self._require_installer_bin()
         postinstall_scripts = bool(postinstall_scripts)
         install_args = install_args or self.get_install_args(bin_name)
@@ -228,7 +236,8 @@ class BunProvider(BinProvider):
         ):
             postinstall_scripts = False
 
-        cmd: list[str] = ["add", *self.bun_install_args, self.cache_arg, "-g"]
+        cache_arg = "--no-cache" if no_cache else self.cache_arg
+        cmd: list[str] = ["add", *self.bun_install_args, cache_arg, "-g"]
         if not postinstall_scripts:
             cmd.append("--ignore-scripts")
         elif not self._has_cli_flag(
@@ -265,9 +274,10 @@ class BunProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        self.setup()
+        self.setup(no_cache=no_cache)
         installer_bin = self._require_installer_bin()
         postinstall_scripts = bool(postinstall_scripts)
         install_args = install_args or self.get_install_args(bin_name)
@@ -286,7 +296,8 @@ class BunProvider(BinProvider):
         ):
             postinstall_scripts = False
 
-        cmd: list[str] = ["update", *self.bun_install_args, self.cache_arg, "-g"]
+        cache_arg = "--no-cache" if no_cache else self.cache_arg
+        cmd: list[str] = ["update", *self.bun_install_args, cache_arg, "-g"]
         if not postinstall_scripts:
             cmd.append("--ignore-scripts")
         elif not self._has_cli_flag(
@@ -311,7 +322,7 @@ class BunProvider(BinProvider):
         if proc.returncode != 0:
             # `bun update -g <pkg>` is rejected by some bun versions; fall
             # back to `bun add -g --force <pkg>` to refresh the global store.
-            cmd = ["add", *self.bun_install_args, self.cache_arg, "-g", "--force"]
+            cmd = ["add", *self.bun_install_args, cache_arg, "-g", "--force"]
             if not postinstall_scripts:
                 cmd.append("--ignore-scripts")
             elif not self._has_cli_flag(
@@ -390,8 +401,8 @@ class BunProvider(BinProvider):
             else main_package.split("@", 1)[0]
         )
         global_root = (
-            (self.bun_prefix / "install" / "global")
-            if self.bun_prefix
+            (self.install_root / "install" / "global")
+            if self.install_root
             else Path(
                 os.environ.get("BUN_INSTALL") or (Path("~").expanduser() / ".bun"),
             )

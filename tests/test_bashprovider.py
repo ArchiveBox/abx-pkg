@@ -76,8 +76,8 @@ class TestBashProvider:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_dir_path = Path(temp_dir)
             ambient_provider = BashProvider(
-                bash_root=temp_dir_path / "ambient-root",
-                bash_bin_dir=temp_dir_path / "ambient-root/bin",
+                install_root=temp_dir_path / "ambient-root",
+                bin_dir=temp_dir_path / "ambient-root/bin",
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -88,8 +88,8 @@ class TestBashProvider:
 
             provider = BashProvider(
                 PATH=str(ambient_provider.bin_dir),
-                bash_root=temp_dir_path / "bash-root",
-                bash_bin_dir=temp_dir_path / "bash-bin",
+                install_root=temp_dir_path / "bash-root",
+                bin_dir=temp_dir_path / "bash-bin",
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -111,8 +111,8 @@ class TestBashProvider:
 
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = BashProvider(
-                bash_root=Path(temp_dir) / "bash-root",
-                bash_bin_dir=Path(temp_dir) / "bash-root/bin",
+                install_root=Path(temp_dir) / "bash-root",
+                bin_dir=Path(temp_dir) / "bash-root/bin",
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -129,8 +129,8 @@ class TestBashProvider:
                 name="bash-zx",
                 binproviders=[
                     BashProvider(
-                        bash_root=Path(temp_dir) / "bash-root",
-                        bash_bin_dir=Path(temp_dir) / "bash-root/bin",
+                        install_root=Path(temp_dir) / "bash-root",
+                        bin_dir=Path(temp_dir) / "bash-root/bin",
                         postinstall_scripts=True,
                         min_release_age=0,
                     ),

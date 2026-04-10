@@ -5,8 +5,8 @@ import os
 
 from pathlib import Path
 
-from pydantic import model_validator, computed_field
-from typing import ClassVar, Self
+from pydantic import Field, model_validator, computed_field
+from typing import Self
 
 from .base_types import (
     BinProviderName,
@@ -26,41 +26,39 @@ DEFAULT_GEM_HOME = Path(os.environ.get("GEM_HOME", "~/.local/share/gem")).expand
 class GemProvider(BinProvider):
     name: BinProviderName = "gem"
     INSTALLER_BIN: BinName = "gem"
-    INSTALL_ROOT_FIELD: ClassVar[str | None] = "gem_home"
-    BIN_DIR_FIELD: ClassVar[str | None] = "gem_bindir"
 
     PATH: PATHStr = DEFAULT_ENV_PATH
 
-    # Default: ABX_PKG_GEM_ROOT > ABX_PKG_LIB_DIR/gem > None.
-    gem_home: Path | None = abx_pkg_install_root_default("gem")
-    gem_bindir: Path | None = None
+    install_root: Path | None = Field(
+        default_factory=lambda: abx_pkg_install_root_default("gem"),
+        validation_alias="gem_home",
+    )
+    bin_dir: Path | None = Field(default=None, validation_alias="gem_bindir")
     gem_install_args: list[str] = ["--no-document"]
 
     @computed_field
     @property
     def is_valid(self) -> bool:
-        if self.gem_bindir and not (
-            self.gem_bindir.is_dir() and os.access(self.gem_bindir, os.R_OK)
+        if self.bin_dir and not (
+            self.bin_dir.is_dir() and os.access(self.bin_dir, os.R_OK)
         ):
             return False
 
         return bool(self.INSTALLER_BIN_ABSPATH)
 
-    @computed_field
-    @property
-    def install_root(self) -> Path:
-        return (self.gem_home or DEFAULT_GEM_HOME).expanduser()
-
-    @computed_field
-    @property
-    def bin_dir(self) -> Path:
-        return (self.gem_bindir or (self.install_root / "bin")).expanduser()
-
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
+        if self.install_root is None:
+            self.install_root = DEFAULT_GEM_HOME
+        else:
+            self.install_root = self.install_root.expanduser()
+        if self.bin_dir is None:
+            self.bin_dir = (self.install_root / "bin").expanduser()
+        else:
+            self.bin_dir = self.bin_dir.expanduser()
         if self.euid is None:
             self.euid = self.detect_euid(
-                owner_paths=(self.gem_home, self.gem_bindir),
+                owner_paths=(self.install_root, self.bin_dir),
                 preserve_root=True,
             )
 
@@ -68,10 +66,12 @@ class GemProvider(BinProvider):
 
     @model_validator(mode="after")
     def load_PATH_from_gem_home(self) -> Self:
-        if self.gem_home or self.gem_bindir:
-            self.PATH = self._merge_PATH(self.bin_dir)
+        bin_dir = self.bin_dir
+        assert bin_dir is not None
+        if self.install_root != DEFAULT_GEM_HOME or "bin_dir" in self.model_fields_set:
+            self.PATH = self._merge_PATH(bin_dir)
         else:
-            self.PATH = self._merge_PATH(self.bin_dir, PATH=self.PATH)
+            self.PATH = self._merge_PATH(bin_dir, PATH=self.PATH)
         return self
 
     def setup(
@@ -80,37 +80,54 @@ class GemProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
     ) -> None:
-        self.install_root.mkdir(parents=True, exist_ok=True)
-        self.bin_dir.mkdir(parents=True, exist_ok=True)
+        install_root = self.install_root
+        bin_dir = self.bin_dir
+        assert install_root is not None
+        assert bin_dir is not None
+        install_root.mkdir(parents=True, exist_ok=True)
+        bin_dir.mkdir(parents=True, exist_ok=True)
 
     def _gem_install_args(self) -> list[str]:
+        install_root = self.install_root
+        bin_dir = self.bin_dir
+        assert install_root is not None
+        assert bin_dir is not None
         return [
             "--install-dir",
-            str(self.install_root),
+            str(install_root),
             "--bindir",
-            str(self.bin_dir),
+            str(bin_dir),
             *self.gem_install_args,
         ]
 
     def _gem_scope_args(self) -> list[str]:
+        install_root = self.install_root
+        assert install_root is not None
         return [
             "-i",
-            str(self.install_root),
+            str(install_root),
         ]
 
     def _gem_env(self) -> dict[str, str]:
+        install_root = self.install_root
+        assert install_root is not None
         env = os.environ.copy()
-        gem_home = str(self.install_root)
+        gem_home = str(install_root)
         env["GEM_HOME"] = gem_home
         env["GEM_PATH"] = gem_home
         return env
 
     def _patch_generated_wrappers(self) -> None:
-        gem_home = str(self.install_root)
+        install_root = self.install_root
+        bin_dir = self.bin_dir
+        assert install_root is not None
+        assert bin_dir is not None
+        gem_home = str(install_root)
         gem_use_paths_line = f'Gem.use_paths("{gem_home}", ["{gem_home}"])'
 
-        for wrapper_path in self.bin_dir.iterdir():
+        for wrapper_path in bin_dir.iterdir():
             if not wrapper_path.is_file():
                 continue
 
@@ -234,6 +251,7 @@ class GemProvider(BinProvider):
             self._raise_proc_error("uninstall", install_args, proc)
 
         bindir = self.bin_dir
+        assert bindir is not None
         for install_arg in install_args:
             (bindir / install_arg).unlink(missing_ok=True)
         (bindir / bin_name).unlink(missing_ok=True)

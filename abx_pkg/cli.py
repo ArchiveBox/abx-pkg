@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging as py_logging
 import os
+import shutil
 import sys
 import tomllib
 from dataclasses import dataclass, replace
@@ -12,12 +13,15 @@ from pathlib import Path
 from typing import Any, cast
 
 import rich_click as click
+from rich.highlighter import ReprHighlighter
+from rich.logging import RichHandler
+from rich.text import Text
 
 from . import ALL_PROVIDER_NAMES, ALL_PROVIDERS, Binary
 from .base_types import DEFAULT_LIB_DIR
 from .binprovider import BinProvider, env_flag_is_true
 from .exceptions import ABXPkgError, BinaryOperationError
-from .logging import RICH_INSTALLED, configure_logging, configure_rich_logging
+from .logging import RICH_INSTALLED, configure_logging
 
 PROVIDER_CLASS_BY_NAME: dict[str, type[BinProvider]] = {
     cast(str, provider.model_fields["name"].default): provider
@@ -38,6 +42,7 @@ MANAGED_PROVIDER_ROOTS: dict[str, Path] = {
     "docker": Path("docker"),
     "chromewebstore": Path("chromewebstore"),
     "puppeteer": Path("puppeteer"),
+    "playwright": Path("playwright"),
     "bash": Path("bash"),
 }
 
@@ -48,9 +53,10 @@ class CliOptions:
     provider_names: list[str]
     dry_run: bool
     debug: bool
+    no_cache: bool
     # Binary-level fields forwarded verbatim to the Binary constructor.
     # Binary's own model validators propagate them to each provider via
-    # the existing install/load_or_install/update kwarg path, which is
+    # the existing install/update kwarg path, which is
     # also where the ``supports_postinstall_disable`` /
     # ``supports_min_release_age`` warning emitters live.
     min_version: str | None = None
@@ -58,9 +64,6 @@ class CliOptions:
     min_release_age: float | None = None
     overrides: dict[str, Any] | None = None
     # Provider-level fields forwarded to every provider constructor.
-    # BinProvider.__init__ warns-and-ignores install_root / bin_dir
-    # when a provider subclass has no INSTALL_ROOT_FIELD / BIN_DIR_FIELD
-    # set, so the CLI can pass them unconditionally.
     install_root: Path | None = None
     bin_dir: Path | None = None
     euid: int | None = None
@@ -224,6 +227,12 @@ def resolve_debug(flag_value: bool | None) -> bool:
     return env_flag_is_true("ABX_PKG_DEBUG")
 
 
+def resolve_no_cache(flag_value: bool | None) -> bool:
+    if flag_value is not None:
+        return flag_value
+    return env_flag_is_true("ABX_PKG_NO_CACHE")
+
+
 def build_providers(
     provider_names: list[str],
     lib_dir: Path,
@@ -247,9 +256,7 @@ def build_providers(
             provider_kwargs["version_timeout"] = version_timeout
         # User-supplied --install-root wins; otherwise use the managed
         # ``<lib_dir>/<provider>/<suffix>`` layout for providers that
-        # have one in MANAGED_PROVIDER_ROOTS. BinProvider.__init__
-        # warns-and-ignores install_root for providers whose
-        # INSTALL_ROOT_FIELD is None, so we can pass it blindly.
+        # have one in MANAGED_PROVIDER_ROOTS.
         if install_root is not None:
             provider_kwargs["install_root"] = install_root
         else:
@@ -278,7 +285,7 @@ def build_binary(binary_name: str, options: CliOptions, *, dry_run: bool) -> Bin
     }
     # Binary's field validators coerce str → SemVer, dict → BinaryOverrides,
     # etc., so just forward the parsed values verbatim. Binary.install /
-    # load_or_install / update then propagate postinstall_scripts /
+    # update then propagate postinstall_scripts /
     # min_release_age to each provider's install() kwarg, where the
     # existing ``supports_postinstall_disable`` / ``supports_min_release_age``
     # warn-and-ignore path fires for providers that can't enforce them.
@@ -300,6 +307,7 @@ def build_cli_options(
     binproviders: str | None,
     dry_run: bool | None,
     debug: bool | None,
+    no_cache: bool | None,
     min_version: str | None,
     postinstall_scripts: bool | None,
     min_release_age: float | None,
@@ -342,6 +350,7 @@ def build_cli_options(
             provider_names=parse_provider_names(binproviders),
             dry_run=resolve_dry_run(dry_run),
             debug=resolve_debug(debug),
+            no_cache=resolve_no_cache(no_cache),
             min_version=min_version,
             postinstall_scripts=postinstall_scripts,
             min_release_age=min_release_age,
@@ -361,6 +370,7 @@ def build_cli_options(
         ),
         dry_run=_override(dry_run, group.dry_run),
         debug=_override(debug, group.debug),
+        no_cache=_override(no_cache, group.no_cache),
         min_version=_override(min_version, group.min_version),
         postinstall_scripts=_override(postinstall_scripts, group.postinstall_scripts),
         min_release_age=_override(min_release_age, group.min_release_age),
@@ -394,44 +404,61 @@ def _console_for_stream(*, err: bool):
 def _echo(message: str, *, err: bool = False) -> None:
     console = _console_for_stream(err=err)
     if console is not None:
-        console.print(message, highlight=True)
+        console.print(ReprHighlighter()(Text.from_ansi(message)), highlight=False)
         return
     click.echo(message, err=err)
 
 
-class _CliRichLogFormatter(py_logging.Formatter):
-    def format(self, record: py_logging.LogRecord) -> str:
-        from rich.markup import escape
-
-        message = escape(super().format(record))
+class _CliRichHandler(RichHandler):
+    def render_message(
+        self,
+        record: py_logging.LogRecord,
+        message: str,
+    ) -> Text:
+        message_text = Text.from_ansi(message)
+        highlighter = getattr(record, "highlighter", self.highlighter)
+        if highlighter:
+            message_text = highlighter(message_text)
         if record.levelno == py_logging.INFO:
-            return f"[bright_black]{message}[/bright_black]"
-        return message
+            message_text.stylize("dim grey42")
+        if self.keywords is None:
+            self.keywords = self.KEYWORDS
+        if self.keywords:
+            message_text.highlight_words(self.keywords, "logging.keyword")
+        return message_text
+
+
+class _CliDuplicateStdoutFilter(py_logging.Filter):
+    def filter(self, record: py_logging.LogRecord) -> bool:
+        return not bool(getattr(record, "abx_cli_duplicate_stdout", False))
 
 
 def configure_cli_logging(*, debug: bool) -> None:
     level = "DEBUG" if debug else "INFO"
     console = _console_for_stream(err=True)
+    duplicate_stdout_filter = _CliDuplicateStdoutFilter()
     if console is not None:
-        from rich.highlighter import ReprHighlighter
-
-        logger = configure_rich_logging(
-            level=level,
+        handler = _CliRichHandler(
             console=console,
-            fmt="%(message)s",
-            replace_handlers=True,
-            markup=True,
+            markup=False,
             show_time=False,
             show_level=False,
             show_path=False,
             highlighter=ReprHighlighter(),
         )
-        for handler in logger.handlers:
-            handler.setFormatter(_CliRichLogFormatter("%(message)s"))
+        handler.addFilter(duplicate_stdout_filter)
+        configure_logging(
+            level=level,
+            handler=handler,
+            fmt="%(message)s",
+            replace_handlers=True,
+        )
         return
+    handler = py_logging.StreamHandler(sys.stderr)
+    handler.addFilter(duplicate_stdout_filter)
     configure_logging(
         level=level,
-        handler=py_logging.StreamHandler(sys.stderr),
+        handler=handler,
         fmt="%(message)s",
         replace_handlers=True,
     )
@@ -511,14 +538,14 @@ def shared_options(command):
             metavar="PATH",
             default=None,
             callback=_click_parse(_parse_cli_path),
-            help="Override the per-provider bin directory (providers without BIN_DIR_FIELD warn and ignore). 'None' restores defaults.",
+            help="Override the per-provider bin directory. Set 'None' to install globally.",
         ),
         click.option(
             "--install-root",
             metavar="PATH",
             default=None,
             callback=_click_parse(_parse_cli_path),
-            help="Override the per-provider install directory (providers without INSTALL_ROOT_FIELD warn and ignore). 'None' restores defaults.",
+            help="Override the per-provider install directory. Set 'None' to install globally.",
         ),
         click.option(
             "--overrides",
@@ -563,6 +590,13 @@ def shared_options(command):
             help="Emit DEBUG logs to stderr ('True'/'False'/'None' or bare `--debug` for implicit True). Defaults to ABX_PKG_DEBUG or False.",
         ),
         click.option(
+            "--no-cache",
+            metavar="BOOL",
+            default=None,
+            callback=_click_parse(_parse_cli_bool),
+            help="Bypass cached/current-state checks and force install/update probes ('True'/'False'/'None' or bare `--no-cache` for implicit True). Defaults to ABX_PKG_NO_CACHE or False.",
+        ),
+        click.option(
             "--binproviders",
             metavar="LIST",
             default=None,
@@ -589,6 +623,7 @@ _SHARED_OPTION_NAMES: tuple[str, ...] = (
     "binproviders",
     "dry_run",
     "debug",
+    "no_cache",
     "min_version",
     "postinstall_scripts",
     "min_release_age",
@@ -620,9 +655,9 @@ def run_binary_command(
 
     try:
         if action == "load":
-            result = method()
+            result = method(no_cache=options.no_cache)
         else:
-            result = method(dry_run=options.dry_run)
+            result = method(dry_run=options.dry_run, no_cache=options.no_cache)
     except ABXPkgError as err:
         raise click.ClickException(format_error(err)) from err
 
@@ -644,6 +679,13 @@ def run_binary_command(
     )
 
 
+def clear_lib_dir(lib_dir: Path) -> None:
+    if lib_dir.is_symlink() or lib_dir.is_file():
+        lib_dir.unlink(missing_ok=True)
+        return
+    shutil.rmtree(lib_dir, ignore_errors=True)
+
+
 @click.group(
     context_settings={"help_option_names": ["-h", "--help"]},
     invoke_without_command=True,
@@ -655,14 +697,14 @@ def run_binary_command(
     "install_before_run",
     is_flag=True,
     default=False,
-    help="Only used by `run`: load_or_install the binary before executing it.",
+    help="Only used by `run`: load the binary first, and install it if missing.",
 )
 @click.option(
     "--update",
     "update_before_run",
     is_flag=True,
     default=False,
-    help="Only used by `run`: load_or_install and update the binary before executing it.",
+    help="Only used by `run`: ensure the binary is available, then update it before executing it.",
 )
 @click.option(
     "--version",
@@ -713,6 +755,15 @@ def version_command(
     _echo(version_report(options))
 
 
+@cli.command("list")
+@click.pass_context
+@shared_options
+def list_command(ctx: click.Context, **shared_kwargs: Any) -> None:
+    """List binaries installed under the configured library directory."""
+
+    get_command_options(ctx, **shared_kwargs)
+
+
 @cli.command("install")
 @click.argument("binary_name")
 @click.pass_context
@@ -726,6 +777,16 @@ def install_command(
 
     options = get_command_options(ctx, **shared_kwargs)
     run_binary_command(binary_name, action="install", options=options)
+
+
+@cli.command("clear")
+@click.pass_context
+@shared_options
+def clear_command(ctx: click.Context, **shared_kwargs: Any) -> None:
+    """Delete the configured library directory immediately."""
+
+    options = get_command_options(ctx, **shared_kwargs)
+    clear_lib_dir(options.lib_dir)
 
 
 @cli.command("update")
@@ -777,73 +838,107 @@ def load_command(
     run_binary_command(binary_name, action="load", options=options)
 
 
-@cli.command("load_or_install")
-@click.argument("binary_name")
-@click.pass_context
-@shared_options
-def load_or_install_command(
-    ctx: click.Context,
-    binary_name: str,
-    **shared_kwargs: Any,
-) -> None:
-    """Load a binary or install it via the selected providers in order."""
-
-    options = get_command_options(ctx, **shared_kwargs)
-    run_binary_command(binary_name, action="load_or_install", options=options)
-
-
-cli.add_command(load_or_install_command, "load-or-install")
-
-
 @cli.command(
     "run",
     context_settings={
         "ignore_unknown_options": True,
         "allow_extra_args": True,
+        "allow_interspersed_args": False,
         "help_option_names": [],
     },
+)
+@shared_options
+@click.option(
+    "--install",
+    "command_install_before_run",
+    is_flag=True,
+    default=False,
+    help="Load the binary first, and install it if missing.",
+)
+@click.option(
+    "--update",
+    "command_update_before_run",
+    is_flag=True,
+    default=False,
+    help="Ensure the binary is available, then update it before executing it.",
 )
 @click.argument("binary_name")
 @click.argument("binary_args", nargs=-1, type=click.UNPROCESSED)
 @click.pass_context
 def run_command(
     ctx: click.Context,
-    binary_name: str,
-    binary_args: tuple[str, ...],
+    **shared_kwargs: Any,
 ) -> None:
     """Run an installed binary, passing all remaining arguments through to it.
 
-    Options to abx-pkg itself (e.g. --binproviders, --lib, --install, --update)
-    must appear BEFORE the `run` subcommand name. Everything after the binary
-    name is forwarded verbatim to the underlying binary's argv.
+    The full shared option surface is accepted on ``run`` itself before the
+    binary name. Everything after the binary name is forwarded verbatim to
+    the underlying binary's argv.
     """
 
-    group_options = cast(CliOptions, ctx.obj["group_options"])
-    install_before_run = bool(ctx.obj.get("install_before_run", False))
-    update_before_run = bool(ctx.obj.get("update_before_run", False))
+    command_install_before_run = bool(shared_kwargs.pop("command_install_before_run"))
+    command_update_before_run = bool(shared_kwargs.pop("command_update_before_run"))
+    binary_name = cast(str, shared_kwargs.pop("binary_name"))
+    binary_args = cast(tuple[str, ...], shared_kwargs.pop("binary_args"))
 
-    configure_cli_logging(debug=group_options.debug)
+    run_options = get_command_options(ctx, **shared_kwargs)
+    install_before_run = bool(ctx.obj.get("install_before_run", False)) or bool(
+        command_install_before_run,
+    )
+    update_before_run = bool(ctx.obj.get("update_before_run", False)) or bool(
+        command_update_before_run,
+    )
+
+    configure_cli_logging(debug=run_options.debug)
 
     binary = build_binary(
         binary_name,
-        group_options,
-        dry_run=group_options.dry_run,
+        run_options,
+        dry_run=run_options.dry_run,
     )
+    update_provider_names = [
+        provider_name
+        for provider_name in run_options.provider_names
+        if provider_name != "env"
+    ]
 
     try:
         if update_before_run:
-            binary = binary.load_or_install(dry_run=group_options.dry_run)
-            binary = binary.update(dry_run=group_options.dry_run)
+            loaded_for_update = None
+            try:
+                loaded_for_update = binary.load(no_cache=run_options.no_cache)
+            except ABXPkgError:
+                loaded_for_update = None
+            if loaded_for_update is not None and update_provider_names:
+                binary = loaded_for_update.update(
+                    binproviders=update_provider_names,
+                    dry_run=run_options.dry_run,
+                    no_cache=run_options.no_cache,
+                )
+            else:
+                binary = binary.update(
+                    binproviders=update_provider_names or None,
+                    dry_run=run_options.dry_run,
+                    no_cache=run_options.no_cache,
+                )
+                if not binary.is_valid:
+                    binary = binary.install(
+                        dry_run=run_options.dry_run,
+                        no_cache=run_options.no_cache,
+                    )
         elif install_before_run:
-            binary = binary.load_or_install(dry_run=group_options.dry_run)
+            binary = binary.install(
+                dry_run=run_options.dry_run,
+                no_cache=run_options.no_cache,
+            )
         else:
-            binary = binary.load()
+            binary = binary.load(no_cache=run_options.no_cache)
     except ABXPkgError as err:
         _echo(format_error(err), err=True)
         ctx.exit(1)
         return
 
-    if group_options.dry_run:
+    if run_options.dry_run:
         # Provider exec honors dry_run and returns a no-op CompletedProcess;
         # keep the behavior consistent here so nothing is actually run.
         ctx.exit(0)
@@ -873,7 +968,9 @@ def run_command(
 # occurrences to ``--flag=True`` so a single click string option can handle
 # both the bare and the value form. Callers pass ``--dry-run=False`` or
 # ``--dry-run=None`` to override the auto-True semantics.
-_BARE_TRUE_BOOL_FLAGS = frozenset({"--dry-run", "--debug", "--postinstall-scripts"})
+_BARE_TRUE_BOOL_FLAGS = frozenset(
+    {"--dry-run", "--debug", "--postinstall-scripts", "--no-cache"},
+)
 
 
 def _expand_bare_bool_flags(argv: list[str]) -> list[str]:
@@ -940,10 +1037,11 @@ _ABX_USAGE = (
     "Usage: abx [OPTIONS] BINARY_NAME [BINARY_ARGS]...\n"
     "\n"
     "Install (if needed) and run a package-managed binary.\n"
-    "Equivalent to `abx-pkg [OPTIONS] --install run BINARY_NAME [BINARY_ARGS]`.\n"
+    "Equivalent to `abx-pkg run --install [OPTIONS] BINARY_NAME [BINARY_ARGS]`.\n"
     "\n"
     "Options (forwarded to abx-pkg): --lib, --binproviders, --dry-run,\n"
     "--debug, "
+    "--no-cache, "
     "--update, --version, --help.\n"
 )
 
@@ -995,7 +1093,7 @@ def abx_main() -> None:
     """Console-script entrypoint for the thin ``abx`` alias.
 
     Rewrites ``abx [OPTS] BINARY [ARGS]`` into
-    ``abx-pkg [OPTS] --install run BINARY [ARGS]`` and hands it off to the
+    ``abx-pkg run --install [OPTS] BINARY [ARGS]`` and hands it off to the
     existing click group. Keeps us from redefining any of the rich-click
     surface area — every option is still documented and parsed exactly
     once, by ``abx-pkg`` itself.
@@ -1016,9 +1114,9 @@ def abx_main() -> None:
         _echo(_ABX_USAGE, err=True)
         sys.exit(2)
 
-    # --update already implies load_or_install, so adding --install alongside
+    # --update already implies "install if missing", so adding --install alongside
     # it is a no-op; always injecting --install keeps this wrapper stateless.
-    cli([*pre, "--install", "run", *rest])
+    cli(["run", "--install", *pre, *rest])
 
 
 __all__ = [
@@ -1033,6 +1131,7 @@ __all__ = [
     "parse_provider_names",
     "resolve_debug",
     "resolve_dry_run",
+    "resolve_no_cache",
     "resolve_lib_dir",
     "version_report",
 ]

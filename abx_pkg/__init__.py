@@ -27,7 +27,6 @@ from .exceptions import (
     BinaryOperationError,
     BinaryInstallError,
     BinaryLoadError,
-    BinaryLoadOrInstallError,
     BinaryUpdateError,
     BinaryUninstallError,
 )
@@ -138,7 +137,6 @@ __all__ = [
     "BinaryOperationError",
     "BinaryInstallError",
     "BinaryLoadError",
-    "BinaryLoadOrInstallError",
     "BinaryUpdateError",
     "BinaryUninstallError",
     # Helper Types

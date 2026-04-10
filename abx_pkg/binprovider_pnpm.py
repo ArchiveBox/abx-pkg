@@ -7,7 +7,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from typing import ClassVar, Self
+from typing import Self
 
 from platformdirs import user_cache_path
 from pydantic import Field, TypeAdapter, computed_field, model_validator
@@ -44,7 +44,6 @@ class PnpmProvider(BinProvider):
 
     name: BinProviderName = "pnpm"
     INSTALLER_BIN: BinName = "pnpm"
-    INSTALL_ROOT_FIELD: ClassVar[str | None] = "pnpm_prefix"
 
     PATH: PATHStr = ""
     postinstall_scripts: bool | None = Field(
@@ -58,7 +57,11 @@ class PnpmProvider(BinProvider):
 
     # None = -g global, otherwise it's a path.
     # Default: ABX_PKG_PNPM_ROOT > ABX_PKG_LIB_DIR/pnpm > None.
-    pnpm_prefix: Path | None = abx_pkg_install_root_default("pnpm")
+    install_root: Path | None = Field(
+        default_factory=lambda: abx_pkg_install_root_default("pnpm"),
+        validation_alias="pnpm_prefix",
+    )
+    bin_dir: Path | None = None
 
     cache_dir: Path = USER_CACHE_PATH
     cache_arg: str = ""  # re-derived per-instance from cache_dir in detect_cache_arg
@@ -118,35 +121,27 @@ class PnpmProvider(BinProvider):
     @computed_field
     @property
     def is_valid(self) -> bool:
-        if self.pnpm_prefix:
-            bin_dir = self.pnpm_prefix / "node_modules" / ".bin"
-            if not (bin_dir.is_dir() and os.access(bin_dir, os.R_OK)):
-                return False
+        if self.bin_dir and not (
+            self.bin_dir.is_dir() and os.access(self.bin_dir, os.R_OK)
+        ):
+            return False
         return bool(self.INSTALLER_BIN_ABSPATH)
-
-    @computed_field
-    @property
-    def install_root(self) -> Path | None:
-        return self.pnpm_prefix
-
-    @computed_field
-    @property
-    def bin_dir(self) -> Path | None:
-        return self.pnpm_prefix / "node_modules" / ".bin" if self.pnpm_prefix else None
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
+        if self.bin_dir is None and self.install_root is not None:
+            self.bin_dir = self.install_root / "node_modules" / ".bin"
         if self.euid is None:
             self.euid = self.detect_euid(
-                owner_paths=(self.pnpm_prefix,),
+                owner_paths=(self.install_root,),
                 preserve_root=True,
             )
         return self
 
     @model_validator(mode="after")
     def load_PATH_from_pnpm_prefix(self) -> Self:
-        if self.pnpm_prefix:
-            self.PATH = self._merge_PATH(self.pnpm_prefix / "node_modules" / ".bin")
+        if self.bin_dir:
+            self.PATH = self._merge_PATH(self.bin_dir)
         else:
             # In global mode, pnpm puts shims under PNPM_HOME (from env, or
             # ``<cache_dir>/pnpm-home`` — the same fallback exec() uses).
@@ -156,16 +151,20 @@ class PnpmProvider(BinProvider):
             self.PATH = self._merge_PATH(pnpm_home, PATH=self.PATH)
         return self
 
-    def exec(self, bin_name, cmd=(), cwd: Path | str = ".", quiet=False, **kwargs):
+    def exec(
+        self,
+        bin_name,
+        cmd=(),
+        cwd: Path | str = ".",
+        quiet=False,
+        should_log_command: bool = True,
+        **kwargs,
+    ):
         # pnpm REQUIRES PNPM_HOME on PATH for global installs to work.
         env = (kwargs.pop("env", None) or os.environ.copy()).copy()
         pnpm_home = Path(
             env.get("PNPM_HOME")
-            or (
-                self.pnpm_prefix / "node_modules" / ".bin"
-                if self.pnpm_prefix
-                else self.cache_dir / "pnpm-home"
-            ),
+            or (self.bin_dir if self.bin_dir else self.cache_dir / "pnpm-home"),
         )
         pnpm_home.mkdir(parents=True, exist_ok=True)
         env["PNPM_HOME"] = str(pnpm_home)
@@ -177,6 +176,7 @@ class PnpmProvider(BinProvider):
             cmd=cmd,
             cwd=cwd,
             quiet=quiet,
+            should_log_command=should_log_command,
             env=env,
             **kwargs,
         )
@@ -187,6 +187,7 @@ class PnpmProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
     ) -> None:
         if not self._ensure_writable_cache_dir(self.cache_dir):
             # pnpm 10.x has no ``--no-cache`` flag — passing one would be
@@ -201,11 +202,26 @@ class PnpmProvider(BinProvider):
             self.cache_dir = fallback_store
             self.cache_arg = f"--store-dir={fallback_store}"
             self._ensure_writable_cache_dir(fallback_store)
-        if self.pnpm_prefix:
-            (self.pnpm_prefix / "node_modules" / ".bin").mkdir(
-                parents=True,
-                exist_ok=True,
-            )
+        if self.bin_dir:
+            self.bin_dir.mkdir(parents=True, exist_ok=True)
+
+    def _linked_bin_path(self, bin_name: BinName | HostBinPath) -> Path | None:
+        if self.bin_dir is None:
+            return None
+        return self.bin_dir / str(bin_name)
+
+    def _refresh_bin_link(
+        self,
+        bin_name: BinName | HostBinPath,
+        target: HostBinPath,
+    ) -> HostBinPath:
+        link_path = self._linked_bin_path(bin_name)
+        assert link_path is not None, "_refresh_bin_link requires bin_dir to be set"
+        link_path.parent.mkdir(parents=True, exist_ok=True)
+        if link_path.exists() or link_path.is_symlink():
+            link_path.unlink(missing_ok=True)
+        link_path.symlink_to(target)
+        return TypeAdapter(HostBinPath).validate_python(link_path)
 
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(
@@ -215,9 +231,10 @@ class PnpmProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        self.setup()
+        self.setup(no_cache=no_cache)
         installer_bin = self._require_installer_bin()
         postinstall_scripts = bool(postinstall_scripts)
         install_args = install_args or self.get_install_args(bin_name)
@@ -255,7 +272,7 @@ class PnpmProvider(BinProvider):
             cmd.append(
                 f"--config.minimumReleaseAge={max(int(min_release_age * 24 * 60), 1)}",
             )
-        cmd.append(f"--dir={self.pnpm_prefix}" if self.pnpm_prefix else "--global")
+        cmd.append(f"--dir={self.install_root}" if self.install_root else "--global")
         cmd.extend(install_args)
 
         proc = self.exec(bin_name=installer_bin, cmd=cmd, timeout=timeout)
@@ -271,9 +288,10 @@ class PnpmProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        self.setup()
+        self.setup(no_cache=no_cache)
         installer_bin = self._require_installer_bin()
         postinstall_scripts = bool(postinstall_scripts)
         install_args = install_args or self.get_install_args(bin_name)
@@ -293,7 +311,11 @@ class PnpmProvider(BinProvider):
         ):
             postinstall_scripts = False
 
-        cmd: list[str] = ["update", *self.pnpm_install_args, self.cache_arg]
+        cmd: list[str] = [
+            "add" if min_version is not None else "update",
+            *self.pnpm_install_args,
+            self.cache_arg,
+        ]
         if not postinstall_scripts:
             cmd.append("--ignore-scripts")
         else:
@@ -310,7 +332,7 @@ class PnpmProvider(BinProvider):
             cmd.append(
                 f"--config.minimumReleaseAge={max(int(min_release_age * 24 * 60), 1)}",
             )
-        cmd.append(f"--dir={self.pnpm_prefix}" if self.pnpm_prefix else "--global")
+        cmd.append(f"--dir={self.install_root}" if self.install_root else "--global")
         cmd.extend(install_args)
 
         proc = self.exec(bin_name=installer_bin, cmd=cmd, timeout=timeout)
@@ -334,7 +356,7 @@ class PnpmProvider(BinProvider):
         # pnpm remove rejects --ignore-scripts and --config.minimumReleaseAge,
         # so don't pass either even if they were set as provider defaults.
         cmd: list[str] = ["remove", *self.pnpm_install_args, self.cache_arg]
-        cmd.append(f"--dir={self.pnpm_prefix}" if self.pnpm_prefix else "--global")
+        cmd.append(f"--dir={self.install_root}" if self.install_root else "--global")
         cmd.extend(install_args)
 
         proc = self.exec(bin_name=installer_bin, cmd=cmd, timeout=timeout)
@@ -375,9 +397,15 @@ class PnpmProvider(BinProvider):
                 else {}
             ).keys()
             for alt_bin_name in alt_bin_names:
-                abspath = bin_abspath(alt_bin_name, PATH=self.PATH)
+                abspath = bin_abspath(
+                    alt_bin_name,
+                    PATH=str(self.bin_dir) if self.bin_dir else self.PATH,
+                )
                 if abspath:
-                    return TypeAdapter(HostBinPath).validate_python(abspath)
+                    direct_abspath = TypeAdapter(HostBinPath).validate_python(abspath)
+                    if str(alt_bin_name) == str(bin_name) or self.bin_dir is None:
+                        return direct_abspath
+                    return self._refresh_bin_link(bin_name, direct_abspath)
         except Exception:
             pass
         return None
@@ -419,7 +447,7 @@ class PnpmProvider(BinProvider):
                 bin_name=self.INSTALLER_BIN_ABSPATH,
                 cmd=[
                     "ls",
-                    f"--dir={self.pnpm_prefix}" if self.pnpm_prefix else "--global",
+                    f"--dir={self.install_root}" if self.install_root else "--global",
                     "--depth=0",
                     "--json",
                     package,
@@ -439,8 +467,8 @@ class PnpmProvider(BinProvider):
                 self.exec(
                     bin_name=self.INSTALLER_BIN_ABSPATH,
                     cmd=(
-                        ["root", f"--dir={self.pnpm_prefix}"]
-                        if self.pnpm_prefix
+                        ["root", f"--dir={self.install_root}"]
+                        if self.install_root
                         else ["root", "--global"]
                     ),
                     timeout=timeout,

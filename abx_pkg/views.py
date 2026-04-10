@@ -47,7 +47,7 @@ def binaries_list_view(request: HttpRequest, **kwargs) -> TableContext:
     }
 
     for binary in settings.get_all_abx_pkg_binaries():
-        binary = binary.load_or_install()
+        binary = binary.install()
 
         rows["Binary"].append(ItemLink(binary.name, key=binary.name))
         rows["Found Version"].append(binary.loaded_version)
@@ -75,7 +75,7 @@ def binary_detail_view(request: HttpRequest, key: str, **kwargs) -> ItemContext:
 
     assert binary, f"Could not find a binary matching the specified name: {key}"
 
-    binary = binary.load_or_install()
+    binary = binary.install()
 
     fields: NestedDict = {
         "binprovider": str(binary.loaded_binprovider),
