@@ -1568,6 +1568,15 @@ class BinProvider(BaseModel):
         )
 
         if updated_abspath and updated_version:
+            # Persist to on-disk cache for fast loading in future processes
+            metadata_cache.set(
+                self.name,
+                bin_name,
+                self.install_root,
+                updated_abspath,
+                str(updated_version),
+                sha256,
+            )
             logger.info(
                 format_loaded_binary(
                     "⬆ Updated",

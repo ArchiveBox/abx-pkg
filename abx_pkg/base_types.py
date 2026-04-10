@@ -79,7 +79,8 @@ def abx_pkg_cache_dir_default(provider_name: str) -> Path:
     whatever this function returns.
     """
     specific = os.environ.get(
-        f"ABX_PKG_{provider_name.upper()}_CACHE_DIR", "",
+        f"ABX_PKG_{provider_name.upper()}_CACHE_DIR",
+        "",
     ).strip()
     if specific:
         return Path(specific).expanduser().resolve()

@@ -75,7 +75,8 @@ class BinaryMetadataCache:
         if self._data is not None:
             return self._data
         try:
-            self._data = json.loads(self._cache_file.read_text())
+            loaded = json.loads(self._cache_file.read_text())
+            self._data = loaded if isinstance(loaded, dict) else {}
         except (OSError, json.JSONDecodeError, ValueError):
             self._data = {}
         return self._data
@@ -117,8 +118,10 @@ class BinaryMetadataCache:
         if not abspath:
             return None
 
-        # Check age
+        # Check age (guard against malformed non-numeric cached_at)
         cached_at = entry.get("cached_at", 0)
+        if not isinstance(cached_at, (int, float)):
+            return None
         if time.time() - cached_at > _MAX_AGE_SECONDS:
             return None
 
@@ -214,8 +217,12 @@ class BinaryMetadataCache:
                 stale_keys.append(key)
                 continue
 
-            # Expired
-            if now - entry.get("cached_at", 0) > _MAX_AGE_SECONDS:
+            # Expired (guard against malformed non-numeric cached_at)
+            cached_at = entry.get("cached_at", 0)
+            if (
+                not isinstance(cached_at, (int, float))
+                or now - cached_at > _MAX_AGE_SECONDS
+            ):
                 stale_keys.append(key)
                 continue
 
