@@ -654,7 +654,7 @@ provider = PipProvider(install_root=Path("/tmp/venv")).get_provider_with_overrid
 
 Providers with isolated install locations also expose a shared constructor surface:
 
-- `install_root`: shared alias for provider-specific roots such as `pip_venv`, `npm_prefix`, `cargo_root`, `gem_home`, `gopath`, `nix_profile`, `docker_shim_dir.parent`, and `brew_prefix`.
+- `install_root`: shared alias for provider-specific roots such as `pip_venv`, `npm_prefix`, `cargo_root`, `gem_home`, `gopath`, `nix_profile`, `docker_root`, and `brew_prefix`.
 - `bin_dir`: shared alias for providers that separate package state from executable output, such as `gem_bindir`, `gobin`, and `docker_shim_dir`.
 - `provider.install_root` / `provider.bin_dir`: normalized computed properties you can inspect after construction, regardless of which provider-specific args were used.
 - Legacy provider-specific args still work. The shared aliases are additive, not replacements.

@@ -462,7 +462,7 @@ PROVIDER_ENV_VARS: dict[str, list[dict[str, str]]] = {
     "docker": [
         {
             "name": "ABX_PKG_DOCKER_ROOT",
-            "description": "Overrides docker_shim_dir parent.",
+            "description": "Overrides docker_root / install_root.",
         },
     ],
     "brew": [
