@@ -64,28 +64,24 @@ class PuppeteerProvider(BinProvider):
 
     @computed_field
     @property
-    def install_root(self) -> Path | None:
+    def install_root(self) -> Path:
         if self.puppeteer_root:
             return self.puppeteer_root
         if self.browser_bin_dir:
             return self.browser_bin_dir.parent
         if self.browser_cache_dir:
             return self.browser_cache_dir.parent
-        return None
+        return DEFAULT_PUPPETEER_ROOT
 
     @computed_field
     @property
-    def bin_dir(self) -> Path | None:
-        if self.browser_bin_dir:
-            return self.browser_bin_dir
-        return self.install_root / "bin" if self.install_root else None
+    def bin_dir(self) -> Path:
+        return self.browser_bin_dir or (self.install_root / "bin")
 
     @computed_field
     @property
-    def cache_dir(self) -> Path | None:
-        if self.browser_cache_dir:
-            return self.browser_cache_dir
-        return self.install_root / "cache" if self.install_root else None
+    def cache_dir(self) -> Path:
+        return self.browser_cache_dir or (self.install_root / "cache")
 
     @computed_field
     @property

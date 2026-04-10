@@ -190,7 +190,7 @@ class YarnProvider(BinProvider):
         if not prefix:
             raise TypeError(
                 "YarnProvider.setup requires yarn_prefix to be set "
-                "(pass install_root= or set ABX_PKG_YARN_ROOT / ABX_PKG_LIB_DIR)"
+                "(pass install_root= or set ABX_PKG_YARN_ROOT / ABX_PKG_LIB_DIR)",
             )
         prefix.mkdir(parents=True, exist_ok=True)
         package_json = prefix / "package.json"
@@ -259,7 +259,7 @@ class YarnProvider(BinProvider):
 
         # Rewrite ``.yarnrc.yml`` (Yarn 2+ only) so npmMinimalAgeGate /
         # enableScripts always reflect the latest provider/binary defaults.
-        if is_berry and version is not None:
+        if is_berry and version is not None and self.yarn_prefix:
             prefix = self.yarn_prefix
             yarnrc = prefix / ".yarnrc.yml"
             existing = yarnrc.read_text() if yarnrc.exists() else ""
@@ -335,7 +335,7 @@ class YarnProvider(BinProvider):
             and version >= berry_threshold
         )
 
-        if is_berry and version is not None:
+        if is_berry and version is not None and self.yarn_prefix:
             prefix = self.yarn_prefix
             yarnrc = prefix / ".yarnrc.yml"
             existing = yarnrc.read_text() if yarnrc.exists() else ""
@@ -454,6 +454,7 @@ class YarnProvider(BinProvider):
             if main_package.startswith("@")
             else main_package.split("@", 1)[0]
         )
+        assert self.yarn_prefix is not None  # guarded by early return above
         package_json = self.yarn_prefix / "node_modules" / package / "package.json"
         if package_json.exists():
             try:
