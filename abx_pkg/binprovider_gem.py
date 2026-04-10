@@ -89,36 +89,6 @@ class GemProvider(BinProvider):
         install_root.mkdir(parents=True, exist_ok=True)
         bin_dir.mkdir(parents=True, exist_ok=True)
 
-    def _gem_install_args(self) -> list[str]:
-        install_root = self.install_root
-        bin_dir = self.bin_dir
-        assert install_root is not None
-        assert bin_dir is not None
-        return [
-            "--install-dir",
-            str(install_root),
-            "--bindir",
-            str(bin_dir),
-            *self.gem_install_args,
-        ]
-
-    def _gem_scope_args(self) -> list[str]:
-        install_root = self.install_root
-        assert install_root is not None
-        return [
-            "-i",
-            str(install_root),
-        ]
-
-    def _gem_env(self) -> dict[str, str]:
-        install_root = self.install_root
-        assert install_root is not None
-        env = os.environ.copy()
-        gem_home = str(install_root)
-        env["GEM_HOME"] = gem_home
-        env["GEM_PATH"] = gem_home
-        return env
-
     def _patch_generated_wrappers(self) -> None:
         install_root = self.install_root
         bin_dir = self.bin_dir
@@ -174,11 +144,28 @@ class GemProvider(BinProvider):
         if min_version and not any(arg.startswith("--version") for arg in install_args):
             install_args = ["--version", f">={min_version}", *install_args]
         installer_bin = self._require_installer_bin()
+        install_root = self.install_root
+        bin_dir = self.bin_dir
+        assert install_root is not None
+        assert bin_dir is not None
+        gem_home = str(install_root)
 
         proc = self.exec(
             bin_name=installer_bin,
-            cmd=["install", *self._gem_install_args(), *install_args],
-            env=self._gem_env(),
+            cmd=[
+                "install",
+                "--install-dir",
+                gem_home,
+                "--bindir",
+                str(bin_dir),
+                *self.gem_install_args,
+                *install_args,
+            ],
+            env={
+                **os.environ,
+                "GEM_HOME": gem_home,
+                "GEM_PATH": gem_home,
+            },
             timeout=timeout,
         )
         if proc.returncode != 0:
@@ -207,11 +194,28 @@ class GemProvider(BinProvider):
         if min_version and not any(arg.startswith("--version") for arg in install_args):
             install_args = ["--version", f">={min_version}", *install_args]
         installer_bin = self._require_installer_bin()
+        install_root = self.install_root
+        bin_dir = self.bin_dir
+        assert install_root is not None
+        assert bin_dir is not None
+        gem_home = str(install_root)
 
         proc = self.exec(
             bin_name=installer_bin,
-            cmd=["update", *self._gem_install_args(), *install_args],
-            env=self._gem_env(),
+            cmd=[
+                "update",
+                "--install-dir",
+                gem_home,
+                "--bindir",
+                str(bin_dir),
+                *self.gem_install_args,
+                *install_args,
+            ],
+            env={
+                **os.environ,
+                "GEM_HOME": gem_home,
+                "GEM_PATH": gem_home,
+            },
             timeout=timeout,
         )
         if proc.returncode != 0:
@@ -232,6 +236,9 @@ class GemProvider(BinProvider):
     ) -> bool:
         install_args = install_args or self.get_install_args(bin_name)
         installer_bin = self._require_installer_bin()
+        install_root = self.install_root
+        assert install_root is not None
+        gem_home = str(install_root)
 
         proc = self.exec(
             bin_name=installer_bin,
@@ -241,10 +248,15 @@ class GemProvider(BinProvider):
                 "--executables",
                 "--ignore-dependencies",
                 "--force",
-                *self._gem_scope_args(),
+                "-i",
+                gem_home,
                 *install_args,
             ],
-            env=self._gem_env(),
+            env={
+                **os.environ,
+                "GEM_HOME": gem_home,
+                "GEM_PATH": gem_home,
+            },
             timeout=timeout,
         )
         if proc.returncode != 0 and "is not installed in GEM_HOME" not in proc.stderr:

@@ -90,16 +90,6 @@ class GoGetProvider(BinProvider):
         install_root.mkdir(parents=True, exist_ok=True)
         bin_dir.mkdir(parents=True, exist_ok=True)
 
-    def _go_env(self) -> dict[str, str]:
-        install_root = self.install_root
-        bin_dir = self.bin_dir
-        assert install_root is not None
-        assert bin_dir is not None
-        env = os.environ.copy()
-        env["GOPATH"] = str(install_root)
-        env["GOBIN"] = str(bin_dir)
-        return env
-
     def default_install_args_handler(self, bin_name: BinName, **context) -> InstallArgs:
         bin_name_str = str(bin_name)
         if not (
@@ -129,11 +119,19 @@ class GoGetProvider(BinProvider):
 
         install_args = install_args or self.get_install_args(bin_name)
         installer_bin = self._require_installer_bin()
+        install_root = self.install_root
+        bin_dir = self.bin_dir
+        assert install_root is not None
+        assert bin_dir is not None
 
         proc = self.exec(
             bin_name=installer_bin,
             cmd=["install", *self.go_install_args, *install_args],
-            env=self._go_env(),
+            env={
+                **os.environ,
+                "GOPATH": str(install_root),
+                "GOBIN": str(bin_dir),
+            },
             timeout=timeout,
         )
         if proc.returncode != 0:
@@ -236,11 +234,19 @@ class GoGetProvider(BinProvider):
         abspath = abspath or self.get_abspath(bin_name, quiet=True)
         if not abspath or not self.INSTALLER_BIN_ABSPATH:
             return None
+        install_root = self.install_root
+        bin_dir = self.bin_dir
+        assert install_root is not None
+        assert bin_dir is not None
 
         proc = self.exec(
             bin_name=self.INSTALLER_BIN_ABSPATH,
             cmd=["version", "-m", abspath],
-            env=self._go_env(),
+            env={
+                **os.environ,
+                "GOPATH": str(install_root),
+                "GOBIN": str(bin_dir),
+            },
             timeout=timeout,
             quiet=True,
         )

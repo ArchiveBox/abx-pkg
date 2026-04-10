@@ -123,13 +123,6 @@ class NixProvider(BinProvider):
         if self.nix_state_dir:
             self.nix_state_dir.mkdir(parents=True, exist_ok=True)
 
-    def _nix_env(self) -> dict[str, str]:
-        env = os.environ.copy()
-        if self.nix_state_dir:
-            env["XDG_STATE_HOME"] = str(self.nix_state_dir)
-            env["XDG_CACHE_HOME"] = str(self.nix_state_dir / "cache")
-        return env
-
     def _profile_element_name(
         self,
         bin_name: str,
@@ -161,6 +154,10 @@ class NixProvider(BinProvider):
 
         install_args = install_args or self.get_install_args(bin_name)
         installer_bin = self._require_installer_bin()
+        env = os.environ.copy()
+        if self.nix_state_dir:
+            env["XDG_STATE_HOME"] = str(self.nix_state_dir)
+            env["XDG_CACHE_HOME"] = str(self.nix_state_dir / "cache")
 
         proc = self.exec(
             bin_name=installer_bin,
@@ -172,7 +169,7 @@ class NixProvider(BinProvider):
                 str(self.install_root),
                 *install_args,
             ],
-            env=self._nix_env(),
+            env=env,
             timeout=timeout,
         )
         if proc.returncode != 0:
@@ -195,6 +192,10 @@ class NixProvider(BinProvider):
             install_args=install_args,
         )
         installer_bin = self._require_installer_bin()
+        env = os.environ.copy()
+        if self.nix_state_dir:
+            env["XDG_STATE_HOME"] = str(self.nix_state_dir)
+            env["XDG_CACHE_HOME"] = str(self.nix_state_dir / "cache")
 
         proc = self.exec(
             bin_name=installer_bin,
@@ -206,7 +207,7 @@ class NixProvider(BinProvider):
                 str(self.install_root),
                 profile_element,
             ],
-            env=self._nix_env(),
+            env=env,
             timeout=timeout,
         )
         if proc.returncode != 0:
@@ -229,6 +230,10 @@ class NixProvider(BinProvider):
             install_args=install_args,
         )
         installer_bin = self._require_installer_bin()
+        env = os.environ.copy()
+        if self.nix_state_dir:
+            env["XDG_STATE_HOME"] = str(self.nix_state_dir)
+            env["XDG_CACHE_HOME"] = str(self.nix_state_dir / "cache")
 
         proc = self.exec(
             bin_name=installer_bin,
@@ -240,7 +245,7 @@ class NixProvider(BinProvider):
                 str(self.install_root),
                 profile_element,
             ],
-            env=self._nix_env(),
+            env=env,
             timeout=timeout,
         )
         if proc.returncode not in (0, 1):

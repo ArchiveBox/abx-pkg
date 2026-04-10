@@ -82,34 +82,11 @@ class CargoProvider(BinProvider):
         install_root = self.install_root
         assert install_root is not None
         self.cargo_home.mkdir(parents=True, exist_ok=True)
-        self._cargo_target_dir().mkdir(parents=True, exist_ok=True)
+        (install_root / "target").mkdir(parents=True, exist_ok=True)
         if install_root != self.cargo_home:
             bin_dir = self.bin_dir
             assert bin_dir is not None
             bin_dir.mkdir(parents=True, exist_ok=True)
-
-    def _cargo_target_dir(self) -> Path:
-        install_root = self.install_root
-        assert install_root is not None
-        return install_root / "target"
-
-    def _cargo_env(self) -> dict[str, str]:
-        install_root = self.install_root
-        assert install_root is not None
-        env = os.environ.copy()
-        env["CARGO_HOME"] = str(self.cargo_home)
-        env["CARGO_TARGET_DIR"] = str(self._cargo_target_dir())
-        if install_root != self.cargo_home:
-            env["CARGO_INSTALL_ROOT"] = str(install_root)
-        return env
-
-    def _cargo_install_args(self) -> list[str]:
-        install_root = self.install_root
-        assert install_root is not None
-        install_args = [*self.cargo_install_args]
-        if install_root != self.cargo_home:
-            install_args.extend(["--root", str(install_root)])
-        return install_args
 
     def _cargo_package_specs(
         self,
@@ -171,11 +148,25 @@ class CargoProvider(BinProvider):
         if min_version and not any(arg.startswith("--version") for arg in install_args):
             install_args = ["--version", f">={min_version}", *install_args]
         installer_bin = self._require_installer_bin()
+        install_root = self.install_root
+        assert install_root is not None
+        cargo_install_args = [*self.cargo_install_args]
+        if install_root != self.cargo_home:
+            cargo_install_args.extend(["--root", str(install_root)])
 
         proc = self.exec(
             bin_name=installer_bin,
-            cmd=["install", *self._cargo_install_args(), *install_args],
-            env=self._cargo_env(),
+            cmd=["install", *cargo_install_args, *install_args],
+            env={
+                **os.environ,
+                "CARGO_HOME": str(self.cargo_home),
+                "CARGO_TARGET_DIR": str(install_root / "target"),
+                **(
+                    {"CARGO_INSTALL_ROOT": str(install_root)}
+                    if install_root != self.cargo_home
+                    else {}
+                ),
+            },
             timeout=timeout,
         )
         if proc.returncode != 0:
@@ -202,16 +193,30 @@ class CargoProvider(BinProvider):
         if min_version and not any(arg.startswith("--version") for arg in install_args):
             install_args = ["--version", f">={min_version}", *install_args]
         installer_bin = self._require_installer_bin()
+        install_root = self.install_root
+        assert install_root is not None
+        cargo_install_args = [*self.cargo_install_args]
+        if install_root != self.cargo_home:
+            cargo_install_args.extend(["--root", str(install_root)])
 
         proc = self.exec(
             bin_name=installer_bin,
             cmd=[
                 "install",
                 "--force",
-                *self._cargo_install_args(),
+                *cargo_install_args,
                 *install_args,
             ],
-            env=self._cargo_env(),
+            env={
+                **os.environ,
+                "CARGO_HOME": str(self.cargo_home),
+                "CARGO_TARGET_DIR": str(install_root / "target"),
+                **(
+                    {"CARGO_INSTALL_ROOT": str(install_root)}
+                    if install_root != self.cargo_home
+                    else {}
+                ),
+            },
             timeout=timeout,
         )
         if proc.returncode != 0:
@@ -234,20 +239,30 @@ class CargoProvider(BinProvider):
             install_args=install_args,
         )
         installer_bin = self._require_installer_bin()
+        install_root = self.install_root
+        assert install_root is not None
 
         proc = self.exec(
             bin_name=installer_bin,
             cmd=[
                 "uninstall",
                 *(
-                    ["--root", str(self.install_root)]
-                    if self.install_root is not None
-                    and self.install_root != self.cargo_home
+                    ["--root", str(install_root)]
+                    if install_root != self.cargo_home
                     else []
                 ),
                 *package_specs,
             ],
-            env=self._cargo_env(),
+            env={
+                **os.environ,
+                "CARGO_HOME": str(self.cargo_home),
+                "CARGO_TARGET_DIR": str(install_root / "target"),
+                **(
+                    {"CARGO_INSTALL_ROOT": str(install_root)}
+                    if install_root != self.cargo_home
+                    else {}
+                ),
+            },
             timeout=timeout,
         )
         if proc.returncode != 0 and "did not match any packages" not in proc.stderr:
