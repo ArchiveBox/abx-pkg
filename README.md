@@ -566,6 +566,15 @@ All abx-pkg env vars are read once at import time and only apply when set. Expli
 
 Install-root precedence (most specific wins): explicit `install_root=` / provider alias kwarg > `ABX_PKG_<NAME>_ROOT` > `ABX_PKG_LIB_DIR/<name>` > provider-native global mode.
 
+**Cache-directory controls** (one global default + one per-provider override):
+
+| Variable | Applies to | Effect |
+| --- | --- | --- |
+| `ABX_PKG_CACHE_DIR` | all providers with a `cache_dir` field | Centralized download / content-addressable store root. When set, each provider defaults its `cache_dir` to `$ABX_PKG_CACHE_DIR/<provider name>` (e.g. `<cache>/pip`, `<cache>/uv`, `<cache>/npm`). Default: `~/.cache/abx-pkg`. Sharing caches across `install_root`s lets providers like `uv` and `pnpm` hardlink from their global CAS, giving near-instant installs for previously-downloaded packages. |
+| `ABX_PKG_<BINPROVIDER>_CACHE_DIR` | the matching provider's `cache_dir` | Per-provider override; beats `ABX_PKG_CACHE_DIR/<provider name>`. Examples: `ABX_PKG_PIP_CACHE_DIR`, `ABX_PKG_UV_CACHE_DIR`, `ABX_PKG_NPM_CACHE_DIR`. |
+
+Cache-directory precedence (most specific wins): explicit `cache_dir=` kwarg > `ABX_PKG_<NAME>_CACHE_DIR` > `ABX_PKG_CACHE_DIR/<name>` > `~/.cache/abx-pkg/<name>`.
+
 **Provider-specific binary overrides:**
 
 Each provider also honors a `<NAME>_BINARY=/abs/path/to/<name>` env var to pin the exact executable it shells out to — `PIP_BINARY`, `UV_BINARY`, `NPM_BINARY`, `PNPM_BINARY`, `YARN_BINARY`, `BUN_BINARY`, `DENO_BINARY`, etc.
@@ -732,7 +741,7 @@ Source: [`abx_pkg/binprovider_pip.py`](./abx_pkg/binprovider_pip.py) • Tests: 
 INSTALLER_BIN = "pip"
 PATH = ""                            # auto-built from global/user Python bin dirs
 pip_venv = None                      # set this for hermetic installs
-cache_dir = user_cache_path("pip", "abx-pkg") or <system temp>/pip-cache
+cache_dir = abx_pkg_cache_dir_default("pip")  # ~/.cache/abx-pkg/pip
 pip_install_args = ["--no-input", "--disable-pip-version-check", "--quiet"]
 pip_bootstrap_packages = ["pip", "setuptools"]
 ```
@@ -757,8 +766,8 @@ PATH = ""                            # prepends <uv_venv>/bin or uv_tool_bin_dir
 uv_venv = None                       # None = global uv tool mode, Path(...) = hermetic venv
 uv_tool_dir = None                   # mirrors $UV_TOOL_DIR (global mode only)
 uv_tool_bin_dir = None               # mirrors $UV_TOOL_BIN_DIR (global mode only)
-cache_dir = user_cache_path("uv", "abx-pkg") or <system temp>/uv-cache
-uv_install_args = []
+cache_dir = abx_pkg_cache_dir_default("uv")   # ~/.cache/abx-pkg/uv
+uv_install_args = ["--link-mode=hardlink"]    # hardlink from CAS for near-instant installs
 ```
 
 - Install root: **two modes, picked by whether `uv_venv` is set.**
@@ -781,7 +790,7 @@ Source: [`abx_pkg/binprovider_npm.py`](./abx_pkg/binprovider_npm.py) • Tests: 
 INSTALLER_BIN = "npm"
 PATH = ""                            # auto-built from npm local + global bin dirs
 npm_prefix = None                    # None = global install, Path(...) = hermetic-ish prefix
-cache_dir = user_cache_path("npm", "abx-pkg") or <system temp>/npm-cache
+cache_dir = abx_pkg_cache_dir_default("npm")   # ~/.cache/abx-pkg/npm
 npm_install_args = ["--force", "--no-audit", "--no-fund", "--loglevel=error"]
 ```
 
@@ -803,7 +812,7 @@ Source: [`abx_pkg/binprovider_pnpm.py`](./abx_pkg/binprovider_pnpm.py) • Tests
 INSTALLER_BIN = "pnpm"
 PATH = ""                            # auto-built from pnpm local + global bin dirs
 pnpm_prefix = None                   # None = global install, Path(...) = hermetic-ish prefix
-cache_dir = user_cache_path("pnpm", "abx-pkg") or <system temp>/pnpm-cache
+cache_dir = abx_pkg_cache_dir_default("pnpm")  # ~/.cache/abx-pkg/pnpm (CAS + hardlinks)
 pnpm_install_args = ["--loglevel=error"]
 ```
 
@@ -825,7 +834,7 @@ Source: [`abx_pkg/binprovider_yarn.py`](./abx_pkg/binprovider_yarn.py) • Tests
 INSTALLER_BIN = "yarn"
 PATH = ""                            # prepends <yarn_prefix>/node_modules/.bin
 yarn_prefix = None                   # workspace dir, defaults to ABX_PKG_YARN_ROOT or ~/.cache/abx-pkg/yarn
-cache_dir = user_cache_path("yarn", "abx-pkg") or <system temp>/yarn-cache
+cache_dir = abx_pkg_cache_dir_default("yarn")  # ~/.cache/abx-pkg/yarn
 yarn_install_args = []
 ```
 
@@ -847,7 +856,7 @@ Source: [`abx_pkg/binprovider_bun.py`](./abx_pkg/binprovider_bun.py) • Tests: 
 INSTALLER_BIN = "bun"
 PATH = ""                            # prepends <bun_prefix>/bin
 bun_prefix = None                    # mirrors $BUN_INSTALL, None = ~/.bun (host-default)
-cache_dir = user_cache_path("bun", "abx-pkg") or <system temp>/bun-cache
+cache_dir = abx_pkg_cache_dir_default("bun")   # ~/.cache/abx-pkg/bun
 bun_install_args = []
 ```
 
@@ -870,7 +879,7 @@ INSTALLER_BIN = "deno"
 PATH = ""                            # prepends <deno_root>/bin
 deno_root = None                     # mirrors $DENO_INSTALL_ROOT, None = ~/.deno
 deno_dir = None                      # mirrors $DENO_DIR for cache isolation
-cache_dir = user_cache_path("deno", "abx-pkg") or <system temp>/deno-cache
+cache_dir = abx_pkg_cache_dir_default("deno")  # ~/.cache/abx-pkg/deno
 deno_install_args = ["--allow-all"]
 deno_default_scheme = "npm"          # 'npm' or 'jsr'
 ```
