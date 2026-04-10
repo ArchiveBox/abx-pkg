@@ -185,18 +185,16 @@ class ShallowBinary(BaseModel):
 
     loaded_binprovider: InstanceOf["BinProvider"] | None = Field(
         default=None,
-        validation_alias="binprovider",
+        alias="binprovider",
     )
-    loaded_abspath: HostBinPath | None = Field(default=None, validation_alias="abspath")
-    loaded_version: SemVer | None = Field(default=None, validation_alias="version")
-    loaded_sha256: Sha256 | None = Field(default=None, validation_alias="sha256")
+    loaded_abspath: HostBinPath | None = Field(default=None, alias="abspath")
+    loaded_version: SemVer | None = Field(default=None, alias="version")
+    loaded_sha256: Sha256 | None = Field(default=None, alias="sha256")
 
     def __getattr__(self, item: str) -> Any:
-        """Allow accessing fields as attributes by both field name and alias name"""
+        """Allow accessing loaded fields by their alias names."""
         for field, meta in type(self).model_fields.items():
             if meta.alias == item:
-                return getattr(self, field)
-            if meta.validation_alias == item:
                 return getattr(self, field)
         raise AttributeError(item)
 
