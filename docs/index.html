@@ -1558,7 +1558,7 @@
               <span>BinProviders</span>
             </div>
             <div class="stat">
-              <strong>249</strong>
+              <strong>266</strong>
               <span>Config fields</span>
             </div>
             <div class="stat">
@@ -1650,7 +1650,7 @@ env ABX_PKG_DRY_RUN=1 abx-pkg install some-package</code></pre>
           <details
             id="env"
             class="plugin-card plugin-card--fallback"
-            data-search="env envprovider read-only fallback that searches the existing $path for binaries already installed on the host. does not install anything. fallback path fallback path-only no-install read-only name path installer_bin euid dry_run postinstall_scripts min_release_age install_timeout version_timeout"
+            data-search="env envprovider read-only fallback that searches the existing $path for binaries already installed on the host. does not install anything. fallback path fallback path-only no-install read-only name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout"
             data-hero-plugin="env"
             data-hero-cli-command="abx-pkg --binproviders=env install curl"
             data-hero-python-command="from abx_pkg import Binary, env&#10;bin = Binary(name=&#34;curl&#34;, binproviders=[env]).install()"
@@ -1667,7 +1667,7 @@ env ABX_PKG_DRY_RUN=1 abx-pkg install some-package</code></pre>
                   <span class="chip">path-only</span>
                   <span class="chip">no-install</span>
                   <span class="chip">read-only</span>
-                  <span class="chip">9 fields</span>
+                  <span class="chip">11 fields</span>
                   <span class="chip">0 env vars</span>
                 </div>
               </div>
@@ -1764,6 +1764,20 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                     </tr>
                     <tr>
                       <td>
+                        <code>install_root</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-null">None</span></td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <code>bin_dir</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-null">None</span></td>
+                    </tr>
+                    <tr>
+                      <td>
                         <code>dry_run</code>
                       </td>
                       <td><code>bool</code></td>
@@ -1814,7 +1828,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="apt"
             class="plugin-card plugin-card--system"
-            data-search="apt aptprovider installs packages via debian / ubuntu&#39;s apt-get. always runs as root and targets the host package database. tries pyinfra/ansible drivers first, then falls back to direct apt-get. system system / os linux root no-hermetic name path installer_bin euid dry_run postinstall_scripts min_release_age install_timeout version_timeout"
+            data-search="apt aptprovider installs packages via debian / ubuntu&#39;s apt-get. always runs as root and targets the host package database. tries pyinfra/ansible drivers first, then falls back to direct apt-get. system system / os linux root no-hermetic name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout"
             data-hero-plugin="apt"
             data-hero-cli-command="abx-pkg --binproviders=apt install wget"
             data-hero-python-command="from abx_pkg import Binary, apt&#10;bin = Binary(name=&#34;wget&#34;, binproviders=[apt]).install()"
@@ -1831,7 +1845,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   <span class="chip">linux</span>
                   <span class="chip">root</span>
                   <span class="chip">no-hermetic</span>
-                  <span class="chip">9 fields</span>
+                  <span class="chip">11 fields</span>
                   <span class="chip">0 env vars</span>
                 </div>
               </div>
@@ -1928,6 +1942,20 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                     </tr>
                     <tr>
                       <td>
+                        <code>install_root</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-null">None</span></td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <code>bin_dir</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-null">None</span></td>
+                    </tr>
+                    <tr>
+                      <td>
                         <code>dry_run</code>
                       </td>
                       <td><code>bool</code></td>
@@ -1972,7 +2000,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="brew"
             class="plugin-card plugin-card--system"
-            data-search="brew brewprovider installs packages via homebrew on macos/linuxbrew. discovery-only prefix; no isolated hermetic homebrew cellar. auto-switches to pyinfra/ansible when postinstall_scripts=true. system system / os macos linuxbrew postinstall-opt-in name path installer_bin euid dry_run postinstall_scripts min_release_age install_timeout version_timeout brew_prefix abx_pkg_brew_root"
+            data-search="brew brewprovider installs packages via homebrew on macos/linuxbrew. discovery-only prefix; no isolated hermetic homebrew cellar. auto-switches to pyinfra/ansible when postinstall_scripts=true. system system / os macos linuxbrew postinstall-opt-in name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout abx_pkg_brew_root"
             data-hero-plugin="brew"
             data-hero-cli-command="abx-pkg --binproviders=brew install yt-dlp"
             data-hero-python-command="from abx_pkg import Binary, brew&#10;bin = Binary(name=&#34;yt-dlp&#34;, binproviders=[brew]).install()"
@@ -1989,7 +2017,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   <span class="chip">macos</span>
                   <span class="chip">linuxbrew</span>
                   <span class="chip">postinstall-opt-in</span>
-                  <span class="chip">10 fields</span>
+                  <span class="chip">11 fields</span>
                   <span class="chip">1 env vars</span>
                 </div>
               </div>
@@ -2086,6 +2114,20 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                     </tr>
                     <tr>
                       <td>
+                        <code>install_root</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-path">Path(&quot;/opt/homebrew&quot;)</span></td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <code>bin_dir</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-path">Path(&quot;/opt/homebrew/bin&quot;)</span></td>
+                    </tr>
+                    <tr>
+                      <td>
                         <code>dry_run</code>
                       </td>
                       <td><code>bool</code></td>
@@ -2118,13 +2160,6 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                       </td>
                       <td><code>int</code></td>
                       <td class="cfg-default"><span class="cfg-number">10</span></td>
-                    </tr>
-                    <tr>
-                      <td>
-                        <code>brew_prefix</code>
-                      </td>
-                      <td><code>Path</code></td>
-                      <td class="cfg-default"><span class="cfg-path">Path(&quot;/opt/homebrew&quot;)</span></td>
                     </tr>
                   </tbody>
                 </table>
@@ -2159,7 +2194,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="docker"
             class="plugin-card plugin-card--system"
-            data-search="docker dockerprovider pulls docker images and writes a local shim wrapper that runs docker run .... binary version is parsed from the image tag, so semver-like tags work best. pass image refs as install_args. system system / os docker image shim name path installer_bin euid dry_run postinstall_scripts min_release_age install_timeout version_timeout docker_root docker_shim_dir docker_run_args abx_pkg_docker_root"
+            data-search="docker dockerprovider pulls docker images and writes a local shim wrapper that runs docker run .... binary version is parsed from the image tag, so semver-like tags work best. pass image refs as install_args. system system / os docker image shim name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout docker_run_args abx_pkg_docker_root"
             data-hero-plugin="docker"
             data-hero-cli-command="abx-pkg --binproviders=docker install hello-world"
             data-hero-python-command="from abx_pkg import Binary, docker&#10;bin = Binary(name=&#34;hello-world&#34;, binproviders=[docker]).install()"
@@ -2273,6 +2308,20 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                     </tr>
                     <tr>
                       <td>
+                        <code>install_root</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-path">Path(&quot;/Users/squash/Library/Application Support/abx/lib/docker&quot;)</span></td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <code>bin_dir</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-path">Path(&quot;/Users/squash/Library/Application Support/abx/lib/docker/bin&quot;)</span></td>
+                    </tr>
+                    <tr>
+                      <td>
                         <code>dry_run</code>
                       </td>
                       <td><code>bool</code></td>
@@ -2308,20 +2357,6 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                     </tr>
                     <tr>
                       <td>
-                        <code>docker_root</code>
-                      </td>
-                      <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-null">None</span></td>
-                    </tr>
-                    <tr>
-                      <td>
-                        <code>docker_shim_dir</code>
-                      </td>
-                      <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-null">None</span></td>
-                    </tr>
-                    <tr>
-                      <td>
                         <code>docker_run_args</code>
                       </td>
                       <td><code>list</code></td>
@@ -2350,7 +2385,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                     <tr>
                       <td><code>ABX_PKG_DOCKER_ROOT</code></td>
                       <td><code>unset</code></td>
-                      <td><small>Overrides docker_shim_dir parent.</small></td>
+                      <td><small>Overrides docker_root / install_root.</small></td>
                     </tr>
                   </tbody>
                 </table>
@@ -2360,7 +2395,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="nix"
             class="plugin-card plugin-card--system"
-            data-search="nix nixprovider installs packages via nix profile install using flakes. set nix_profile for a custom profile, nix_state_dir for isolated state/cache. default install arg is nixpkgs#&lt;bin_name&gt;. system system / os nix flakes hermetic-support name path installer_bin euid dry_run postinstall_scripts min_release_age install_timeout version_timeout nix_profile nix_state_dir nix_install_args abx_pkg_nix_root abx_pkg_nix_profile"
+            data-search="nix nixprovider installs packages via nix profile install using flakes. set nix_profile for a custom profile, nix_state_dir for isolated state/cache. default install arg is nixpkgs#&lt;bin_name&gt;. system system / os nix flakes hermetic-support name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout nix_state_dir nix_install_args abx_pkg_nix_root abx_pkg_nix_profile"
             data-hero-plugin="nix"
             data-hero-cli-command="abx-pkg --binproviders=nix install ffmpeg"
             data-hero-python-command="from abx_pkg import Binary, nix&#10;bin = Binary(name=&#34;ffmpeg&#34;, binproviders=[nix]).install()"
@@ -2377,7 +2412,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   <span class="chip">nix</span>
                   <span class="chip">flakes</span>
                   <span class="chip">hermetic-support</span>
-                  <span class="chip">12 fields</span>
+                  <span class="chip">13 fields</span>
                   <span class="chip">2 env vars</span>
                 </div>
               </div>
@@ -2474,6 +2509,20 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                     </tr>
                     <tr>
                       <td>
+                        <code>install_root</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-path">Path(&quot;/Users/squash/.nix-profile&quot;)</span></td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <code>bin_dir</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-path">Path(&quot;/Users/squash/.nix-profile/bin&quot;)</span></td>
+                    </tr>
+                    <tr>
+                      <td>
                         <code>dry_run</code>
                       </td>
                       <td><code>bool</code></td>
@@ -2506,13 +2555,6 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                       </td>
                       <td><code>int</code></td>
                       <td class="cfg-default"><span class="cfg-number">10</span></td>
-                    </tr>
-                    <tr>
-                      <td>
-                        <code>nix_profile</code>
-                      </td>
-                      <td><code>Path</code></td>
-                      <td class="cfg-default"><span class="cfg-path">Path(&quot;/Users/squash/.nix-profile&quot;)</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -2572,7 +2614,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="bun"
             class="plugin-card plugin-card--language"
-            data-search="bun bunprovider installs javascript packages via bun. set bun_prefix to mirror $bun_install. supports both min_release_age (bun 1.3+) and postinstall_scripts=false via --ignore-scripts. language language ecosystem javascript prefix-support security-controls name path installer_bin euid dry_run postinstall_scripts min_release_age install_timeout version_timeout bun_prefix cache_dir cache_arg bun_install_args abx_pkg_bun_root bun_binary"
+            data-search="bun bunprovider installs javascript packages via bun. set bun_prefix to mirror $bun_install. supports both min_release_age (bun 1.3+) and postinstall_scripts=false via --ignore-scripts. language language ecosystem javascript prefix-support security-controls name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout cache_dir cache_arg bun_install_args abx_pkg_bun_root bun_binary"
             data-hero-plugin="bun"
             data-hero-cli-command="abx-pkg --binproviders=bun install prettier"
             data-hero-python-command="from abx_pkg import Binary, bun&#10;bin = Binary(name=&#34;prettier&#34;, binproviders=[bun]).install()"
@@ -2589,7 +2631,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   <span class="chip">javascript</span>
                   <span class="chip">prefix-support</span>
                   <span class="chip">security-controls</span>
-                  <span class="chip">13 fields</span>
+                  <span class="chip">14 fields</span>
                   <span class="chip">2 env vars</span>
                 </div>
               </div>
@@ -2686,6 +2728,20 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                     </tr>
                     <tr>
                       <td>
+                        <code>install_root</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-null">None</span></td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <code>bin_dir</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-null">None</span></td>
+                    </tr>
+                    <tr>
+                      <td>
                         <code>dry_run</code>
                       </td>
                       <td><code>bool</code></td>
@@ -2718,13 +2774,6 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                       </td>
                       <td><code>int</code></td>
                       <td class="cfg-default"><span class="cfg-number">10</span></td>
-                    </tr>
-                    <tr>
-                      <td>
-                        <code>bun_prefix</code>
-                      </td>
-                      <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-null">None</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -2785,7 +2834,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="cargo"
             class="plugin-card plugin-card--language"
-            data-search="cargo cargoprovider installs rust crates via cargo install. set cargo_root or use cargo_home (default $cargo_home or ~/.cargo). passes --locked by default; min_version becomes cargo install --version &gt;=... language language ecosystem rust hermetic-support name path installer_bin euid dry_run postinstall_scripts min_release_age install_timeout version_timeout cargo_root cargo_home cargo_install_args abx_pkg_cargo_root cargo_home"
+            data-search="cargo cargoprovider installs rust crates via cargo install. set cargo_root or use cargo_home (default $cargo_home or ~/.cargo). passes --locked by default; min_version becomes cargo install --version &gt;=... language language ecosystem rust hermetic-support name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout cargo_home cargo_install_args abx_pkg_cargo_root cargo_home"
             data-hero-plugin="cargo"
             data-hero-cli-command="abx-pkg --binproviders=cargo install ripgrep"
             data-hero-python-command="from abx_pkg import Binary, cargo&#10;bin = Binary(name=&#34;ripgrep&#34;, binproviders=[cargo]).install()"
@@ -2801,7 +2850,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   <span class="chip">Language Ecosystem</span>
                   <span class="chip">rust</span>
                   <span class="chip">hermetic-support</span>
-                  <span class="chip">12 fields</span>
+                  <span class="chip">13 fields</span>
                   <span class="chip">2 env vars</span>
                 </div>
               </div>
@@ -2898,6 +2947,20 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                     </tr>
                     <tr>
                       <td>
+                        <code>install_root</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-path">Path(&quot;/Users/squash/.cargo&quot;)</span></td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <code>bin_dir</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-path">Path(&quot;/Users/squash/.cargo/bin&quot;)</span></td>
+                    </tr>
+                    <tr>
+                      <td>
                         <code>dry_run</code>
                       </td>
                       <td><code>bool</code></td>
@@ -2930,13 +2993,6 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                       </td>
                       <td><code>int</code></td>
                       <td class="cfg-default"><span class="cfg-number">10</span></td>
-                    </tr>
-                    <tr>
-                      <td>
-                        <code>cargo_root</code>
-                      </td>
-                      <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-null">None</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -2990,7 +3046,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="deno"
             class="plugin-card plugin-card--language"
-            data-search="deno denoprovider installs javascript/typescript packages via deno. mirrors $deno_install_root. deno&#39;s npm lifecycle scripts are opt-in (reverse of npm). supports min_release_age on deno 2.5+. language language ecosystem javascript typescript security-controls name path installer_bin euid dry_run postinstall_scripts min_release_age install_timeout version_timeout deno_root deno_dir cache_dir deno_install_args deno_default_scheme abx_pkg_deno_root deno_binary"
+            data-search="deno denoprovider installs javascript/typescript packages via deno. mirrors $deno_install_root. deno&#39;s npm lifecycle scripts are opt-in (reverse of npm). supports min_release_age on deno 2.5+. language language ecosystem javascript typescript security-controls name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout deno_dir cache_dir deno_install_args deno_default_scheme abx_pkg_deno_root deno_binary"
             data-hero-plugin="deno"
             data-hero-cli-command="abx-pkg --binproviders=deno install prettier"
             data-hero-python-command="from abx_pkg import Binary, deno&#10;bin = Binary(name=&#34;prettier&#34;, binproviders=[deno]).install()"
@@ -3007,7 +3063,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   <span class="chip">javascript</span>
                   <span class="chip">typescript</span>
                   <span class="chip">security-controls</span>
-                  <span class="chip">14 fields</span>
+                  <span class="chip">15 fields</span>
                   <span class="chip">2 env vars</span>
                 </div>
               </div>
@@ -3104,6 +3160,20 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                     </tr>
                     <tr>
                       <td>
+                        <code>install_root</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-null">None</span></td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <code>bin_dir</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-null">None</span></td>
+                    </tr>
+                    <tr>
+                      <td>
                         <code>dry_run</code>
                       </td>
                       <td><code>bool</code></td>
@@ -3136,13 +3206,6 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                       </td>
                       <td><code>int</code></td>
                       <td class="cfg-default"><span class="cfg-number">10</span></td>
-                    </tr>
-                    <tr>
-                      <td>
-                        <code>deno_root</code>
-                      </td>
-                      <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-null">None</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -3210,7 +3273,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="gem"
             class="plugin-card plugin-card--language"
-            data-search="gem gemprovider installs ruby gems via gem install. set gem_home / gem_bindir for hermetic installs. generated wrapper scripts are patched to activate the configured gem_home instead of the host default. language language ecosystem ruby hermetic-support name path installer_bin euid dry_run postinstall_scripts min_release_age install_timeout version_timeout gem_home gem_bindir gem_install_args abx_pkg_gem_root gem_home"
+            data-search="gem gemprovider installs ruby gems via gem install. set gem_home / gem_bindir for hermetic installs. generated wrapper scripts are patched to activate the configured gem_home instead of the host default. language language ecosystem ruby hermetic-support name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout gem_install_args abx_pkg_gem_root gem_home"
             data-hero-plugin="gem"
             data-hero-cli-command="abx-pkg --binproviders=gem install jekyll"
             data-hero-python-command="from abx_pkg import Binary, gem&#10;bin = Binary(name=&#34;jekyll&#34;, binproviders=[gem]).install()"
@@ -3305,7 +3368,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>PATH</code>
                       </td>
                       <td><code>str</code></td>
-                      <td class="cfg-default"><span class="cfg-string">&quot;/Users/squash/Local/Code/archiveboxes/new/.venv/bin:/Users/squash/.cubic/bin:/Users/squash/.git-ai/bin:/opt/homebrew/bin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/opt/pmk/env/global/bin:/opt/X11/bin:/Library/Apple/usr/bin:/usr/local/MacGPG2/bin:/Applications/Wireshark.app/Contents/MacOS:/Applications/VMware Fusion.app/Contents/Public:/Library/Frameworks/Mono.framework/Versions/Current/Commands:/usr/local/munki:/Applications/nmap.app/Contents/Resources/bin:/Applications/ncat.app/Contents/Resources/bin:/Applications/nping.app/Contents/Resources/bin:/Applications/zenmap.app/Contents/Resources/bin:/Users/squash/.codex/tmp/arg0/codex-arg0dwePnQ:/opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/path:/nix/var/nix/profiles/default/bin:/usr/local/opt/fzf/bin:/opt/Homebrew/opt/fzf/bin:/Users/squash/bin:./node_modules/.bin:/Users/squash/node_modules/.bin:/Users/squash/go/bin:/Users/squash/.cargo/bin:/opt/homebrew/opt/python@3.12/libexec/bin:/opt/homebrew/opt/node@23/bin:/opt/homebrew/opt/openjdk@17/bin:/opt/homebrew/opt/ruby/bin:/opt/homebrew/opt/go/bin:/opt/homebrew/opt/postgres/bin:/opt/homebrew/sbin:/usr/local/sbin:/Library/Apple/bin:/usr/local/zfs/bin:/Users/squash/dotfiles/bin:/Users/squash/.local/bin:/Users/squash/Library/pnpm:/Users/squash/.cache/lm-studio/bin:/Users/squash/.local/share/gem/bin&quot;</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;/Users/squash/.local/share/gem/bin&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -3320,6 +3383,20 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                       </td>
                       <td><code>Union</code></td>
                       <td class="cfg-default"><span class="cfg-number">502</span></td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <code>install_root</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-path">Path(&quot;/Users/squash/.local/share/gem&quot;)</span></td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <code>bin_dir</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-path">Path(&quot;/Users/squash/.local/share/gem/bin&quot;)</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -3355,20 +3432,6 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                       </td>
                       <td><code>int</code></td>
                       <td class="cfg-default"><span class="cfg-number">10</span></td>
-                    </tr>
-                    <tr>
-                      <td>
-                        <code>gem_home</code>
-                      </td>
-                      <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-null">None</span></td>
-                    </tr>
-                    <tr>
-                      <td>
-                        <code>gem_bindir</code>
-                      </td>
-                      <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-null">None</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -3415,7 +3478,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="goget"
             class="plugin-card plugin-card--language"
-            data-search="goget gogetprovider installs go binaries via go install. set gopath or gobin for a hermetic workspace. default install arg is &lt;bin_name&gt;@latest. note: the provider name is goget, not go_get. language language ecosystem go hermetic-support name path installer_bin euid dry_run postinstall_scripts min_release_age install_timeout version_timeout gobin gopath go_install_args abx_pkg_goget_root gopath"
+            data-search="goget gogetprovider installs go binaries via go install. set gopath or gobin for a hermetic workspace. default install arg is &lt;bin_name&gt;@latest. note: the provider name is goget, not go_get. language language ecosystem go hermetic-support name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout go_install_args abx_pkg_goget_root gopath"
             data-hero-plugin="goget"
             data-hero-cli-command="abx-pkg --binproviders=goget install golangci-lint"
             data-hero-python-command="from abx_pkg import Binary, goget&#10;bin = Binary(name=&#34;golangci-lint&#34;, binproviders=[goget]).install()"
@@ -3510,7 +3573,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>PATH</code>
                       </td>
                       <td><code>str</code></td>
-                      <td class="cfg-default"><span class="cfg-string">&quot;/Users/squash/Local/Code/archiveboxes/new/.venv/bin:/Users/squash/.cubic/bin:/Users/squash/.git-ai/bin:/opt/homebrew/bin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/opt/pmk/env/global/bin:/opt/X11/bin:/Library/Apple/usr/bin:/usr/local/MacGPG2/bin:/Applications/Wireshark.app/Contents/MacOS:/Applications/VMware Fusion.app/Contents/Public:/Library/Frameworks/Mono.framework/Versions/Current/Commands:/usr/local/munki:/Applications/nmap.app/Contents/Resources/bin:/Applications/ncat.app/Contents/Resources/bin:/Applications/nping.app/Contents/Resources/bin:/Applications/zenmap.app/Contents/Resources/bin:/Users/squash/.codex/tmp/arg0/codex-arg0dwePnQ:/opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/path:/nix/var/nix/profiles/default/bin:/usr/local/opt/fzf/bin:/opt/Homebrew/opt/fzf/bin:/Users/squash/bin:./node_modules/.bin:/Users/squash/node_modules/.bin:/Users/squash/go/bin:/Users/squash/.cargo/bin:/opt/homebrew/opt/python@3.12/libexec/bin:/opt/homebrew/opt/node@23/bin:/opt/homebrew/opt/openjdk@17/bin:/opt/homebrew/opt/ruby/bin:/opt/homebrew/opt/go/bin:/opt/homebrew/opt/postgres/bin:/opt/homebrew/sbin:/usr/local/sbin:/Library/Apple/bin:/usr/local/zfs/bin:/Users/squash/dotfiles/bin:/Users/squash/.local/bin:/Users/squash/Library/pnpm:/Users/squash/.cache/lm-studio/bin&quot;</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;/Users/squash/go/bin&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -3525,6 +3588,20 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                       </td>
                       <td><code>Union</code></td>
                       <td class="cfg-default"><span class="cfg-number">502</span></td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <code>install_root</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-path">Path(&quot;/Users/squash/go&quot;)</span></td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <code>bin_dir</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-path">Path(&quot;/Users/squash/go/bin&quot;)</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -3560,20 +3637,6 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                       </td>
                       <td><code>int</code></td>
                       <td class="cfg-default"><span class="cfg-number">10</span></td>
-                    </tr>
-                    <tr>
-                      <td>
-                        <code>gobin</code>
-                      </td>
-                      <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-null">None</span></td>
-                    </tr>
-                    <tr>
-                      <td>
-                        <code>gopath</code>
-                      </td>
-                      <td><code>Path</code></td>
-                      <td class="cfg-default"><span class="cfg-path">Path(&quot;/Users/squash/go&quot;)</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -3620,7 +3683,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="npm"
             class="plugin-card plugin-card--language"
-            data-search="npm npmprovider installs javascript packages via npm. set npm_prefix for a hermetic prefix under &lt;prefix&gt;/node_modules/.bin. supports both postinstall_scripts=false and min_release_age (on npm builds that ship --min-release-age). language language ecosystem javascript prefix-support security-controls name path installer_bin euid dry_run postinstall_scripts min_release_age install_timeout version_timeout npm_prefix cache_dir cache_arg npm_install_args abx_pkg_npm_root npm_binary"
+            data-search="npm npmprovider installs javascript packages via npm. set npm_prefix for a hermetic prefix under &lt;prefix&gt;/node_modules/.bin. supports both postinstall_scripts=false and min_release_age (on npm builds that ship --min-release-age). language language ecosystem javascript prefix-support security-controls name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout cache_dir cache_arg npm_install_args abx_pkg_npm_root npm_binary"
             data-hero-plugin="npm"
             data-hero-cli-command="abx-pkg --binproviders=npm install prettier"
             data-hero-python-command="from abx_pkg import Binary, npm&#10;bin = Binary(name=&#34;prettier&#34;, binproviders=[npm]).install()"
@@ -3637,7 +3700,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   <span class="chip">javascript</span>
                   <span class="chip">prefix-support</span>
                   <span class="chip">security-controls</span>
-                  <span class="chip">13 fields</span>
+                  <span class="chip">14 fields</span>
                   <span class="chip">2 env vars</span>
                 </div>
               </div>
@@ -3734,6 +3797,20 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                     </tr>
                     <tr>
                       <td>
+                        <code>install_root</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-null">None</span></td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <code>bin_dir</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-null">None</span></td>
+                    </tr>
+                    <tr>
+                      <td>
                         <code>dry_run</code>
                       </td>
                       <td><code>bool</code></td>
@@ -3766,13 +3843,6 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                       </td>
                       <td><code>int</code></td>
                       <td class="cfg-default"><span class="cfg-number">10</span></td>
-                    </tr>
-                    <tr>
-                      <td>
-                        <code>npm_prefix</code>
-                      </td>
-                      <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-null">None</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -3833,7 +3903,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="pip"
             class="plugin-card plugin-card--language"
-            data-search="pip pipprovider installs python wheels via pip. set pip_venv for a hermetic venv (auto-created on first use). honors pip_binary. supports wheels-only installs via postinstall_scripts=false. language language ecosystem python venv-support security-controls name path installer_bin euid dry_run postinstall_scripts min_release_age install_timeout version_timeout pip_venv cache_dir cache_arg pip_install_args pip_bootstrap_packages abx_pkg_pip_root pip_binary"
+            data-search="pip pipprovider installs python wheels via pip. set pip_venv for a hermetic venv (auto-created on first use). honors pip_binary. supports wheels-only installs via postinstall_scripts=false. language language ecosystem python venv-support security-controls name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout cache_dir cache_arg pip_install_args pip_bootstrap_packages abx_pkg_pip_root pip_binary"
             data-hero-plugin="pip"
             data-hero-cli-command="abx-pkg --binproviders=pip install yt-dlp"
             data-hero-python-command="from abx_pkg import Binary, pip&#10;bin = Binary(name=&#34;yt-dlp&#34;, binproviders=[pip]).install()"
@@ -3850,7 +3920,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   <span class="chip">python</span>
                   <span class="chip">venv-support</span>
                   <span class="chip">security-controls</span>
-                  <span class="chip">14 fields</span>
+                  <span class="chip">15 fields</span>
                   <span class="chip">2 env vars</span>
                 </div>
               </div>
@@ -3947,6 +4017,20 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                     </tr>
                     <tr>
                       <td>
+                        <code>install_root</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-null">None</span></td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <code>bin_dir</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-null">None</span></td>
+                    </tr>
+                    <tr>
+                      <td>
                         <code>dry_run</code>
                       </td>
                       <td><code>bool</code></td>
@@ -3979,13 +4063,6 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                       </td>
                       <td><code>int</code></td>
                       <td class="cfg-default"><span class="cfg-number">10</span></td>
-                    </tr>
-                    <tr>
-                      <td>
-                        <code>pip_venv</code>
-                      </td>
-                      <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-null">None</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -4053,7 +4130,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="pnpm"
             class="plugin-card plugin-card--language"
-            data-search="pnpm pnpmprovider installs javascript packages via pnpm. set pnpm_prefix for a hermetic prefix. pnpm_home is auto-populated so pnpm add -g works without polluting the user&#39;s shell config. requires pnpm 10.16+ for min_release_age. language language ecosystem javascript prefix-support security-controls name path installer_bin euid dry_run postinstall_scripts min_release_age install_timeout version_timeout pnpm_prefix cache_dir cache_arg pnpm_install_args abx_pkg_pnpm_root pnpm_binary"
+            data-search="pnpm pnpmprovider installs javascript packages via pnpm. set pnpm_prefix for a hermetic prefix. pnpm_home is auto-populated so pnpm add -g works without polluting the user&#39;s shell config. requires pnpm 10.16+ for min_release_age. language language ecosystem javascript prefix-support security-controls name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout cache_dir cache_arg pnpm_install_args abx_pkg_pnpm_root pnpm_binary"
             data-hero-plugin="pnpm"
             data-hero-cli-command="abx-pkg --binproviders=pnpm install prettier"
             data-hero-python-command="from abx_pkg import Binary, pnpm&#10;bin = Binary(name=&#34;prettier&#34;, binproviders=[pnpm]).install()"
@@ -4070,7 +4147,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   <span class="chip">javascript</span>
                   <span class="chip">prefix-support</span>
                   <span class="chip">security-controls</span>
-                  <span class="chip">13 fields</span>
+                  <span class="chip">14 fields</span>
                   <span class="chip">2 env vars</span>
                 </div>
               </div>
@@ -4167,6 +4244,20 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                     </tr>
                     <tr>
                       <td>
+                        <code>install_root</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-null">None</span></td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <code>bin_dir</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-null">None</span></td>
+                    </tr>
+                    <tr>
+                      <td>
                         <code>dry_run</code>
                       </td>
                       <td><code>bool</code></td>
@@ -4199,13 +4290,6 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                       </td>
                       <td><code>int</code></td>
                       <td class="cfg-default"><span class="cfg-number">10</span></td>
-                    </tr>
-                    <tr>
-                      <td>
-                        <code>pnpm_prefix</code>
-                      </td>
-                      <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-null">None</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -4266,7 +4350,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="uv"
             class="plugin-card plugin-card--language"
-            data-search="uv uvprovider installs python packages via uv. two modes: hermetic venv mode (install_root=path(...)) or global tool mode (uv tool install). full support for postinstall_scripts=false and min_release_age. language language ecosystem python venv-support tool-mode security-controls name path installer_bin euid dry_run postinstall_scripts min_release_age install_timeout version_timeout uv_venv uv_tool_dir uv_tool_bin_dir cache_dir cache_arg uv_install_args abx_pkg_uv_root uv_binary"
+            data-search="uv uvprovider installs python packages via uv. two modes: hermetic venv mode (install_root=path(...)) or global tool mode (uv tool install). full support for postinstall_scripts=false and min_release_age. language language ecosystem python venv-support tool-mode security-controls name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout uv_tool_dir cache_dir cache_arg uv_install_args abx_pkg_uv_root uv_binary"
             data-hero-plugin="uv"
             data-hero-cli-command="abx-pkg --binproviders=uv install ruff"
             data-hero-python-command="from abx_pkg import Binary, uv&#10;bin = Binary(name=&#34;ruff&#34;, binproviders=[uv]).install()"
@@ -4381,6 +4465,20 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                     </tr>
                     <tr>
                       <td>
+                        <code>install_root</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-null">None</span></td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <code>bin_dir</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-null">None</span></td>
+                    </tr>
+                    <tr>
+                      <td>
                         <code>dry_run</code>
                       </td>
                       <td><code>bool</code></td>
@@ -4416,21 +4514,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                     </tr>
                     <tr>
                       <td>
-                        <code>uv_venv</code>
-                      </td>
-                      <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-null">None</span></td>
-                    </tr>
-                    <tr>
-                      <td>
                         <code>uv_tool_dir</code>
-                      </td>
-                      <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-null">None</span></td>
-                    </tr>
-                    <tr>
-                      <td>
-                        <code>uv_tool_bin_dir</code>
                       </td>
                       <td><code>Union</code></td>
                       <td class="cfg-default"><span class="cfg-null">None</span></td>
@@ -4494,7 +4578,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="yarn"
             class="plugin-card plugin-card--language"
-            data-search="yarn yarnprovider installs javascript packages via yarn 4 / yarn berry. always operates inside a workspace dir (auto-initialized with a stub package.json and .yarnrc.yml using nodelinker: node-modules). yarn 4.10+ required for security flags. language language ecosystem javascript workspace security-controls name path installer_bin euid dry_run postinstall_scripts min_release_age install_timeout version_timeout yarn_prefix cache_dir yarn_install_args abx_pkg_yarn_root yarn_binary"
+            data-search="yarn yarnprovider installs javascript packages via yarn 4 / yarn berry. always operates inside a workspace dir (auto-initialized with a stub package.json and .yarnrc.yml using nodelinker: node-modules). yarn 4.10+ required for security flags. language language ecosystem javascript workspace security-controls name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout cache_dir yarn_install_args abx_pkg_yarn_root yarn_binary"
             data-hero-plugin="yarn"
             data-hero-cli-command="abx-pkg --binproviders=yarn install prettier"
             data-hero-python-command="from abx_pkg import Binary, yarn&#10;bin = Binary(name=&#34;prettier&#34;, binproviders=[yarn]).install()"
@@ -4511,7 +4595,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   <span class="chip">javascript</span>
                   <span class="chip">workspace</span>
                   <span class="chip">security-controls</span>
-                  <span class="chip">12 fields</span>
+                  <span class="chip">13 fields</span>
                   <span class="chip">2 env vars</span>
                 </div>
               </div>
@@ -4608,6 +4692,20 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                     </tr>
                     <tr>
                       <td>
+                        <code>install_root</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-null">None</span></td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <code>bin_dir</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-null">None</span></td>
+                    </tr>
+                    <tr>
+                      <td>
                         <code>dry_run</code>
                       </td>
                       <td><code>bool</code></td>
@@ -4640,13 +4738,6 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                       </td>
                       <td><code>int</code></td>
                       <td class="cfg-default"><span class="cfg-number">10</span></td>
-                    </tr>
-                    <tr>
-                      <td>
-                        <code>yarn_prefix</code>
-                      </td>
-                      <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-null">None</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -4706,7 +4797,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="chromewebstore"
             class="plugin-card plugin-card--browser"
-            data-search="chromewebstore chromewebstoreprovider downloads, unpacks, and caches chrome web store extensions using the packaged js runtime under abx_pkg/js/chrome/. the resolved binary path is the unpacked manifest.json. browser browser runtime chrome extensions name path installer_bin euid dry_run postinstall_scripts min_release_age install_timeout version_timeout extensions_root extensions_dir abx_pkg_chromewebstore_root"
+            data-search="chromewebstore chromewebstoreprovider downloads, unpacks, and caches chrome web store extensions using the packaged js runtime under abx_pkg/js/chrome/. the resolved binary path is the unpacked manifest.json. browser browser runtime chrome extensions name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout abx_pkg_chromewebstore_root"
             data-hero-plugin="chromewebstore"
             data-hero-cli-command="abx-pkg --binproviders=chromewebstore install ublock-origin"
             data-hero-python-command="from abx_pkg import Binary, chromewebstore&#10;bin = Binary(name=&#34;ublock-origin&#34;, binproviders=[chromewebstore]).install()"
@@ -4819,6 +4910,20 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                     </tr>
                     <tr>
                       <td>
+                        <code>install_root</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-path">Path(&quot;/Users/squash/Library/Application Support/abx/lib/chromewebstore&quot;)</span></td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <code>bin_dir</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-path">Path(&quot;/Users/squash/Library/Application Support/abx/lib/chromewebstore/extensions&quot;)</span></td>
+                    </tr>
+                    <tr>
+                      <td>
                         <code>dry_run</code>
                       </td>
                       <td><code>bool</code></td>
@@ -4851,20 +4956,6 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                       </td>
                       <td><code>int</code></td>
                       <td class="cfg-default"><span class="cfg-number">10</span></td>
-                    </tr>
-                    <tr>
-                      <td>
-                        <code>extensions_root</code>
-                      </td>
-                      <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-null">None</span></td>
-                    </tr>
-                    <tr>
-                      <td>
-                        <code>extensions_dir</code>
-                      </td>
-                      <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-null">None</span></td>
                     </tr>
                   </tbody>
                 </table>
@@ -4899,7 +4990,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="playwright"
             class="plugin-card plugin-card--browser"
-            data-search="playwright playwrightprovider bootstraps playwright via npm, runs playwright install --with-deps, then symlinks resolved browser executables into bin_dir. pinning playwright_root also pins playwright_browsers_path. defaults euid=0 so --with-deps can install system packages. browser browser runtime browsers npm-bootstrap sudo name path installer_bin euid dry_run postinstall_scripts min_release_age install_timeout version_timeout playwright_root bin_dir abx_pkg_playwright_root"
+            data-search="playwright playwrightprovider bootstraps playwright via npm, runs playwright install --with-deps, then symlinks resolved browser executables into bin_dir. pinning playwright_root also pins playwright_browsers_path. defaults euid=0 so --with-deps can install system packages. browser browser runtime browsers npm-bootstrap sudo name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout abx_pkg_playwright_root"
             data-hero-plugin="playwright"
             data-hero-cli-command="abx-pkg --binproviders=playwright install chromium"
             data-hero-python-command="from abx_pkg import Binary, playwright&#10;bin = Binary(name=&#34;chromium&#34;, binproviders=[playwright]).install()"
@@ -5009,7 +5100,21 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>euid</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-number">0</span></td>
+                      <td class="cfg-default"><span class="cfg-null">None</span></td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <code>install_root</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-null">None</span></td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <code>bin_dir</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-null">None</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -5046,20 +5151,6 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                       <td><code>int</code></td>
                       <td class="cfg-default"><span class="cfg-number">10</span></td>
                     </tr>
-                    <tr>
-                      <td>
-                        <code>playwright_root</code>
-                      </td>
-                      <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-null">None</span></td>
-                    </tr>
-                    <tr>
-                      <td>
-                        <code>bin_dir</code>
-                      </td>
-                      <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-null">None</span></td>
-                    </tr>
                   </tbody>
                 </table>
               </div>
@@ -5093,7 +5184,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="puppeteer"
             class="plugin-card plugin-card--browser"
-            data-search="puppeteer puppeteerprovider bootstraps @puppeteer/browsers through npmprovider, then uses its cli to install managed browsers. resolution uses semantic version ordering, not lexicographic string sorting. browser browser runtime browsers npm-bootstrap name path installer_bin euid dry_run postinstall_scripts min_release_age install_timeout version_timeout puppeteer_root bin_dir browser_cache_dir abx_pkg_puppeteer_root"
+            data-search="puppeteer puppeteerprovider bootstraps @puppeteer/browsers through npmprovider, then uses its cli to install managed browsers. resolution uses semantic version ordering, not lexicographic string sorting. browser browser runtime browsers npm-bootstrap name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout browser_cache_dir abx_pkg_puppeteer_root"
             data-hero-plugin="puppeteer"
             data-hero-cli-command="abx-pkg --binproviders=puppeteer install chrome"
             data-hero-python-command="from abx_pkg import Binary, puppeteer&#10;bin = Binary(name=&#34;chrome&#34;, binproviders=[puppeteer]).install()"
@@ -5188,7 +5279,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>PATH</code>
                       </td>
                       <td><code>str</code></td>
-                      <td class="cfg-default"><span class="cfg-string">&quot;/Users/squash/Library/Application Support/abx/lib/puppeteer/bin:/Users/squash/Library/Application Support/abx/lib/puppeteer/npm/node_modules/.bin&quot;</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -5203,6 +5294,20 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                       </td>
                       <td><code>Union</code></td>
                       <td class="cfg-default"><span class="cfg-number">502</span></td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <code>install_root</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-null">None</span></td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <code>bin_dir</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-null">None</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -5238,20 +5343,6 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                       </td>
                       <td><code>int</code></td>
                       <td class="cfg-default"><span class="cfg-number">10</span></td>
-                    </tr>
-                    <tr>
-                      <td>
-                        <code>puppeteer_root</code>
-                      </td>
-                      <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-null">None</span></td>
-                    </tr>
-                    <tr>
-                      <td>
-                        <code>bin_dir</code>
-                      </td>
-                      <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-path">Path(&quot;/Users/squash/Library/Application Support/abx/lib/puppeteer/bin&quot;)</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -5299,7 +5390,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="bash"
             class="plugin-card plugin-card--script"
-            data-search="bash bashprovider runs literal shell-script overrides for install/update/uninstall. exports install_root, bin_dir, bash_install_root, and bash_bin_dir into the shell environment for those commands. script shell scripts shell literal-overrides name path installer_bin euid dry_run postinstall_scripts min_release_age install_timeout version_timeout bash_root bash_bin_dir abx_pkg_bash_root"
+            data-search="bash bashprovider runs literal shell-script overrides for install/update/uninstall. exports install_root, bin_dir, bash_install_root, and bash_bin_dir into the shell environment for those commands. script shell scripts shell literal-overrides name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout abx_pkg_bash_root"
             data-hero-plugin="bash"
             data-hero-cli-command="abx-pkg --binproviders=bash install custom-script"
             data-hero-python-command="from abx_pkg import Binary, bash&#10;bin = Binary(name=&#34;custom-script&#34;, binproviders=[bash]).install()"
@@ -5412,6 +5503,20 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                     </tr>
                     <tr>
                       <td>
+                        <code>install_root</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-path">Path(&quot;/Users/squash/Library/Application Support/abx/lib/bash&quot;)</span></td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <code>bin_dir</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-path">Path(&quot;/Users/squash/Library/Application Support/abx/lib/bash/bin&quot;)</span></td>
+                    </tr>
+                    <tr>
+                      <td>
                         <code>dry_run</code>
                       </td>
                       <td><code>bool</code></td>
@@ -5444,20 +5549,6 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                       </td>
                       <td><code>int</code></td>
                       <td class="cfg-default"><span class="cfg-number">10</span></td>
-                    </tr>
-                    <tr>
-                      <td>
-                        <code>bash_root</code>
-                      </td>
-                      <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-null">None</span></td>
-                    </tr>
-                    <tr>
-                      <td>
-                        <code>bash_bin_dir</code>
-                      </td>
-                      <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-null">None</span></td>
                     </tr>
                   </tbody>
                 </table>
@@ -5498,7 +5589,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="ansible"
             class="plugin-card plugin-card--driver"
-            data-search="ansible ansibleprovider delegates installs via ansible-runner. installer_module=&#39;auto&#39; resolves to community.general.homebrew on macos and ansible.builtin.package on linux. no hermetic prefix support. driver orchestrator driver infra name path installer_bin euid dry_run postinstall_scripts min_release_age install_timeout version_timeout ansible_installer_module ansible_playbook_template"
+            data-search="ansible ansibleprovider delegates installs via ansible-runner. installer_module=&#39;auto&#39; resolves to community.general.homebrew on macos and ansible.builtin.package on linux. no hermetic prefix support. driver orchestrator driver infra name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout ansible_installer_module ansible_playbook_template"
             data-hero-plugin="ansible"
             data-hero-cli-command="abx-pkg --binproviders=ansible install wget"
             data-hero-python-command="from abx_pkg import Binary, ansible&#10;bin = Binary(name=&#34;wget&#34;, binproviders=[ansible]).install()"
@@ -5514,7 +5605,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   <span class="chip">Orchestrator</span>
                   <span class="chip">driver</span>
                   <span class="chip">infra</span>
-                  <span class="chip">11 fields</span>
+                  <span class="chip">13 fields</span>
                   <span class="chip">0 env vars</span>
                 </div>
               </div>
@@ -5611,6 +5702,20 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                     </tr>
                     <tr>
                       <td>
+                        <code>install_root</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-null">None</span></td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <code>bin_dir</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-null">None</span></td>
+                    </tr>
+                    <tr>
+                      <td>
                         <code>dry_run</code>
                       </td>
                       <td><code>bool</code></td>
@@ -5681,7 +5786,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="pyinfra"
             class="plugin-card plugin-card--driver"
-            data-search="pyinfra pyinfraprovider delegates installs to pyinfra operations. installer_module=&#39;auto&#39; resolves to operations.brew.packages on macos and operations.server.packages on linux. no hermetic prefix support. driver orchestrator driver infra name path installer_bin euid dry_run postinstall_scripts min_release_age install_timeout version_timeout pyinfra_installer_module pyinfra_installer_kwargs"
+            data-search="pyinfra pyinfraprovider delegates installs to pyinfra operations. installer_module=&#39;auto&#39; resolves to operations.brew.packages on macos and operations.server.packages on linux. no hermetic prefix support. driver orchestrator driver infra name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout pyinfra_installer_module pyinfra_installer_kwargs"
             data-hero-plugin="pyinfra"
             data-hero-cli-command="abx-pkg --binproviders=pyinfra install wget"
             data-hero-python-command="from abx_pkg import Binary, pyinfra&#10;bin = Binary(name=&#34;wget&#34;, binproviders=[pyinfra]).install()"
@@ -5697,7 +5802,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   <span class="chip">Orchestrator</span>
                   <span class="chip">driver</span>
                   <span class="chip">infra</span>
-                  <span class="chip">11 fields</span>
+                  <span class="chip">13 fields</span>
                   <span class="chip">0 env vars</span>
                 </div>
               </div>
@@ -5788,6 +5893,20 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                     <tr>
                       <td>
                         <code>euid</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-null">None</span></td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <code>install_root</code>
+                      </td>
+                      <td><code>Union</code></td>
+                      <td class="cfg-default"><span class="cfg-null">None</span></td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <code>bin_dir</code>
                       </td>
                       <td><code>Union</code></td>
                       <td class="cfg-default"><span class="cfg-null">None</span></td>
@@ -6057,7 +6176,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
 
         <div class="footer-meta">
           <span>Generated from <a href="https://github.com/ArchiveBox/abx-pkg" target="_blank" rel="noreferrer">ArchiveBox/abx-pkg</a> at ref <code>main</code>.</span>
-          <span>Updated 2026-04-10 10:41 UTC</span>
+          <span>Updated 2026-04-10 11:38 UTC</span>
         </div>
       </footer>
     </div>
