@@ -17,7 +17,7 @@ from . import ALL_PROVIDER_NAMES, ALL_PROVIDERS, Binary
 from .base_types import DEFAULT_LIB_DIR
 from .binprovider import BinProvider, env_flag_is_true
 from .exceptions import ABXPkgError, BinaryOperationError
-from .logging import configure_logging
+from .logging import RICH_INSTALLED, configure_logging, configure_rich_logging
 
 PROVIDER_CLASS_BY_NAME: dict[str, type[BinProvider]] = {
     cast(str, provider.model_fields["name"].default): provider
@@ -373,16 +373,64 @@ def build_cli_options(
     )
 
 
+def _stream_is_tty(stream: Any) -> bool:
+    return bool(getattr(stream, "isatty", lambda: False)())
+
+
 def is_interactive_tty() -> bool:
-    return bool(
-        getattr(sys.stdin, "isatty", lambda: False)()
-        and getattr(sys.stderr, "isatty", lambda: False)(),
-    )
+    return _stream_is_tty(sys.stdin) and _stream_is_tty(sys.stderr)
+
+
+def _console_for_stream(*, err: bool):
+    stream = sys.stderr if err else sys.stdout
+    if not (RICH_INSTALLED and _stream_is_tty(stream)):
+        return None
+    from rich.console import Console
+    from rich.highlighter import ReprHighlighter
+
+    return Console(file=stream, highlighter=ReprHighlighter())
+
+
+def _echo(message: str, *, err: bool = False) -> None:
+    console = _console_for_stream(err=err)
+    if console is not None:
+        console.print(message, highlight=True)
+        return
+    click.echo(message, err=err)
+
+
+class _CliRichLogFormatter(py_logging.Formatter):
+    def format(self, record: py_logging.LogRecord) -> str:
+        from rich.markup import escape
+
+        message = escape(super().format(record))
+        if record.levelno == py_logging.INFO:
+            return f"[bright_black]{message}[/bright_black]"
+        return message
 
 
 def configure_cli_logging(*, debug: bool) -> None:
+    level = "DEBUG" if debug else "INFO"
+    console = _console_for_stream(err=True)
+    if console is not None:
+        from rich.highlighter import ReprHighlighter
+
+        logger = configure_rich_logging(
+            level=level,
+            console=console,
+            fmt="%(message)s",
+            replace_handlers=True,
+            markup=True,
+            show_time=False,
+            show_level=False,
+            show_path=False,
+            highlighter=ReprHighlighter(),
+        )
+        for handler in logger.handlers:
+            handler.setFormatter(_CliRichLogFormatter("%(message)s"))
+        return
     configure_logging(
-        level="DEBUG" if debug else "INFO",
+        level=level,
         handler=py_logging.StreamHandler(sys.stderr),
         fmt="%(message)s",
         replace_handlers=True,
@@ -400,6 +448,14 @@ def format_error(err: Exception) -> str:
     return str(err)
 
 
+def format_loaded_binary_line(
+    version: Any,
+    abspath: Path | str,
+    provider_name: str,
+) -> str:
+    return f"{version} {abspath} ({provider_name})"
+
+
 def version_report(options: CliOptions) -> str:
     lines = [get_package_version()]
     for provider in build_providers(
@@ -412,7 +468,11 @@ def version_report(options: CliOptions) -> str:
             continue
         version = installer_binary.loaded_version or "unknown"
         lines.append(
-            f"{provider.name} {provider.INSTALLER_BIN} {provider.INSTALLER_BIN_ABSPATH} {version}",
+            format_loaded_binary_line(
+                version,
+                provider.INSTALLER_BIN_ABSPATH,
+                provider.name,
+            ),
         )
     return "\n".join(lines)
 
@@ -570,12 +630,18 @@ def run_binary_command(
         return
 
     if action == "uninstall":
-        click.echo(binary_name)
+        _echo(binary_name)
         return
 
     provider = result.loaded_binprovider
     provider_name = provider.name if provider is not None else "unknown"
-    click.echo(f"{result.loaded_abspath} {result.loaded_version} {provider_name}")
+    _echo(
+        format_loaded_binary_line(
+            result.loaded_version,
+            result.loaded_abspath,
+            provider_name,
+        ),
+    )
 
 
 @click.group(
@@ -621,7 +687,7 @@ def cli(
     ctx.obj["update_before_run"] = update_before_run
 
     if show_version:
-        click.echo(version_report(options))
+        _echo(version_report(options))
         ctx.exit()
 
     if ctx.invoked_subcommand is None:
@@ -629,13 +695,22 @@ def cli(
 
 
 @cli.command("version")
+@click.argument("binary_name", required=False)
 @click.pass_context
 @shared_options
-def version_command(ctx: click.Context, **shared_kwargs: Any) -> None:
-    """Show the package version and available installer binaries."""
+def version_command(
+    ctx: click.Context,
+    binary_name: str | None,
+    **shared_kwargs: Any,
+) -> None:
+    """Show the package version report, or load a named binary."""
 
     options = get_command_options(ctx, **shared_kwargs)
-    click.echo(version_report(options))
+    if binary_name is not None:
+        options = replace(options, dry_run=False)
+        run_binary_command(binary_name, action="load", options=options)
+        return
+    _echo(version_report(options))
 
 
 @cli.command("install")
@@ -764,7 +839,7 @@ def run_command(
         else:
             binary = binary.load()
     except ABXPkgError as err:
-        click.echo(format_error(err), err=True)
+        _echo(format_error(err), err=True)
         ctx.exit(1)
         return
 
@@ -775,7 +850,7 @@ def run_command(
         return
 
     if not binary.is_valid:
-        click.echo(
+        _echo(
             f"abx-pkg: {binary_name}: binary could not be loaded",
             err=True,
         )
@@ -938,7 +1013,7 @@ def abx_main() -> None:
         if any(flag in pre for flag in ("--help", "-h", "--version")):
             cli(pre)
             return
-        click.echo(_ABX_USAGE, err=True)
+        _echo(_ABX_USAGE, err=True)
         sys.exit(2)
 
     # --update already implies load_or_install, so adding --install alongside

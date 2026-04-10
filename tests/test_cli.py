@@ -259,8 +259,29 @@ def test_version_flag_and_command_render_same_report(monkeypatch, tmp_path):
 
     lines = flag_result.output.strip().splitlines()
     assert lines[0] == cli_module.get_package_version()
-    assert lines[1] == "env env /usr/bin/which 2.0.0"
-    assert lines[2] == "uv uv /opt/homebrew/bin/uv 0.7.1"
+    assert lines[1] == "2.0.0 /usr/bin/which (env)"
+    assert lines[2] == "0.7.1 /opt/homebrew/bin/uv (uv)"
+
+
+def test_version_command_with_binary_aliases_load(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_run_binary_command(binary_name, *, action, options):
+        captured["binary_name"] = binary_name
+        captured["action"] = action
+        captured["options"] = options
+
+    monkeypatch.setattr(cli_module, "run_binary_command", fake_run_binary_command)
+
+    result = CliRunner().invoke(
+        cli_module.cli,
+        ["version", f"--lib={tmp_path}", "--binproviders=env", "python3"],
+    )
+
+    assert result.exit_code == 0
+    assert captured["binary_name"] == "python3"
+    assert captured["action"] == "load"
+    assert captured["options"].dry_run is False
 
 
 def test_configure_cli_logging_uses_info_by_default(monkeypatch):
@@ -295,6 +316,61 @@ def test_configure_cli_logging_uses_debug_level_when_enabled(monkeypatch):
     assert captured["replace_handlers"] is True
 
 
+def test_configure_cli_logging_uses_rich_logging_for_tty(monkeypatch):
+    captured = {}
+    sentinel_console = object()
+    fake_logger = logging.getLogger("test.rich.cli")
+    fake_handler = logging.StreamHandler()
+    fake_logger.handlers = [fake_handler]
+
+    def fake_configure_rich_logging(**kwargs):
+        captured.update(kwargs)
+        return fake_logger
+
+    monkeypatch.setattr(cli_module, "RICH_INSTALLED", True)
+    monkeypatch.setattr(
+        cli_module,
+        "_console_for_stream",
+        lambda *, err: sentinel_console if err else None,
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "configure_rich_logging",
+        fake_configure_rich_logging,
+    )
+
+    cli_module.configure_cli_logging(debug=True)
+
+    assert captured["level"] == "DEBUG"
+    assert captured["console"] is sentinel_console
+    assert captured["fmt"] == "%(message)s"
+    assert captured["markup"] is True
+    assert captured["replace_handlers"] is True
+    assert captured["show_time"] is False
+    assert captured["show_level"] is False
+    assert captured["show_path"] is False
+    assert isinstance(fake_handler.formatter, cli_module._CliRichLogFormatter)
+
+
+def test_echo_uses_rich_console_for_tty(monkeypatch):
+    printed = {}
+
+    class FakeConsole:
+        def print(self, message, *, highlight):
+            printed["message"] = message
+            printed["highlight"] = highlight
+
+    monkeypatch.setattr(
+        cli_module,
+        "_console_for_stream",
+        lambda *, err: FakeConsole() if not err else None,
+    )
+
+    cli_module._echo("/tmp/bin 1.2.3 env")
+
+    assert printed == {"message": "/tmp/bin 1.2.3 env", "highlight": True}
+
+
 def test_expand_bare_bool_flags_rewrites_debug_before_run():
     assert cli_module._expand_bare_bool_flags(
         ["--debug", "run", "python3", "--debug"],
@@ -325,6 +401,22 @@ def test_run_executes_preinstalled_binary_via_env_provider():
     assert proc.returncode == 0, proc.stderr
     assert proc.stdout.strip() == "abx-run-ok"
     assert "Loading python3 binary" in proc.stderr
+
+
+def test_version_subcommand_loads_normal_binary_via_env_provider():
+    proc = _run_abx_pkg_cli("--binproviders=env", "version", "python3")
+
+    assert proc.returncode == 0, proc.stderr
+    assert "python3" in proc.stdout
+    assert "Loading python3 binary" in proc.stderr
+
+
+def test_version_subcommand_loads_installer_binary_via_env_provider():
+    proc = _run_abx_pkg_cli("--binproviders=env", "version", "uv")
+
+    assert proc.returncode == 0, proc.stderr
+    assert "uv" in proc.stdout
+    assert "Loading uv binary" in proc.stderr
 
 
 def test_run_passes_flag_args_through_without_requiring_dash_dash():
