@@ -16,7 +16,6 @@ from pydantic import Field, computed_field, model_validator
 from .base_types import (
     BinName,
     BinProviderName,
-    DEFAULT_LIB_DIR,
     HostBinPath,
     InstallArgs,
     PATHStr,
@@ -35,9 +34,8 @@ CLAUDE_SANDBOX_NO_PROXY = (
     ".svc.cluster.local,.local"
 )
 
-# Ultimate fallback when neither the constructor arg nor
-# ``ABX_PKG_PUPPETEER_ROOT`` nor ``ABX_PKG_LIB_DIR`` is set.
-DEFAULT_PUPPETEER_ROOT = DEFAULT_LIB_DIR / "puppeteer"
+# No forced fallback — when no explicit root is set, puppeteer uses its
+# native browser cache (~/.cache/puppeteer or PUPPETEER_CACHE_DIR).
 
 
 class PuppeteerProvider(BinProvider):
@@ -63,24 +61,28 @@ class PuppeteerProvider(BinProvider):
 
     @computed_field
     @property
-    def install_root(self) -> Path:
+    def install_root(self) -> Path | None:
         if self.puppeteer_root:
             return self.puppeteer_root
         if self.browser_bin_dir:
             return self.browser_bin_dir.parent
         if self.browser_cache_dir:
             return self.browser_cache_dir.parent
-        return DEFAULT_PUPPETEER_ROOT
+        return None
 
     @computed_field
     @property
-    def bin_dir(self) -> Path:
-        return self.browser_bin_dir or (self.install_root / "bin")
+    def bin_dir(self) -> Path | None:
+        if self.browser_bin_dir:
+            return self.browser_bin_dir
+        return self.install_root / "bin" if self.install_root else None
 
     @computed_field
     @property
-    def cache_dir(self) -> Path:
-        return self.browser_cache_dir or (self.install_root / "cache")
+    def cache_dir(self) -> Path | None:
+        if self.browser_cache_dir:
+            return self.browser_cache_dir
+        return self.install_root / "cache" if self.install_root else None
 
     @computed_field
     @property
