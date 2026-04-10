@@ -496,7 +496,7 @@ def shared_options(command):
             "lib_dir",
             metavar="PATH",
             default=None,
-            help="Base library directory. Defaults to ABX_PKG_LIB_DIR or ~/.config/abx/lib.",
+            help="Base library directory. Defaults to ABX_PKG_LIB_DIR or $XDG_CONFIG_HOME/abx/lib.",
         ),
     ):
         command = decorator(command)
