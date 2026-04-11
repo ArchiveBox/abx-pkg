@@ -27,6 +27,34 @@ class TestBinProvider:
             (YarnProvider, "yarn"),
         ),
     )
+    def test_provider_init_with_euid_none_does_not_recurse_through_installer_lookup(
+        self,
+        test_machine,
+        provider_cls,
+        installer_bin,
+    ):
+        test_machine.require_tool(installer_bin)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            provider = provider_cls(
+                install_root=Path(tmpdir) / "install-root",
+                euid=None,
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+
+        assert provider.euid is not None
+
+    @pytest.mark.parametrize(
+        ("provider_cls", "installer_bin"),
+        (
+            (PipProvider, "pip"),
+            (NpmProvider, "npm"),
+            (PnpmProvider, "pnpm"),
+            (UvProvider, "uv"),
+            (YarnProvider, "yarn"),
+        ),
+    )
     def test_installer_binary_abspath_resolves_without_recursing(
         self,
         test_machine,

@@ -430,15 +430,23 @@ class BinProvider(BaseModel):
                 candidate_euid = 0
             else:
                 try:
-                    installer_binary = self.INSTALLER_BINARY()
-                    if installer_binary and installer_binary.loaded_abspath:
-                        installer_owner = os.stat(
-                            installer_binary.loaded_abspath,
-                        ).st_uid
+                    installer_abspath = None
+                    if (
+                        self._INSTALLER_BINARY is not None
+                        and self._INSTALLER_BINARY.loaded_abspath is not None
+                    ):
+                        installer_abspath = self._INSTALLER_BINARY.loaded_abspath
+                    else:
+                        installer_abspath = bin_abspath(
+                            self.INSTALLER_BIN,
+                            PATH=self.PATH,
+                        ) or bin_abspath(self.INSTALLER_BIN)
+                    if installer_abspath is not None:
+                        installer_owner = os.stat(installer_abspath).st_uid
                         if installer_owner != 0:
                             candidate_euid = installer_owner
                 except Exception:
-                    # INSTALLER_BINARY() is not always available (e.g. at import time, or if it dynamically changes)
+                    # INSTALLER_BIN is not always available (e.g. at import time, or if it dynamically changes)
                     pass
 
         if candidate_euid is not None and not self.uid_has_passwd_entry(candidate_euid):
