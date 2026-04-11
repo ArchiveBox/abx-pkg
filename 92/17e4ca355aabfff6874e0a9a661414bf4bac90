@@ -1,0 +1,27 @@
+abx_pkg/binprovider_puppeteer.py
+  fa9493a9fcca68b9 14,366-376
+abx_pkg/binprovider_brew.py
+  fa9493a9fcca68b9 90-91,414-424
+abx_pkg/binprovider_playwright.py
+  fa9493a9fcca68b9 13,377-387
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "9217e4ca355aabfff6874e0a9a661414bf4bac90",
+  "prompts": {
+    "fa9493a9fcca68b9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d7eb9-b345-7ba1-bae3-721151e5bc08",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 46,
+      "total_deletions": 21,
+      "accepted_lines": 37,
+      "overriden_lines": 0
+    }
+  }
+}
