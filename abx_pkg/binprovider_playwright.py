@@ -10,7 +10,7 @@ import platform
 from pathlib import Path
 from typing import Self
 
-from pydantic import Field, PrivateAttr, computed_field, model_validator
+from pydantic import Field, PrivateAttr, TypeAdapter, computed_field, model_validator
 
 from .base_types import (
     BinName,
@@ -374,9 +374,17 @@ class PlaywrightProvider(BinProvider):
     ) -> HostBinPath | None:
         # Installer binary: delegate to base class (searches PATH directly)
         if str(bin_name) == self.INSTALLER_BIN:
-            return super().default_abspath_handler(
-                bin_name, no_cache=no_cache, **context
-            )
+            try:
+                abspath = super().default_abspath_handler(
+                    bin_name,
+                    no_cache=no_cache,
+                    **context,
+                )
+                if abspath:
+                    return TypeAdapter(HostBinPath).validate_python(abspath)
+            except Exception:
+                return None
+            return None
         if self.bin_dir is not None:
             link = self.bin_dir / str(bin_name)
             if link.exists() and os.access(link, os.X_OK):

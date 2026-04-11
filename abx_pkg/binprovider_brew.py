@@ -87,7 +87,8 @@ class BrewProvider(BinProvider):
             prefixes.append(prefix)
 
         installer_abspath = bin_abspath(
-            self.INSTALLER_BIN, PATH=self.PATH
+            self.INSTALLER_BIN,
+            PATH=self.PATH,
         ) or bin_abspath(self.INSTALLER_BIN)
         if installer_abspath:
             add_prefix(Path(installer_abspath).parent)
@@ -410,9 +411,17 @@ class BrewProvider(BinProvider):
     ) -> HostBinPath | None:
         # Installer binary: delegate to base class (avoids recursion via _brew_search_paths)
         if str(bin_name) == self.INSTALLER_BIN:
-            return super().default_abspath_handler(
-                bin_name, no_cache=no_cache, **context
-            )
+            try:
+                abspath = super().default_abspath_handler(
+                    bin_name,
+                    no_cache=no_cache,
+                    **context,
+                )
+                if abspath:
+                    return TypeAdapter(HostBinPath).validate_python(abspath)
+            except Exception:
+                return None
+            return None
 
         if not self.PATH:
             return None
