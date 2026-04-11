@@ -1,0 +1,33 @@
+abx_pkg/binprovider_npm.py
+  fa9493a9fcca68b9 507-508
+abx_pkg/binprovider_pip.py
+  fa9493a9fcca68b9 487-488
+abx_pkg/binprovider_uv.py
+  fa9493a9fcca68b9 537-538
+tests/test_binprovider.py
+  fa9493a9fcca68b9 8-16,20-45
+abx_pkg/binprovider_yarn.py
+  fa9493a9fcca68b9 433-434
+abx_pkg/binprovider_pnpm.py
+  fa9493a9fcca68b9 368-369
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "29f8c4ec490862c0ce9e69619d91af1376ddceb9",
+  "prompts": {
+    "fa9493a9fcca68b9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d7eb9-b345-7ba1-bae3-721151e5bc08",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 45,
+      "total_deletions": 1,
+      "accepted_lines": 45,
+      "overriden_lines": 0
+    }
+  }
+}
