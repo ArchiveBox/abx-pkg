@@ -430,7 +430,6 @@ class BinProvider(BaseModel):
                 candidate_euid = 0
             else:
                 try:
-                    installer_abspath = None
                     if (
                         self._INSTALLER_BINARY is not None
                         and self._INSTALLER_BINARY.loaded_abspath is not None

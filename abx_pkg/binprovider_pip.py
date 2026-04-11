@@ -484,7 +484,10 @@ class PipProvider(BinProvider):
                 return TypeAdapter(HostBinPath).validate_python(abspath)
         except ValueError:
             pass
-        if str(bin_name) == self.INSTALLER_BIN:
+
+        # If bin_dir is set (managed venv), only look there — don't fall
+        # through to pip show which would find system-installed packages
+        if self.bin_dir:
             return None
 
         try:

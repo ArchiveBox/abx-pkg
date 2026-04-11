@@ -504,8 +504,6 @@ class NpmProvider(BinProvider):
                 return TypeAdapter(HostBinPath).validate_python(abspath)
         except Exception:
             pass
-        if str(bin_name) == self.INSTALLER_BIN:
-            return None
 
         try:
             npm_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
