@@ -5,10 +5,44 @@ import sys
 
 import pytest
 
-from abx_pkg import EnvProvider, PipProvider, SemVer
+from abx_pkg import (
+    EnvProvider,
+    NpmProvider,
+    PipProvider,
+    PnpmProvider,
+    SemVer,
+    UvProvider,
+    YarnProvider,
+)
 
 
 class TestBinProvider:
+    @pytest.mark.parametrize(
+        ("provider_cls", "installer_bin"),
+        (
+            (PipProvider, "pip"),
+            (NpmProvider, "npm"),
+            (PnpmProvider, "pnpm"),
+            (UvProvider, "uv"),
+            (YarnProvider, "yarn"),
+        ),
+    )
+    def test_installer_binary_abspath_resolves_without_recursing(
+        self,
+        test_machine,
+        provider_cls,
+        installer_bin,
+    ):
+        test_machine.require_tool(installer_bin)
+        provider = provider_cls(postinstall_scripts=True, min_release_age=0)
+
+        abspath = provider.get_abspath(installer_bin, quiet=True, no_cache=True)
+        installer = provider.INSTALLER_BINARY(no_cache=True)
+
+        assert abspath is not None
+        assert installer.loaded_abspath is not None
+        assert abspath == installer.loaded_abspath
+
     def test_base_public_getters_resolve_real_host_python(self, test_machine):
         provider = EnvProvider(postinstall_scripts=True, min_release_age=0)
 
