@@ -13,9 +13,14 @@ permissions:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   precheck:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     steps:
     - uses: actions/checkout@v6
@@ -45,6 +50,7 @@ jobs:
   discover-standard-tests:
     needs: precheck
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       test-files: ${{ steps.set-matrix.outputs.test-files }}
 
@@ -75,6 +81,7 @@ jobs:
     name: ${{ matrix.target.os }} py${{ matrix.target.python_version }} ${{ matrix.test.name }}
     needs: [precheck, discover-standard-tests]
     runs-on: ${{ matrix.target.os }}
+    timeout-minutes: 5
     if: ${{ needs.discover-standard-tests.outputs.test-files != '[]' }}
     strategy:
       fail-fast: false
@@ -204,6 +211,7 @@ jobs:
   discover-live-tests:
     needs: precheck
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       live-tests: ${{ steps.set-matrix.outputs.live-tests }}
 
@@ -245,6 +253,7 @@ jobs:
     name: ${{ matrix.live.name }}
     needs: [precheck, discover-live-tests]
     runs-on: ${{ matrix.live.os }}
+    timeout-minutes: 5
     if: ${{ needs.discover-live-tests.outputs.live-tests != '[]' }}
     strategy:
       fail-fast: false
