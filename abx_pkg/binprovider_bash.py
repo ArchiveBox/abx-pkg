@@ -186,8 +186,10 @@ class BashProvider(EnvProvider):
         assert install_root is not None
         assert bin_dir is not None
 
+        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        assert installer_bin
         proc = self.exec(
-            bin_name=self._require_installer_bin(),
+            bin_name=installer_bin,
             cmd=["-c", command],
             cwd=install_root,
             timeout=timeout if timeout is not None else self.install_timeout,
@@ -227,8 +229,10 @@ class BashProvider(EnvProvider):
         assert install_root is not None
         assert bin_dir is not None
 
+        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        assert installer_bin
         proc = self.exec(
-            bin_name=self._require_installer_bin(),
+            bin_name=installer_bin,
             cmd=["-c", command],
             cwd=install_root,
             timeout=timeout if timeout is not None else self.install_timeout,
@@ -258,8 +262,10 @@ class BashProvider(EnvProvider):
         assert install_root is not None
         assert bin_dir is not None
         if command:
+            installer_bin = self.INSTALLER_BINARY().loaded_abspath
+            assert installer_bin
             proc = self.exec(
-                bin_name=self._require_installer_bin(),
+                bin_name=installer_bin,  # type: ignore[arg-type]
                 cmd=["-c", command],
                 cwd=install_root,
                 timeout=timeout if timeout is not None else self.install_timeout,

@@ -82,12 +82,24 @@ class NpmProvider(BinProvider):
 
     _CACHED_LOCAL_NPM_PREFIX: Path | None = None
 
+    @computed_field
+    @property
+    def ENV(self) -> "dict[str, str]":
+        if not self.install_root:
+            return {}
+        return {
+            "NODE_PATH": ":" + str(self.install_root / "node_modules"),
+            "npm_config_prefix": str(self.install_root),
+        }
+
     def supports_min_release_age(self, action) -> bool:
         if action not in ("install", "update"):
             return False
 
-        npm_abspath = self.INSTALLER_BIN_ABSPATH
-        if not npm_abspath:
+        try:
+            npm_abspath = self.INSTALLER_BINARY().loaded_abspath
+            assert npm_abspath
+        except Exception:
             return False
 
         # npm 11+ supports ``--min-release-age``. Probe ``npm install --help``
@@ -162,36 +174,10 @@ class NpmProvider(BinProvider):
             os.path.isdir(self.bin_dir) and os.access(self.bin_dir, os.R_OK)
         ):
             return False
-        return bool(self.INSTALLER_BIN_ABSPATH)
-
-    @computed_field
-    @property
-    def INSTALLER_BIN_ABSPATH(self) -> HostBinPath | None:
-        """Resolve the npm executable, honoring ``NPM_BINARY`` for explicit overrides."""
-        if self._INSTALLER_BIN_ABSPATH:
-            return self._INSTALLER_BIN_ABSPATH
-
-        manual_binary = os.environ.get("NPM_BINARY")
-        if manual_binary and os.path.isabs(manual_binary):
-            try:
-                valid_abspath = TypeAdapter(HostBinPath).validate_python(
-                    Path(manual_binary).resolve(),
-                )
-                self._INSTALLER_BIN_ABSPATH = valid_abspath
-                return valid_abspath
-            except Exception:
-                return None
-
-        abspath = bin_abspath(self.INSTALLER_BIN, PATH=self.PATH) or bin_abspath(
-            self.INSTALLER_BIN,
+        return bool(
+            bin_abspath(self.INSTALLER_BIN, PATH=self.PATH)
+            or bin_abspath(self.INSTALLER_BIN),
         )
-        if not abspath:
-            return None
-
-        valid_abspath = TypeAdapter(HostBinPath).validate_python(abspath)
-        if valid_abspath:
-            self._INSTALLER_BIN_ABSPATH = valid_abspath
-        return valid_abspath
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
@@ -218,8 +204,10 @@ class NpmProvider(BinProvider):
         if self.bin_dir:
             return self._merge_PATH(self.bin_dir)
 
-        npm_abspath = self.INSTALLER_BIN_ABSPATH
-        if not npm_abspath:
+        try:
+            npm_abspath = self.INSTALLER_BINARY().loaded_abspath
+            assert npm_abspath
+        except Exception:
             return PATH
 
         npm_bin_dirs: set[Path] = set()
@@ -346,7 +334,8 @@ class NpmProvider(BinProvider):
         timeout: int | None = None,
     ) -> str:
         self.setup(no_cache=no_cache)
-        npm_abspath = self._require_installer_bin()
+        npm_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        assert npm_abspath
         postinstall_scripts = (
             False if postinstall_scripts is None else postinstall_scripts
         )
@@ -401,7 +390,8 @@ class NpmProvider(BinProvider):
         timeout: int | None = None,
     ) -> str:
         self.setup(no_cache=no_cache)
-        npm_abspath = self._require_installer_bin()
+        npm_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        assert npm_abspath
         postinstall_scripts = (
             False if postinstall_scripts is None else postinstall_scripts
         )
@@ -455,7 +445,8 @@ class NpmProvider(BinProvider):
         min_version: SemVer | None = None,
         timeout: int | None = None,
     ) -> bool:
-        npm_abspath = self._require_installer_bin()
+        npm_abspath = self.INSTALLER_BINARY().loaded_abspath
+        assert npm_abspath
         postinstall_scripts = (
             False if postinstall_scripts is None else postinstall_scripts
         )
@@ -501,6 +492,7 @@ class NpmProvider(BinProvider):
     def default_abspath_handler(
         self,
         bin_name: BinName | HostBinPath,
+        no_cache: bool = False,
         **context,
     ) -> HostBinPath | None:
         # print(self.__class__.__name__, 'on_get_abspath', bin_name)
@@ -513,8 +505,10 @@ class NpmProvider(BinProvider):
         except Exception:
             pass
 
-        npm_abspath = self.INSTALLER_BIN_ABSPATH
-        if not npm_abspath:
+        try:
+            npm_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+            assert npm_abspath
+        except Exception:
             return None
 
         # fallback to using npm show to get alternate binary names based on the package, then try to find those in BinProvider.PATH
@@ -563,6 +557,7 @@ class NpmProvider(BinProvider):
         bin_name: BinName,
         abspath: HostBinPath | None = None,
         timeout: int | None = None,
+        no_cache: bool = False,
         **context,
     ) -> SemVer | None:
         try:
@@ -576,8 +571,10 @@ class NpmProvider(BinProvider):
         except ValueError:
             pass
 
-        npm_abspath = self.INSTALLER_BIN_ABSPATH
-        if not npm_abspath:
+        try:
+            npm_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+            assert npm_abspath
+        except Exception:
             return None
 
         package = None

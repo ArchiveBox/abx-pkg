@@ -308,10 +308,7 @@ class AnsibleProvider(BinProvider):
     ) -> str:
         install_args = install_args or self.get_install_args(bin_name)
 
-        if not self.INSTALLER_BIN_ABSPATH:
-            raise Exception(
-                f"{self.__class__.__name__}.INSTALLER_BIN is not available on this host: {self.INSTALLER_BIN}",
-            )
+        self.INSTALLER_BINARY()
 
         module_extra_kwargs = self.get_ansible_module_extra_kwargs()
 
@@ -336,10 +333,7 @@ class AnsibleProvider(BinProvider):
     ) -> str:
         install_args = install_args or self.get_install_args(bin_name)
 
-        if not self.INSTALLER_BIN_ABSPATH:
-            raise Exception(
-                f"{self.__class__.__name__}.INSTALLER_BIN is not available on this host: {self.INSTALLER_BIN}",
-            )
+        self.INSTALLER_BINARY()
 
         module_extra_kwargs = self.get_ansible_module_extra_kwargs()
         if module_extra_kwargs:
@@ -373,10 +367,7 @@ class AnsibleProvider(BinProvider):
     ) -> bool:
         install_args = install_args or self.get_install_args(bin_name)
 
-        if not self.INSTALLER_BIN_ABSPATH:
-            raise Exception(
-                f"{self.__class__.__name__}.INSTALLER_BIN is not available on this host: {self.INSTALLER_BIN}",
-            )
+        self.INSTALLER_BINARY()
 
         module_extra_kwargs = self.get_ansible_module_extra_kwargs()
         if module_extra_kwargs:

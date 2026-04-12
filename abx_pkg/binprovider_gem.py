@@ -14,6 +14,7 @@ from .base_types import (
     BinName,
     InstallArgs,
     abx_pkg_install_root_default,
+    bin_abspath,
 )
 from .semver import SemVer
 from .binprovider import BinProvider, DEFAULT_ENV_PATH, remap_kwargs
@@ -38,13 +39,27 @@ class GemProvider(BinProvider):
 
     @computed_field
     @property
+    def ENV(self) -> "dict[str, str]":
+        if not self.install_root:
+            return {}
+        gem_home = str(self.install_root)
+        return {
+            "GEM_HOME": gem_home,
+            "GEM_PATH": gem_home,
+        }
+
+    @computed_field
+    @property
     def is_valid(self) -> bool:
         if self.bin_dir and not (
             self.bin_dir.is_dir() and os.access(self.bin_dir, os.R_OK)
         ):
             return False
 
-        return bool(self.INSTALLER_BIN_ABSPATH)
+        return bool(
+            bin_abspath(self.INSTALLER_BIN, PATH=self.PATH)
+            or bin_abspath(self.INSTALLER_BIN),
+        )
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
@@ -143,29 +158,20 @@ class GemProvider(BinProvider):
         install_args = install_args or self.get_install_args(bin_name)
         if min_version and not any(arg.startswith("--version") for arg in install_args):
             install_args = ["--version", f">={min_version}", *install_args]
-        installer_bin = self._require_installer_bin()
-        install_root = self.install_root
-        bin_dir = self.bin_dir
-        assert install_root is not None
-        assert bin_dir is not None
-        gem_home = str(install_root)
+        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        assert installer_bin
 
         proc = self.exec(
             bin_name=installer_bin,
             cmd=[
                 "install",
                 "--install-dir",
-                gem_home,
+                str(self.install_root),
                 "--bindir",
-                str(bin_dir),
+                str(self.bin_dir),
                 *self.gem_install_args,
                 *install_args,
             ],
-            env={
-                **os.environ,
-                "GEM_HOME": gem_home,
-                "GEM_PATH": gem_home,
-            },
             timeout=timeout,
         )
         if proc.returncode != 0:
@@ -193,29 +199,20 @@ class GemProvider(BinProvider):
         install_args = install_args or self.get_install_args(bin_name)
         if min_version and not any(arg.startswith("--version") for arg in install_args):
             install_args = ["--version", f">={min_version}", *install_args]
-        installer_bin = self._require_installer_bin()
-        install_root = self.install_root
-        bin_dir = self.bin_dir
-        assert install_root is not None
-        assert bin_dir is not None
-        gem_home = str(install_root)
+        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        assert installer_bin
 
         proc = self.exec(
             bin_name=installer_bin,
             cmd=[
                 "update",
                 "--install-dir",
-                gem_home,
+                str(self.install_root),
                 "--bindir",
-                str(bin_dir),
+                str(self.bin_dir),
                 *self.gem_install_args,
                 *install_args,
             ],
-            env={
-                **os.environ,
-                "GEM_HOME": gem_home,
-                "GEM_PATH": gem_home,
-            },
             timeout=timeout,
         )
         if proc.returncode != 0:
@@ -235,10 +232,8 @@ class GemProvider(BinProvider):
         timeout: int | None = None,
     ) -> bool:
         install_args = install_args or self.get_install_args(bin_name)
-        installer_bin = self._require_installer_bin()
-        install_root = self.install_root
-        assert install_root is not None
-        gem_home = str(install_root)
+        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        assert installer_bin
 
         proc = self.exec(
             bin_name=installer_bin,
@@ -249,14 +244,9 @@ class GemProvider(BinProvider):
                 "--ignore-dependencies",
                 "--force",
                 "-i",
-                gem_home,
+                str(self.install_root),
                 *install_args,
             ],
-            env={
-                **os.environ,
-                "GEM_HOME": gem_home,
-                "GEM_PATH": gem_home,
-            },
             timeout=timeout,
         )
         if proc.returncode != 0 and "is not installed in GEM_HOME" not in proc.stderr:

@@ -6,7 +6,6 @@ import os
 import sys
 import site
 import re
-import shutil
 import sysconfig
 import tempfile
 from platformdirs import user_cache_path
@@ -90,9 +89,19 @@ class PipProvider(BinProvider):
         "setuptools",
     ]  # packages installed into newly created install_root environments
 
-    _INSTALLER_BIN_ABSPATH: HostBinPath | None = (
-        None  # speed optimization only, faster to cache the abspath than to recompute it on every access
-    )
+    @computed_field
+    @property
+    def ENV(self) -> "dict[str, str]":
+        if not self.install_root:
+            return {}
+        env: dict[str, str] = {"VIRTUAL_ENV": str(self.install_root)}
+        # Add site-packages to PYTHONPATH so scripts can import installed pkgs
+        for sp in sorted(
+            (self.install_root / "lib").glob("python*/site-packages"),
+        ):
+            env["PYTHONPATH"] = ":" + str(sp)
+            break
+        return env
 
     def supports_min_release_age(self, action) -> bool:
         if action not in ("install", "update"):
@@ -105,8 +114,11 @@ class PipProvider(BinProvider):
         # otherwise see ``None``.
         if self.install_root and "pip" in self.pip_bootstrap_packages:
             return True
-        installer = self.INSTALLER_BINARY
-        version = installer.loaded_version if installer else None
+        try:
+            installer = self.INSTALLER_BINARY()
+        except Exception:
+            return False
+        version = installer.loaded_version
         if version is None:
             return False
         return version >= _PIP_MIN_RELEASE_AGE_VERSION  # pyright: ignore[reportOperatorIssue]
@@ -135,48 +147,10 @@ class PipProvider(BinProvider):
             if not venv_pip_binary_exists:
                 return False
 
-        return bool(self.INSTALLER_BIN_ABSPATH)
-
-    @computed_field
-    @property
-    def INSTALLER_BIN_ABSPATH(self) -> HostBinPath | None:
-        """Actual absolute path of the underlying package manager (e.g. /usr/local/bin/pip)"""
-        if self._INSTALLER_BIN_ABSPATH:
-            # return cached value if we have one
-            return self._INSTALLER_BIN_ABSPATH
-
-        abspath = None
-        pip_binary = os.getenv("PIP_BINARY")
-
-        if pip_binary and Path(pip_binary).expanduser().is_absolute():
-            abspath = Path(pip_binary).expanduser()
-        elif self.install_root:
-            # use venv pip
-            venv_pip_path = self.install_root / "bin" / self.INSTALLER_BIN
-            if (
-                os.path.isfile(venv_pip_path)
-                and os.access(venv_pip_path, os.R_OK)
-                and os.access(venv_pip_path, os.X_OK)
-            ):
-                abspath = str(venv_pip_path)
-        else:
-            # use system pip
-            relpath = bin_abspath(
-                self.INSTALLER_BIN,
-                PATH=DEFAULT_ENV_PATH,
-            ) or shutil.which(self.INSTALLER_BIN)
-            abspath = (
-                relpath and Path(relpath).resolve()
-            )  # find self.INSTALLER_BIN abspath using environment path
-
-        if not abspath:
-            # underlying package manager not found on this host, return None
-            return None
-        valid_abspath = TypeAdapter(HostBinPath).validate_python(abspath)
-        if valid_abspath:
-            # if we found a valid abspath, cache it
-            self._INSTALLER_BIN_ABSPATH = valid_abspath
-        return valid_abspath
+        return bool(
+            bin_abspath(self.INSTALLER_BIN, PATH=self.PATH)
+            or bin_abspath(self.INSTALLER_BIN),
+        )
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
@@ -291,7 +265,8 @@ class PipProvider(BinProvider):
         # Bootstrap pip + setuptools into the newly created venv. We skip
         # security flags here because the venv was just created by Python's
         # own ``venv`` module and we're upgrading its baseline tooling.
-        pip_abspath = self._require_installer_bin()
+        pip_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        assert pip_abspath
         proc = self.exec(
             bin_name=pip_abspath,
             cmd=[
@@ -342,7 +317,7 @@ class PipProvider(BinProvider):
         if has_release_age_flag:
             return flags
 
-        installer = self.INSTALLER_BINARY
+        installer = self.INSTALLER_BINARY()
         pip_ver = installer.loaded_version if installer else None
         if pip_ver is None or pip_ver == SemVer((999, 999, 999)):
             return flags
@@ -371,7 +346,8 @@ class PipProvider(BinProvider):
         if self.install_root:
             self.setup(no_cache=no_cache)
 
-        pip_abspath = self._require_installer_bin()
+        pip_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        assert pip_abspath
         install_args = install_args or self.get_install_args(bin_name)
         if min_version:
             install_args = [
@@ -424,7 +400,8 @@ class PipProvider(BinProvider):
         if self.install_root:
             self.setup(no_cache=no_cache)
 
-        pip_abspath = self._require_installer_bin()
+        pip_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        assert pip_abspath
         install_args = install_args or self.get_install_args(bin_name)
         if min_version:
             install_args = [
@@ -474,7 +451,8 @@ class PipProvider(BinProvider):
         min_version: SemVer | None = None,
         timeout: int | None = None,
     ) -> bool:
-        pip_abspath = self._require_installer_bin()
+        pip_abspath = self.INSTALLER_BINARY().loaded_abspath
+        assert pip_abspath
         install_args = install_args or self.get_install_args(bin_name)
 
         proc = self.exec(
@@ -495,6 +473,7 @@ class PipProvider(BinProvider):
     def default_abspath_handler(
         self,
         bin_name: BinName | HostBinPath,
+        no_cache: bool = False,
         **context,
     ) -> HostBinPath | None:
 
@@ -506,8 +485,15 @@ class PipProvider(BinProvider):
         except ValueError:
             pass
 
-        pip_abspath = self.INSTALLER_BIN_ABSPATH
-        if not pip_abspath:
+        # If bin_dir is set (managed venv), only look there — don't fall
+        # through to pip show which would find system-installed packages
+        if self.bin_dir:
+            return None
+
+        try:
+            pip_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+            assert pip_abspath
+        except Exception:
             return None
 
         # fallback to using pip show to get the site-packages bin path
@@ -563,6 +549,7 @@ class PipProvider(BinProvider):
         bin_name: BinName,
         abspath: HostBinPath | None = None,
         timeout: int | None = None,
+        no_cache: bool = False,
         **context,
     ) -> SemVer | None:
         try:
@@ -576,8 +563,10 @@ class PipProvider(BinProvider):
         except ValueError:
             pass
 
-        pip_abspath = self.INSTALLER_BIN_ABSPATH
-        if not pip_abspath:
+        try:
+            pip_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+            assert pip_abspath
+        except Exception:
             return None
 
         # fallback to using pip show to get the version (slower)

@@ -12,10 +12,12 @@ from abx_pkg.exceptions import BinaryInstallError
 
 def _pick_formula_for_live_cycle() -> str:
     probe = BrewProvider(postinstall_scripts=True, min_release_age=0)
+    assert probe.is_valid
+    brew_bin = probe.INSTALLER_BINARY().loaded_abspath
     candidates = ("hello", "jq", "watch", "fzy")
     for formula in candidates:
         proc = subprocess.run(
-            [str(probe.INSTALLER_BIN_ABSPATH), "list", "--formula", formula],
+            [str(brew_bin), "list", "--formula", formula],
             capture_output=True,
             text=True,
         )
@@ -30,7 +32,7 @@ def _pick_formula_for_live_cycle() -> str:
         except Exception:
             continue
         proc = subprocess.run(
-            [str(probe.INSTALLER_BIN_ABSPATH), "list", "--formula", formula],
+            [str(brew_bin), "list", "--formula", formula],
             capture_output=True,
             text=True,
         )

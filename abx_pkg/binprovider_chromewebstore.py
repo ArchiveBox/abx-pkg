@@ -16,6 +16,7 @@ from .base_types import (
     BinProviderName,
     PATHStr,
     abx_pkg_install_root_default,
+    bin_abspath,
 )
 from .binprovider import (
     BinProvider,
@@ -65,7 +66,13 @@ class ChromeWebstoreProvider(BinProvider):
     @computed_field
     @property
     def is_valid(self) -> bool:
-        return bool(self.INSTALLER_BIN_ABSPATH and CHROME_UTILS_PATH.exists())
+        return bool(
+            (
+                bin_abspath(self.INSTALLER_BIN, PATH=self.PATH)
+                or bin_abspath(self.INSTALLER_BIN)
+            )
+            and CHROME_UTILS_PATH.exists(),
+        )
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
@@ -188,7 +195,8 @@ class ChromeWebstoreProvider(BinProvider):
 
         webstore_id = str(install_args[0] if install_args else bin_name)
         extension_name = self._extension_name(bin_name, install_args)
-        installer_bin = self._require_installer_bin()
+        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        assert installer_bin
         install_root = self.install_root
         bin_dir = self.bin_dir
         assert install_root is not None

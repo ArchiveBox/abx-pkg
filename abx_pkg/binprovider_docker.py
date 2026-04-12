@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from pydantic import Field, model_validator, TypeAdapter, computed_field
+from pydantic import Field, model_validator, TypeAdapter
 from typing import Self
 
 from .base_types import (
@@ -42,11 +42,6 @@ class DockerProvider(BinProvider):
     )
     bin_dir: Path | None = Field(default=None, validation_alias="docker_shim_dir")
     docker_run_args: list[str] = ["--rm", "-i"]
-
-    @computed_field
-    @property
-    def is_valid(self) -> bool:
-        return bool(self.INSTALLER_BIN_ABSPATH)
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
@@ -135,10 +130,8 @@ class DockerProvider(BinProvider):
         bin_dir = self.bin_dir
         assert bin_dir is not None
         wrapper_path = bin_dir / bin_name
-        docker_bin = self.INSTALLER_BIN_ABSPATH
-        assert docker_bin, (
-            f"{self.__class__.__name__}.INSTALLER_BIN is not available on this host"
-        )
+        docker_bin = self.INSTALLER_BINARY().loaded_abspath
+        assert docker_bin
 
         wrapper_path.write_text(
             "\n".join(
@@ -184,7 +177,8 @@ class DockerProvider(BinProvider):
         )
 
         install_args = install_args or self.get_install_args(bin_name)
-        installer_bin = self._require_installer_bin()
+        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        assert installer_bin
 
         logs: list[str] = []
         for image_ref in install_args:
@@ -258,7 +252,8 @@ class DockerProvider(BinProvider):
         timeout: int | None = None,
     ) -> bool:
         install_args = install_args or self.get_install_args(bin_name)
-        installer_bin = self._require_installer_bin()
+        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        assert installer_bin
 
         bin_dir = self.bin_dir
         install_root = self.install_root
@@ -284,6 +279,7 @@ class DockerProvider(BinProvider):
     def default_abspath_handler(
         self,
         bin_name: BinName | HostBinPath,
+        no_cache: bool = False,
         **context,
     ) -> HostBinPath | None:
         bin_dir = self.bin_dir
@@ -301,6 +297,7 @@ class DockerProvider(BinProvider):
         bin_name: BinName,
         abspath: HostBinPath | None = None,
         timeout: int | None = None,
+        no_cache: bool = False,
         **context,
     ) -> SemVer | None:
         metadata = self._read_metadata(str(bin_name))

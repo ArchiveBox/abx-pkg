@@ -7,7 +7,7 @@ import time
 import platform
 from pathlib import Path
 
-from pydantic import Field, model_validator, TypeAdapter
+from pydantic import Field, model_validator, TypeAdapter, computed_field
 
 from .base_types import (
     BinProviderName,
@@ -54,6 +54,16 @@ class BrewProvider(BinProvider):
     )
     bin_dir: Path | None = None
 
+    @computed_field
+    @property
+    def ENV(self) -> "dict[str, str]":
+        if not self.install_root:
+            return {}
+        return {
+            "HOMEBREW_PREFIX": str(self.install_root),
+            "HOMEBREW_CELLAR": str(self.install_root / "Cellar"),
+        }
+
     def supports_min_release_age(self, action) -> bool:
         return False
 
@@ -76,9 +86,12 @@ class BrewProvider(BinProvider):
             seen.add(prefix_str)
             prefixes.append(prefix)
 
-        installer_bin = self.INSTALLER_BIN_ABSPATH
-        if installer_bin:
-            add_prefix(Path(installer_bin).parent)
+        installer_abspath = bin_abspath(
+            self.INSTALLER_BIN,
+            PATH=self.PATH,
+        ) or bin_abspath(self.INSTALLER_BIN)
+        if installer_abspath:
+            add_prefix(Path(installer_abspath).parent)
 
         for bin_dir in self.PATH.split(":"):
             if not bin_dir:
@@ -143,7 +156,9 @@ class BrewProvider(BinProvider):
         assert install_root is not None
         if self.bin_dir is None:
             self.bin_dir = install_root / "bin"
-        if not self.INSTALLER_BIN_ABSPATH:
+        try:
+            self.INSTALLER_BINARY()
+        except Exception:
             # brew is not available on this host
             self.PATH: PATHStr = ""
             return self
@@ -158,7 +173,9 @@ class BrewProvider(BinProvider):
             seen.add(path_str)
             bin_dirs.append(path_str)
 
-        add_bin_dir(Path(self.INSTALLER_BIN_ABSPATH).parent)
+        installer_abspath = self.INSTALLER_BINARY().loaded_abspath
+        assert installer_abspath
+        add_bin_dir(Path(installer_abspath).parent)
 
         if OS == "darwin":
             for path in (DEFAULT_MACOS_DIR, NEW_MACOS_DIR, OLD_MACOS_DIR):
@@ -196,9 +213,10 @@ class BrewProvider(BinProvider):
 
         install_args = install_args or self.get_install_args(bin_name)
 
-        installer_bin = self._require_installer_bin()
+        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        assert installer_bin
 
-        # print(f'[*] {self.__class__.__name__}: Installing {bin_name}: {self.INSTALLER_BIN_ABSPATH} install {install_args}')
+        # print(f'[*] {self.__class__.__name__}: Installing {bin_name}: {self.INSTALLER_BIN} install {install_args}')
 
         # Attempt 1: Try installing with Pyinfra
         from .binprovider_pyinfra import PYINFRA_INSTALLED, pyinfra_package_install
@@ -275,7 +293,8 @@ class BrewProvider(BinProvider):
 
         install_args = install_args or self.get_install_args(bin_name)
 
-        installer_bin = self._require_installer_bin()
+        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        assert installer_bin
 
         from .binprovider_pyinfra import PYINFRA_INSTALLED, pyinfra_package_install
 
@@ -347,7 +366,8 @@ class BrewProvider(BinProvider):
     ) -> bool:
         install_args = install_args or self.get_install_args(bin_name)
 
-        installer_bin = self._require_installer_bin()
+        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        assert installer_bin
 
         from .binprovider_pyinfra import PYINFRA_INSTALLED, pyinfra_package_install
 
@@ -386,9 +406,22 @@ class BrewProvider(BinProvider):
     def default_abspath_handler(
         self,
         bin_name: BinName | HostBinPath,
+        no_cache: bool = False,
         **context,
     ) -> HostBinPath | None:
-        # print(f'[*] {self.__class__.__name__}: Getting abspath for {bin_name}...')
+        # Installer binary: delegate to base class (avoids recursion via _brew_search_paths)
+        if str(bin_name) == self.INSTALLER_BIN:
+            try:
+                abspath = super().default_abspath_handler(
+                    bin_name,
+                    no_cache=no_cache,
+                    **context,
+                )
+                if abspath:
+                    return TypeAdapter(HostBinPath).validate_python(abspath)
+            except Exception:
+                return None
+            return None
 
         if not self.PATH:
             return None
@@ -406,14 +439,17 @@ class BrewProvider(BinProvider):
                 return abspath
             return self._refresh_bin_link(bin_name, abspath)
 
-        if not self.INSTALLER_BIN_ABSPATH:
+        try:
+            brew_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+            assert brew_abspath
+        except Exception:
             return None
 
         for package in self.get_install_args(str(bin_name)) or [str(bin_name)]:
             try:
                 paths = (
                     self.exec(
-                        bin_name=self.INSTALLER_BIN_ABSPATH,
+                        bin_name=brew_abspath,
                         cmd=["list", "--formula", package],
                         timeout=self.version_timeout,
                         quiet=True,
@@ -440,7 +476,7 @@ class BrewProvider(BinProvider):
         # # try checking filesystem or using brew list to get the Cellar bin path (faster than brew info)
         # for package in (self.get_install_args(str(bin_name)) or [str(bin_name)]):
         #     try:
-        #         paths = self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=[
+        #         paths = self.exec(bin_name=self._require_installer_bin(), cmd=[
         #             'list',
         #             '--formulae',
         #             package,
@@ -455,7 +491,7 @@ class BrewProvider(BinProvider):
         # # fallback to using brew info to get the Cellar bin path
         # for package in (self.get_install_args(str(bin_name)) or [str(bin_name)]):
         #     try:
-        #         info_lines = self.exec(bin_name=self.INSTALLER_BIN_ABSPATH, cmd=[
+        #         info_lines = self.exec(bin_name=self._require_installer_bin(), cmd=[
         #             'info',
         #             '--quiet',
         #             package,
@@ -474,6 +510,7 @@ class BrewProvider(BinProvider):
         bin_name: BinName,
         abspath: HostBinPath | None = None,
         timeout: int | None = None,
+        no_cache: bool = False,
         **context,
     ) -> SemVer | None:
         # print(f'[*] {self.__class__.__name__}: Getting version for {bin_name}...')
@@ -499,7 +536,10 @@ class BrewProvider(BinProvider):
         except ValueError:
             pass
 
-        if not self.INSTALLER_BIN_ABSPATH:
+        try:
+            brew_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+            assert brew_abspath
+        except Exception:
             return None
 
         # fallback to using brew list to get the package version (faster than brew info)
@@ -507,7 +547,7 @@ class BrewProvider(BinProvider):
             try:
                 paths = (
                     self.exec(
-                        bin_name=self.INSTALLER_BIN_ABSPATH,
+                        bin_name=brew_abspath,
                         cmd=[
                             "list",
                             "--formulae",
@@ -543,7 +583,7 @@ class BrewProvider(BinProvider):
         try:
             version_str = (
                 self.exec(
-                    bin_name=self.INSTALLER_BIN_ABSPATH,
+                    bin_name=brew_abspath,
                     cmd=[
                         "info",
                         "--quiet",

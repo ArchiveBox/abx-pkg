@@ -9,12 +9,11 @@ from pathlib import Path
 from typing import Self
 
 from platformdirs import user_cache_path
-from pydantic import Field, TypeAdapter, computed_field, model_validator
+from pydantic import Field, computed_field, model_validator
 
 from .base_types import (
     BinName,
     BinProviderName,
-    HostBinPath,
     InstallArgs,
     PATHStr,
     abx_pkg_install_root_default,
@@ -76,11 +75,24 @@ class DenoProvider(BinProvider):
 
     deno_default_scheme: str = "npm"  # 'npm' or 'jsr'
 
+    @computed_field
+    @property
+    def ENV(self) -> "dict[str, str]":
+        env: dict[str, str] = {}
+        if self.install_root:
+            env["DENO_INSTALL_ROOT"] = str(self.install_root)
+        if self.deno_dir:
+            env["DENO_DIR"] = str(self.deno_dir)
+        return env
+
     def supports_min_release_age(self, action) -> bool:
         if action not in ("install", "update"):
             return False
         threshold = SemVer.parse("2.5.0")
-        installer = self.INSTALLER_BINARY
+        try:
+            installer = self.INSTALLER_BINARY()
+        except Exception:
+            return False
         version = installer.loaded_version if installer else None
         return bool(version and threshold and version >= threshold)
 
@@ -94,36 +106,10 @@ class DenoProvider(BinProvider):
             self.bin_dir.is_dir() and os.access(self.bin_dir, os.R_OK)
         ):
             return False
-        return bool(self.INSTALLER_BIN_ABSPATH)
-
-    @computed_field
-    @property
-    def INSTALLER_BIN_ABSPATH(self) -> HostBinPath | None:
-        """Resolve the deno executable, honoring ``DENO_BINARY`` for explicit overrides."""
-        if self._INSTALLER_BIN_ABSPATH:
-            return self._INSTALLER_BIN_ABSPATH
-
-        manual_binary = os.environ.get("DENO_BINARY")
-        if manual_binary and os.path.isabs(manual_binary):
-            try:
-                valid_abspath = TypeAdapter(HostBinPath).validate_python(
-                    Path(manual_binary).resolve(),
-                )
-                self._INSTALLER_BIN_ABSPATH = valid_abspath
-                return valid_abspath
-            except Exception:
-                return None
-
-        abspath = bin_abspath(self.INSTALLER_BIN, PATH=self.PATH) or bin_abspath(
-            self.INSTALLER_BIN,
+        return bool(
+            bin_abspath(self.INSTALLER_BIN, PATH=self.PATH)
+            or bin_abspath(self.INSTALLER_BIN),
         )
-        if not abspath:
-            return None
-
-        valid_abspath = TypeAdapter(HostBinPath).validate_python(abspath)
-        if valid_abspath:
-            self._INSTALLER_BIN_ABSPATH = valid_abspath
-        return valid_abspath
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
@@ -207,7 +193,8 @@ class DenoProvider(BinProvider):
         timeout: int | None = None,
     ) -> str:
         self.setup(no_cache=no_cache)
-        installer_bin = self._require_installer_bin()
+        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        assert installer_bin
         postinstall_scripts = bool(postinstall_scripts)
         install_args = install_args or self.get_install_args(bin_name)
         if min_version:
@@ -297,8 +284,10 @@ class DenoProvider(BinProvider):
         min_version: SemVer | None = None,
         timeout: int | None = None,
     ) -> bool:
+        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        assert installer_bin
         proc = self.exec(
-            bin_name=self._require_installer_bin(),
+            bin_name=installer_bin,
             cmd=["uninstall", "-g", bin_name],
             timeout=timeout,
         )

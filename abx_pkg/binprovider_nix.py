@@ -6,7 +6,7 @@ import shutil
 
 from pathlib import Path
 
-from pydantic import Field, model_validator, TypeAdapter, computed_field
+from pydantic import Field, model_validator, computed_field
 from typing import Self
 
 from .base_types import (
@@ -14,13 +14,13 @@ from .base_types import (
     PATHStr,
     BinName,
     InstallArgs,
-    HostBinPath,
     abx_pkg_install_root_default,
     bin_abspath,
 )
 from .semver import SemVer
 from .binprovider import BinProvider, DEFAULT_ENV_PATH, remap_kwargs
 from .logging import format_subprocess_output
+from .shallowbinary import ShallowBinary
 
 
 # Ultimate fallback when neither the constructor arg nor
@@ -52,20 +52,16 @@ class NixProvider(BinProvider):
 
     @computed_field
     @property
-    def INSTALLER_BIN_ABSPATH(self) -> HostBinPath | None:
-        if self._INSTALLER_BIN_ABSPATH:
-            return self._INSTALLER_BIN_ABSPATH
-
-        abspath = bin_abspath(
-            self.INSTALLER_BIN,
-            PATH=f"{DEFAULT_NIX_BIN_DIR}:{DEFAULT_ENV_PATH}",
-        ) or bin_abspath(DEFAULT_NIX_BIN_DIR / "nix")
-        if not abspath:
-            return None
-
-        valid_abspath = TypeAdapter(HostBinPath).validate_python(abspath)
-        self._INSTALLER_BIN_ABSPATH = valid_abspath
-        return valid_abspath
+    def ENV(self) -> "dict[str, str]":
+        if not self.install_root:
+            return {}
+        env: dict[str, str] = {
+            "LD_LIBRARY_PATH": ":" + str(self.install_root / "lib"),
+        }
+        if self.nix_state_dir:
+            env["XDG_STATE_HOME"] = str(self.nix_state_dir)
+            env["XDG_CACHE_HOME"] = str(self.nix_state_dir / "cache")
+        return env
 
     @computed_field
     @property
@@ -76,7 +72,13 @@ class NixProvider(BinProvider):
         if profile_bin_dir.exists() and not os.access(profile_bin_dir, os.R_OK):
             return False
 
-        return bool(self.INSTALLER_BIN_ABSPATH)
+        return bool(
+            bin_abspath(
+                self.INSTALLER_BIN,
+                PATH=f"{DEFAULT_NIX_BIN_DIR}:{DEFAULT_ENV_PATH}",
+            )
+            or bin_abspath(self.INSTALLER_BIN),
+        )
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
@@ -102,6 +104,23 @@ class NixProvider(BinProvider):
             prepend=True,
         )
         return self
+
+    def INSTALLER_BINARY(self, no_cache: bool = False) -> ShallowBinary:
+        if not no_cache and self._INSTALLER_BINARY and self._INSTALLER_BINARY.is_valid:
+            return self._INSTALLER_BINARY
+        nix_abspath = bin_abspath(
+            self.INSTALLER_BIN,
+            PATH=f"{DEFAULT_NIX_BIN_DIR}:{DEFAULT_ENV_PATH}",
+        ) or bin_abspath(DEFAULT_NIX_BIN_DIR / "nix")
+        if nix_abspath:
+            try:
+                loaded = self.load(bin_name=self.INSTALLER_BIN)
+                if loaded:
+                    self._INSTALLER_BINARY = loaded
+                    return loaded
+            except Exception:
+                pass
+        return super().INSTALLER_BINARY(no_cache=no_cache)
 
     def setup(
         self,
@@ -153,11 +172,8 @@ class NixProvider(BinProvider):
         )
 
         install_args = install_args or self.get_install_args(bin_name)
-        installer_bin = self._require_installer_bin()
-        env = os.environ.copy()
-        if self.nix_state_dir:
-            env["XDG_STATE_HOME"] = str(self.nix_state_dir)
-            env["XDG_CACHE_HOME"] = str(self.nix_state_dir / "cache")
+        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        assert installer_bin
 
         proc = self.exec(
             bin_name=installer_bin,
@@ -169,7 +185,6 @@ class NixProvider(BinProvider):
                 str(self.install_root),
                 *install_args,
             ],
-            env=env,
             timeout=timeout,
         )
         if proc.returncode != 0:
@@ -191,11 +206,8 @@ class NixProvider(BinProvider):
             bin_name,
             install_args=install_args,
         )
-        installer_bin = self._require_installer_bin()
-        env = os.environ.copy()
-        if self.nix_state_dir:
-            env["XDG_STATE_HOME"] = str(self.nix_state_dir)
-            env["XDG_CACHE_HOME"] = str(self.nix_state_dir / "cache")
+        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        assert installer_bin
 
         proc = self.exec(
             bin_name=installer_bin,
@@ -207,7 +219,6 @@ class NixProvider(BinProvider):
                 str(self.install_root),
                 profile_element,
             ],
-            env=env,
             timeout=timeout,
         )
         if proc.returncode != 0:
@@ -229,11 +240,8 @@ class NixProvider(BinProvider):
             bin_name,
             install_args=install_args,
         )
-        installer_bin = self._require_installer_bin()
-        env = os.environ.copy()
-        if self.nix_state_dir:
-            env["XDG_STATE_HOME"] = str(self.nix_state_dir)
-            env["XDG_CACHE_HOME"] = str(self.nix_state_dir / "cache")
+        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        assert installer_bin
 
         proc = self.exec(
             bin_name=installer_bin,
@@ -245,7 +253,6 @@ class NixProvider(BinProvider):
                 str(self.install_root),
                 profile_element,
             ],
-            env=env,
             timeout=timeout,
         )
         if proc.returncode not in (0, 1):

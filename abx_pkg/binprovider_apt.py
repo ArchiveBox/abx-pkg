@@ -27,10 +27,12 @@ class AptProvider(BinProvider):
     @model_validator(mode="after")
     def load_PATH_from_dpkg_install_location(self):
         dpkg_abspath = shutil.which("dpkg")
-        if (not self.INSTALLER_BIN_ABSPATH) or not dpkg_abspath or not self.is_valid:
+        try:
+            self.INSTALLER_BINARY()
+        except Exception:
+            return self
+        if not dpkg_abspath or not self.is_valid:
             # package manager is not available on this host
-            # self.PATH: PATHStr = ''
-            # self.INSTALLER_BIN_ABSPATH = None
             return self
 
         PATH = self.PATH
@@ -60,8 +62,9 @@ class AptProvider(BinProvider):
 
         install_args = install_args or self.get_install_args(bin_name)
 
-        installer_bin = self.INSTALLER_BIN_ABSPATH
-        if not (installer_bin and shutil.which("dpkg")):
+        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        assert installer_bin
+        if not shutil.which("dpkg"):
             raise Exception(
                 f"{self.__class__.__name__}.INSTALLER_BIN is not available on this host: {self.INSTALLER_BIN}",
             )
@@ -125,8 +128,9 @@ class AptProvider(BinProvider):
 
         install_args = install_args or self.get_install_args(bin_name)
 
-        installer_bin = self.INSTALLER_BIN_ABSPATH
-        if not (installer_bin and shutil.which("dpkg")):
+        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        assert installer_bin
+        if not shutil.which("dpkg"):
             raise Exception(
                 f"{self.__class__.__name__}.INSTALLER_BIN is not available on this host: {self.INSTALLER_BIN}",
             )
@@ -191,8 +195,9 @@ class AptProvider(BinProvider):
     ) -> bool:
         install_args = install_args or self.get_install_args(bin_name)
 
-        installer_bin = self.INSTALLER_BIN_ABSPATH
-        if not (installer_bin and shutil.which("dpkg")):
+        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        assert installer_bin
+        if not shutil.which("dpkg"):
             raise Exception(
                 f"{self.__class__.__name__}.INSTALLER_BIN is not available on this host: {self.INSTALLER_BIN}",
             )

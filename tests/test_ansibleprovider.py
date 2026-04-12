@@ -64,9 +64,9 @@ class TestAnsibleProvider:
         )
 
         with pytest.raises(subprocess.TimeoutExpired):
-            provider.install("sleep")
+            provider.install("sleep", no_cache=True)
         with pytest.raises(subprocess.TimeoutExpired):
-            provider.update("sleep")
+            provider.update("sleep", no_cache=True)
         with pytest.raises(subprocess.TimeoutExpired):
             provider.uninstall("sleep")
 

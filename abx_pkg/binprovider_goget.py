@@ -2,7 +2,6 @@
 __package__ = "abx_pkg"
 
 import os
-import shutil
 
 from pathlib import Path
 
@@ -41,13 +40,26 @@ class GoGetProvider(BinProvider):
 
     @computed_field
     @property
+    def ENV(self) -> "dict[str, str]":
+        if not self.install_root:
+            return {}
+        env: dict[str, str] = {"GOPATH": str(self.install_root)}
+        if self.bin_dir:
+            env["GOBIN"] = str(self.bin_dir)
+        return env
+
+    @computed_field
+    @property
     def is_valid(self) -> bool:
         if self.bin_dir and not (
             self.bin_dir.is_dir() and os.access(self.bin_dir, os.R_OK)
         ):
             return False
 
-        return bool(self.INSTALLER_BIN_ABSPATH)
+        return bool(
+            bin_abspath(self.INSTALLER_BIN, PATH=self.PATH)
+            or bin_abspath(self.INSTALLER_BIN),
+        )
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
@@ -118,20 +130,12 @@ class GoGetProvider(BinProvider):
         )
 
         install_args = install_args or self.get_install_args(bin_name)
-        installer_bin = self._require_installer_bin()
-        install_root = self.install_root
-        bin_dir = self.bin_dir
-        assert install_root is not None
-        assert bin_dir is not None
+        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        assert installer_bin
 
         proc = self.exec(
             bin_name=installer_bin,
             cmd=["install", *self.go_install_args, *install_args],
-            env={
-                **os.environ,
-                "GOPATH": str(install_root),
-                "GOBIN": str(bin_dir),
-            },
             timeout=timeout,
         )
         if proc.returncode != 0:
@@ -168,30 +172,25 @@ class GoGetProvider(BinProvider):
         min_version: SemVer | None = None,
         timeout: int | None = None,
     ) -> bool:
-        install_args = list(install_args or self.get_install_args(bin_name))
-        install_target = install_args[0] if install_args else bin_name
-        candidate_name = (
-            Path(str(install_target).split("@", 1)[0].rstrip("/")).name or bin_name
-        )
+        abspath = self.get_abspath(bin_name, quiet=True, no_cache=True)
+        if not abspath:
+            return True
 
-        bin_dir = self.bin_dir
-        assert bin_dir is not None
-        paths_to_remove: list[Path] = []
-        requested_path = bin_dir / bin_name
-        paths_to_remove.append(requested_path)
-        if candidate_name != bin_name:
-            paths_to_remove.append(bin_dir / candidate_name)
-
-        for path in paths_to_remove:
-            if path.is_dir():
-                shutil.rmtree(path, ignore_errors=True)
-            else:
-                path.unlink(missing_ok=True)
+        Path(abspath).unlink(missing_ok=True)
+        # Also remove the short binary name (e.g. "shfmt" for
+        # "mvdan.cc/sh/v3/cmd/shfmt") from bin_dir.
+        if self.bin_dir:
+            install_args = self.get_install_args(str(bin_name))
+            install_target = install_args[0] if install_args else str(bin_name)
+            short_name = Path(str(install_target).split("@", 1)[0].rstrip("/")).name
+            if short_name and short_name != str(bin_name):
+                (self.bin_dir / short_name).unlink(missing_ok=True)
         return True
 
     def default_abspath_handler(
         self,
         bin_name: BinName | HostBinPath,
+        no_cache: bool = False,
         **context,
     ) -> HostBinPath | None:
         bin_name_str = str(bin_name)
@@ -229,24 +228,21 @@ class GoGetProvider(BinProvider):
         bin_name: BinName,
         abspath: HostBinPath | None = None,
         timeout: int | None = None,
+        no_cache: bool = False,
         **context,
     ) -> SemVer | None:
         abspath = abspath or self.get_abspath(bin_name, quiet=True)
-        if not abspath or not self.INSTALLER_BIN_ABSPATH:
+        if not abspath:
             return None
-        install_root = self.install_root
-        bin_dir = self.bin_dir
-        assert install_root is not None
-        assert bin_dir is not None
+        try:
+            installer_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+            assert installer_abspath
+        except Exception:
+            return None
 
         proc = self.exec(
-            bin_name=self.INSTALLER_BIN_ABSPATH,
+            bin_name=installer_abspath,
             cmd=["version", "-m", abspath],
-            env={
-                **os.environ,
-                "GOPATH": str(install_root),
-                "GOBIN": str(bin_dir),
-            },
             timeout=timeout,
             quiet=True,
         )

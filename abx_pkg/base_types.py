@@ -21,11 +21,6 @@ from pydantic import TypeAdapter, AfterValidator, BeforeValidator, ValidationErr
 # provider; explicit constructor kwargs override both.
 DEFAULT_LIB_DIR: Path = user_config_path("abx") / "lib"
 
-_lib_dir_env = os.environ.get("ABX_PKG_LIB_DIR", "").strip()
-ABX_PKG_LIB_DIR: Path | None = (
-    Path(_lib_dir_env).expanduser().resolve() if _lib_dir_env else None
-)
-
 
 def abx_pkg_install_root_default(provider_name: str) -> Path | None:
     """Resolve a provider's default install root from env vars.
@@ -42,8 +37,11 @@ def abx_pkg_install_root_default(provider_name: str) -> Path | None:
     specific = os.environ.get(f"ABX_PKG_{provider_name.upper()}_ROOT", "").strip()
     if specific:
         return Path(specific).expanduser().resolve()
-    if ABX_PKG_LIB_DIR is not None:
-        return ABX_PKG_LIB_DIR / provider_name
+    # Read from os.environ directly (not the cached module-level
+    # ABX_PKG_LIB_DIR) because the CLI sets it at runtime via --lib.
+    lib_dir = os.environ.get("ABX_PKG_LIB_DIR", "").strip()
+    if lib_dir:
+        return Path(lib_dir).expanduser().resolve() / provider_name
     return None
 
 
