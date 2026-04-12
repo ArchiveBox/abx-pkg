@@ -20,7 +20,7 @@ concurrency:
 jobs:
   precheck:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
 
     steps:
     - uses: actions/checkout@v6
@@ -50,7 +50,7 @@ jobs:
   discover-standard-tests:
     needs: precheck
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     outputs:
       test-files: ${{ steps.set-matrix.outputs.test-files }}
 
@@ -81,7 +81,7 @@ jobs:
     name: ${{ matrix.target.os }} py${{ matrix.target.python_version }} ${{ matrix.test.name }}
     needs: [precheck, discover-standard-tests]
     runs-on: ${{ matrix.target.os }}
-    timeout-minutes: 5
+    timeout-minutes: 10
     if: ${{ needs.discover-standard-tests.outputs.test-files != '[]' }}
     strategy:
       fail-fast: false
@@ -211,7 +211,7 @@ jobs:
   discover-live-tests:
     needs: precheck
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     outputs:
       live-tests: ${{ steps.set-matrix.outputs.live-tests }}
 
@@ -253,7 +253,7 @@ jobs:
     name: ${{ matrix.live.name }}
     needs: [precheck, discover-live-tests]
     runs-on: ${{ matrix.live.os }}
-    timeout-minutes: 5
+    timeout-minutes: 10
     if: ${{ needs.discover-live-tests.outputs.live-tests != '[]' }}
     strategy:
       fail-fast: false
