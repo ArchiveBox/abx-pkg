@@ -1,0 +1,25 @@
+abx_pkg/binprovider_goget.py
+  fa9493a9fcca68b9 85,237-251
+tests/test_playwrightprovider.py
+  fa9493a9fcca68b9 35-46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "9f37b46b7b6fe579a103c722da70dee76c43a8ab",
+  "prompts": {
+    "fa9493a9fcca68b9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d7eb9-b345-7ba1-bae3-721151e5bc08",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 28,
+      "total_deletions": 1,
+      "accepted_lines": 28,
+      "overriden_lines": 0
+    }
+  }
+}
