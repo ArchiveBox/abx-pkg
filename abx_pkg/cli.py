@@ -534,6 +534,8 @@ def version_report(options: CliOptions) -> str:
             installer_binary = provider.INSTALLER_BINARY()
         except Exception:
             continue
+        if installer_binary is None:
+            continue
         version = str(installer_binary.loaded_version or "unknown")
         abspath = installer_binary.loaded_abspath
         if not abspath:
