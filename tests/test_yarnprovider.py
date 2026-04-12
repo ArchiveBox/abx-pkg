@@ -5,23 +5,64 @@ from pathlib import Path
 import pytest
 
 from abx_pkg import Binary, SemVer, YarnProvider
+from abx_pkg.base_types import bin_abspath
 from abx_pkg.exceptions import BinaryInstallError, BinProviderInstallError
 
 
 class TestYarnProvider:
-    @staticmethod
-    def _require_yarn_min_release_age_support(provider: YarnProvider) -> None:
-        if not provider.supports_min_release_age("install"):
-            pytest.skip(
-                "yarn on this host does not support npmMinimalAgeGate",
+    @classmethod
+    def _provider_for_kind(cls, kind: str, **kwargs) -> YarnProvider:
+        assert kind in {"classic", "berry"}
+        version_threshold = SemVer.parse("2.0.0")
+        current_path = str(YarnProvider(**kwargs).PATH)
+        if kind == "berry":
+            berry_alias = bin_abspath("yarn-berry", PATH=current_path) or bin_abspath(
+                "yarn-berry",
             )
+            assert berry_alias is not None, (
+                "Could not resolve the globally installed yarn-berry alias on PATH"
+            )
+            berry_link = berry_alias.readlink() if berry_alias.is_symlink() else None
+            berry_bin_dir = (
+                (berry_alias.parent / berry_link).parent
+                if berry_link and not berry_link.is_absolute()
+                else (berry_link or berry_alias).parent
+            )
+            candidate_path = ":".join(
+                dict.fromkeys(
+                    [
+                        str(berry_bin_dir),
+                        *[entry for entry in current_path.split(":") if entry],
+                    ],
+                ),
+            )
+            provider = YarnProvider(PATH=candidate_path, **kwargs)
+            installer = provider.INSTALLER_BINARY()
+            version = installer.loaded_version
+            assert (
+                version is not None
+                and version_threshold is not None
+                and (version >= version_threshold)
+            ), "yarn-berry must resolve to a Yarn 2+ installer"
+            return provider
 
-    @staticmethod
-    def _require_yarn_postinstall_disable_support(provider: YarnProvider) -> None:
-        if not provider.supports_postinstall_disable("install"):
-            pytest.skip(
-                "yarn on this host does not support disabling postinstall scripts",
-            )
+        provider = YarnProvider(PATH=current_path, **kwargs)
+        installer = provider.INSTALLER_BINARY()
+        version = installer.loaded_version
+        assert (
+            version is not None
+            and version_threshold is not None
+            and (version < version_threshold)
+        ), "ambient yarn on PATH must resolve to Yarn 1.x for classic coverage"
+        return provider
+
+    @classmethod
+    def _berry_provider(cls, **kwargs) -> YarnProvider:
+        return cls._provider_for_kind("berry", **kwargs)
+
+    @classmethod
+    def _classic_provider(cls, **kwargs) -> YarnProvider:
+        return cls._provider_for_kind("classic", **kwargs)
 
     def test_install_root_alias_installs_into_the_requested_prefix(self, test_machine):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -146,12 +187,12 @@ class TestYarnProvider:
         test_machine,
     ):
         with tempfile.TemporaryDirectory() as tmpdir:
-            strict_provider = YarnProvider(
+            strict_provider = self._berry_provider(
                 install_root=Path(tmpdir) / "strict-yarn",
                 postinstall_scripts=True,
                 min_release_age=36500,
             )
-            self._require_yarn_min_release_age_support(strict_provider)
+            assert strict_provider.supports_min_release_age("install")
 
             with pytest.raises(BinProviderInstallError):
                 strict_provider.install("zx")
@@ -173,7 +214,7 @@ class TestYarnProvider:
             binary = Binary(
                 name="zx",
                 binproviders=[
-                    YarnProvider(
+                    self._berry_provider(
                         install_root=Path(tmpdir) / "binary-yarn",
                         postinstall_scripts=True,
                         min_release_age=36500,
@@ -187,12 +228,12 @@ class TestYarnProvider:
 
     def test_min_release_age_pins_to_older_version_when_strict(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            strict_provider = YarnProvider(
+            strict_provider = self._berry_provider(
                 install_root=Path(tmpdir) / "yarn",
                 postinstall_scripts=True,
                 min_release_age=365,
             )
-            self._require_yarn_min_release_age_support(strict_provider)
+            assert strict_provider.supports_min_release_age("install")
             installed = strict_provider.install("zx")
             assert installed is not None
             assert installed.loaded_version is not None
@@ -209,14 +250,14 @@ class TestYarnProvider:
         self,
     ):
         with tempfile.TemporaryDirectory() as tmpdir:
-            strict_provider = YarnProvider(
+            strict_provider = self._berry_provider(
                 install_root=Path(tmpdir) / "strict-yarn",
                 postinstall_scripts=False,
                 min_release_age=0,
             ).get_provider_with_overrides(
                 overrides={"optipng": {"install_args": ["optipng-bin"]}},
             )
-            self._require_yarn_postinstall_disable_support(strict_provider)
+            assert strict_provider.supports_postinstall_disable("install")
 
             strict_installed = strict_provider.install("optipng")
             assert strict_installed is not None
@@ -231,7 +272,7 @@ class TestYarnProvider:
 
             # Use a fresh prefix for the override case so we don't reuse the
             # cached package from the previous --mode skip-build run.
-            override_provider = YarnProvider(
+            override_provider = self._berry_provider(
                 install_root=Path(tmpdir) / "override-yarn",
                 postinstall_scripts=False,
                 min_release_age=0,
@@ -254,7 +295,7 @@ class TestYarnProvider:
             binary = Binary(
                 name="optipng",
                 binproviders=[
-                    YarnProvider(
+                    self._berry_provider(
                         install_root=Path(tmpdir) / "binary-yarn",
                         postinstall_scripts=False,
                         min_release_age=0,
@@ -270,6 +311,98 @@ class TestYarnProvider:
             assert installed.loaded_abspath is not None
             installed_proc = installed.exec(cmd=("--version",), quiet=True)
             assert installed_proc.returncode == 0
+
+    def test_no_cache_install_replaces_broken_cached_package_when_scripts_reenabled(
+        self,
+    ):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            install_root = Path(tmpdir) / "yarn"
+            strict_provider = self._berry_provider(
+                install_root=install_root,
+                postinstall_scripts=False,
+                min_release_age=0,
+            ).get_provider_with_overrides(
+                overrides={"optipng": {"install_args": ["optipng-bin"]}},
+            )
+
+            strict_installed = strict_provider.install("optipng")
+            assert strict_installed is not None
+            assert strict_installed.loaded_abspath is not None
+            strict_proc = strict_installed.exec(cmd=("--version",), quiet=True)
+            if strict_provider.supports_postinstall_disable("install"):
+                assert strict_proc.returncode != 0
+            else:
+                assert strict_proc.returncode == 0
+
+            refreshed = (
+                self._berry_provider(
+                    install_root=install_root,
+                    postinstall_scripts=True,
+                    min_release_age=0,
+                )
+                .get_provider_with_overrides(
+                    overrides={"optipng": {"install_args": ["optipng-bin"]}},
+                )
+                .install(
+                    "optipng",
+                    no_cache=True,
+                )
+            )
+            assert refreshed is not None
+            assert refreshed.loaded_abspath is not None
+            refreshed_proc = refreshed.exec(cmd=("--version",), quiet=True)
+            assert refreshed_proc.returncode == 0, (
+                f"no_cache=True should force Yarn to refresh the broken cached "
+                f"package when postinstall scripts are re-enabled, but exec "
+                f"returned {refreshed_proc.returncode}: "
+                f"stdout={refreshed_proc.stdout!r} stderr={refreshed_proc.stderr!r}"
+            )
+
+    def test_no_cache_update_replaces_broken_cached_package_when_scripts_reenabled(
+        self,
+    ):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            install_root = Path(tmpdir) / "yarn"
+            strict_provider = self._berry_provider(
+                install_root=install_root,
+                postinstall_scripts=False,
+                min_release_age=0,
+            ).get_provider_with_overrides(
+                overrides={"optipng": {"install_args": ["optipng-bin"]}},
+            )
+
+            strict_installed = strict_provider.install("optipng")
+            assert strict_installed is not None
+            assert strict_installed.loaded_abspath is not None
+            strict_proc = strict_installed.exec(cmd=("--version",), quiet=True)
+            if strict_provider.supports_postinstall_disable("install"):
+                assert strict_proc.returncode != 0
+            else:
+                assert strict_proc.returncode == 0
+
+            updated = (
+                self._berry_provider(
+                    install_root=install_root,
+                    postinstall_scripts=True,
+                    min_release_age=0,
+                )
+                .get_provider_with_overrides(
+                    overrides={"optipng": {"install_args": ["optipng-bin"]}},
+                )
+                .update(
+                    "optipng",
+                    no_cache=True,
+                )
+            )
+            assert updated is not None
+            assert updated.loaded_abspath is not None
+            updated_proc = updated.exec(cmd=("--version",), quiet=True)
+            assert updated_proc.returncode == 0, (
+                f"no_cache=True should force Yarn to refresh the broken cached "
+                f"package during update when postinstall scripts are "
+                f"re-enabled, but exec returned {updated_proc.returncode}: "
+                f"stdout={updated_proc.stdout!r} stderr={updated_proc.stderr!r}"
+            )
 
     def test_binary_direct_methods_exercise_real_lifecycle(self, test_machine):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -305,12 +438,11 @@ class TestYarnProvider:
         # ``<workspace>/node_modules/.bin``.
         with tempfile.TemporaryDirectory() as tmpdir:
             yarn_prefix = Path(tmpdir) / "yarn"
-            provider = YarnProvider(
+            provider = self._berry_provider(
                 install_root=yarn_prefix,
                 postinstall_scripts=True,
                 min_release_age=0,
             )
-            self._require_yarn_postinstall_disable_support(provider)
             provider.setup()
             yarnrc = yarn_prefix / ".yarnrc.yml"
             assert yarnrc.exists()
@@ -323,28 +455,47 @@ class TestYarnProvider:
             pkg = _json.loads((yarn_prefix / "package.json").read_text())
             assert "packageManager" not in pkg
 
-    def test_supports_methods_do_not_emit_unsupported_warnings(self, caplog):
+    def test_berry_supports_methods_do_not_emit_unsupported_warnings(self, caplog):
         with tempfile.TemporaryDirectory() as tmpdir:
             with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
-                provider = YarnProvider(
+                provider = self._berry_provider(
                     install_root=Path(tmpdir) / "yarn",
                     postinstall_scripts=False,
                     min_release_age=0,
                 )
                 installed = provider.install("zx")
                 assert installed is not None
-            if provider.supports_postinstall_disable("install"):
-                assert "ignoring unsupported postinstall_scripts" not in caplog.text
-            else:
-                assert "ignoring unsupported postinstall_scripts=False" in caplog.text
+            assert provider.supports_postinstall_disable("install")
+            assert "ignoring unsupported postinstall_scripts" not in caplog.text
             assert "ignoring unsupported min_release_age" not in caplog.text
+
+    def test_classic_yarn_warns_and_falls_back_for_unsupported_security_controls(
+        self,
+        caplog,
+    ):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+                provider = self._classic_provider(
+                    install_root=Path(tmpdir) / "yarn",
+                    postinstall_scripts=False,
+                    min_release_age=365,
+                )
+                installed = provider.install("zx")
+                assert installed is not None
+                assert installed.loaded_abspath is not None
+                proc = installed.exec(cmd=("--version",), quiet=True)
+                assert proc.returncode == 0
+            assert not provider.supports_postinstall_disable("install")
+            assert not provider.supports_min_release_age("install")
+            assert "ignoring unsupported postinstall_scripts=False" in caplog.text
+            assert "ignoring unsupported min_release_age=365" in caplog.text
 
     def test_binary_install_failure_propagates_as_BinaryInstallError(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             failing_binary = Binary(
                 name="zx",
                 binproviders=[
-                    YarnProvider(
+                    self._berry_provider(
                         install_root=Path(tmpdir) / "yarn",
                         postinstall_scripts=True,
                         min_release_age=36500,
@@ -355,6 +506,6 @@ class TestYarnProvider:
             )
             failing_provider = failing_binary.binproviders[0]
             assert isinstance(failing_provider, YarnProvider)
-            self._require_yarn_min_release_age_support(failing_provider)
+            assert failing_provider.supports_min_release_age("install")
             with pytest.raises(BinaryInstallError):
                 failing_binary.install()

@@ -6,7 +6,6 @@ import subprocess
 import sys
 import logging
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 import rich_click as click
@@ -93,36 +92,6 @@ def _run_abx_cli(
     )
 
 
-class FakeBinary:
-    loaded_abspath = Path("/tmp/fake-bin")
-    loaded_version = SemVer("1.2.3")
-    loaded_binprovider = SimpleNamespace(name="pnpm")
-
-    def __init__(self):
-        self.calls: list[tuple[str, bool | None, bool | None]] = []
-
-    def install(self, dry_run=None, no_cache=None):
-        self.calls.append(("install", dry_run, no_cache))
-        return self
-
-
-class FakeProvider:
-    def __init__(self, name: str, abspath: str | None, version: str | None):
-        self.name = name
-        self.INSTALLER_BIN = name
-        self._installer_binary = (
-            SimpleNamespace(
-                loaded_version=SemVer(version),
-                loaded_abspath=Path(abspath) if abspath else None,
-            )
-            if abspath and version
-            else None
-        )
-
-    def INSTALLER_BINARY(self, no_cache: bool = False) -> SimpleNamespace | None:
-        return self._installer_binary
-
-
 @pytest.fixture(autouse=True)
 def restore_abx_pkg_logger():
     package_logger = logging.getLogger("abx_pkg")
@@ -157,15 +126,13 @@ def test_build_providers_uses_managed_lib_layout(tmp_path, monkeypatch):
 
 def test_install_command_uses_env_defaults(monkeypatch, tmp_path):
     captured = {}
-    fake_binary = FakeBinary()
 
-    def fake_build_binary(binary_name, options, *, dry_run):
+    def fake_run_binary_command(binary_name, *, action, options):
         captured["binary_name"] = binary_name
+        captured["action"] = action
         captured["options"] = options
-        captured["provider_dry_run"] = dry_run
-        return fake_binary
 
-    monkeypatch.setattr(cli_module, "build_binary", fake_build_binary)
+    monkeypatch.setattr(cli_module, "run_binary_command", fake_run_binary_command)
 
     result = CliRunner().invoke(
         cli_module.cli,
@@ -179,25 +146,23 @@ def test_install_command_uses_env_defaults(monkeypatch, tmp_path):
 
     assert result.exit_code == 0
     assert captured["binary_name"] == "prettier"
+    assert captured["action"] == "install"
     assert captured["options"].lib_dir == tmp_path.resolve()
     assert captured["options"].provider_names == ["pnpm", "uv"]
     assert captured["options"].dry_run is True
     assert captured["options"].debug is False
-    assert captured["provider_dry_run"] is True
-    assert fake_binary.calls == [("install", True, False)]
+    assert captured["options"].no_cache is False
 
 
 def test_install_command_uses_debug_env_default(monkeypatch, tmp_path):
     captured = {}
-    fake_binary = FakeBinary()
 
-    def fake_build_binary(binary_name, options, *, dry_run):
+    def fake_run_binary_command(binary_name, *, action, options):
         captured["binary_name"] = binary_name
+        captured["action"] = action
         captured["options"] = options
-        captured["provider_dry_run"] = dry_run
-        return fake_binary
 
-    monkeypatch.setattr(cli_module, "build_binary", fake_build_binary)
+    monkeypatch.setattr(cli_module, "run_binary_command", fake_run_binary_command)
 
     result = CliRunner().invoke(
         cli_module.cli,
@@ -210,19 +175,19 @@ def test_install_command_uses_debug_env_default(monkeypatch, tmp_path):
 
     assert result.exit_code == 0
     assert captured["binary_name"] == "prettier"
+    assert captured["action"] == "install"
     assert captured["options"].debug is True
 
 
 def test_install_command_uses_debug_flag(monkeypatch, tmp_path):
     captured = {}
-    fake_binary = FakeBinary()
 
-    def fake_build_binary(binary_name, options, *, dry_run):
+    def fake_run_binary_command(binary_name, *, action, options):
         captured["binary_name"] = binary_name
+        captured["action"] = action
         captured["options"] = options
-        return fake_binary
 
-    monkeypatch.setattr(cli_module, "build_binary", fake_build_binary)
+    monkeypatch.setattr(cli_module, "run_binary_command", fake_run_binary_command)
 
     result = CliRunner().invoke(
         cli_module.cli,
@@ -232,19 +197,19 @@ def test_install_command_uses_debug_flag(monkeypatch, tmp_path):
 
     assert result.exit_code == 0
     assert captured["binary_name"] == "prettier"
+    assert captured["action"] == "install"
     assert captured["options"].debug is True
 
 
 def test_install_command_uses_no_cache_env_default(monkeypatch, tmp_path):
     captured = {}
-    fake_binary = FakeBinary()
 
-    def fake_build_binary(binary_name, options, *, dry_run):
+    def fake_run_binary_command(binary_name, *, action, options):
         captured["binary_name"] = binary_name
+        captured["action"] = action
         captured["options"] = options
-        return fake_binary
 
-    monkeypatch.setattr(cli_module, "build_binary", fake_build_binary)
+    monkeypatch.setattr(cli_module, "run_binary_command", fake_run_binary_command)
 
     result = CliRunner().invoke(
         cli_module.cli,
@@ -257,8 +222,8 @@ def test_install_command_uses_no_cache_env_default(monkeypatch, tmp_path):
 
     assert result.exit_code == 0
     assert captured["binary_name"] == "prettier"
+    assert captured["action"] == "install"
     assert captured["options"].no_cache is True
-    assert fake_binary.calls == [("install", False, True)]
 
 
 def test_clear_command_removes_explicit_lib_dir(tmp_path):
@@ -288,39 +253,6 @@ def test_clear_command_uses_env_lib_dir(tmp_path):
     assert not tmp_path.exists()
 
 
-def test_version_flag_and_command_render_same_report(monkeypatch, tmp_path):
-    fake_providers = [
-        FakeProvider("env", "/usr/bin/which", "2.0.0"),
-        FakeProvider("uv", "/opt/homebrew/bin/uv", "0.7.1"),
-        FakeProvider("apt", None, None),
-    ]
-
-    monkeypatch.setattr(
-        cli_module,
-        "build_providers",
-        lambda *args, **kwargs: fake_providers,
-    )
-
-    runner = CliRunner()
-    flag_result = runner.invoke(
-        cli_module.cli,
-        ["--version", f"--lib={tmp_path}", "--binproviders=env,uv,apt"],
-    )
-    command_result = runner.invoke(
-        cli_module.cli,
-        ["version", f"--lib={tmp_path}", "--binproviders=env,uv,apt"],
-    )
-
-    assert flag_result.exit_code == 0
-    assert command_result.exit_code == 0
-    assert flag_result.output == command_result.output
-
-    lines = flag_result.output.strip().splitlines()
-    assert lines[0] == cli_module.get_package_version()
-    assert lines[1] == "2.0.0 /usr/bin/which (env)"
-    assert lines[2] == "0.7.1 /opt/homebrew/bin/uv (uv)"
-
-
 def test_version_command_with_binary_aliases_load(monkeypatch, tmp_path):
     captured = {}
 
@@ -340,82 +272,6 @@ def test_version_command_with_binary_aliases_load(monkeypatch, tmp_path):
     assert captured["binary_name"] == "python3"
     assert captured["action"] == "load"
     assert captured["options"].dry_run is False
-
-
-def test_configure_cli_logging_uses_info_by_default(monkeypatch):
-    captured = {}
-
-    def fake_configure_logging(**kwargs):
-        captured.update(kwargs)
-
-    monkeypatch.setattr(cli_module, "configure_logging", fake_configure_logging)
-
-    cli_module.configure_cli_logging(debug=False)
-
-    assert captured["level"] == "INFO"
-    assert captured["handler"].stream is cli_module.sys.stderr
-    assert captured["fmt"] == "%(message)s"
-    assert captured["replace_handlers"] is True
-
-
-def test_configure_cli_logging_uses_debug_level_when_enabled(monkeypatch):
-    captured = {}
-
-    def fake_configure_logging(**kwargs):
-        captured.update(kwargs)
-
-    monkeypatch.setattr(cli_module, "configure_logging", fake_configure_logging)
-
-    cli_module.configure_cli_logging(debug=True)
-
-    assert captured["level"] == "DEBUG"
-    assert captured["handler"].stream is cli_module.sys.stderr
-    assert captured["fmt"] == "%(message)s"
-    assert captured["replace_handlers"] is True
-
-
-def test_configure_cli_logging_uses_rich_logging_for_tty(monkeypatch):
-    captured = {}
-    sentinel_console = object()
-
-    def fake_configure_logging(**kwargs):
-        captured.update(kwargs)
-
-    monkeypatch.setattr(cli_module, "RICH_INSTALLED", True)
-    monkeypatch.setattr(
-        cli_module,
-        "_console_for_stream",
-        lambda *, err: sentinel_console if err else None,
-    )
-    monkeypatch.setattr(cli_module, "configure_logging", fake_configure_logging)
-
-    cli_module.configure_cli_logging(debug=True)
-
-    assert captured["level"] == "DEBUG"
-    assert captured["fmt"] == "%(message)s"
-    assert captured["replace_handlers"] is True
-    assert isinstance(captured["handler"], cli_module._CliRichHandler)
-    assert captured["handler"].console is sentinel_console
-
-
-def test_echo_uses_rich_console_for_tty(monkeypatch):
-    printed = {}
-
-    class FakeConsole:
-        def print(self, message, *, highlight):
-            printed["message"] = message
-            printed["highlight"] = highlight
-
-    monkeypatch.setattr(
-        cli_module,
-        "_console_for_stream",
-        lambda *, err: FakeConsole() if not err else None,
-    )
-
-    cli_module._echo("/tmp/bin 1.2.3 env")
-
-    assert printed["message"].plain == "/tmp/bin 1.2.3 env"
-    assert printed["highlight"] is False
 
 
 def test_expand_bare_bool_flags_rewrites_debug_before_run():

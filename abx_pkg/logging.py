@@ -176,6 +176,17 @@ def summarize_value(value: Any, max_length: int = 200) -> str:
                 summarize_value(item, 40) for item in list(value)[:4]
             )
             rendered = f"{type(value).__name__}([{rendered_items}])"
+        elif callable(value):
+            callable_name = getattr(value, "__qualname__", None) or getattr(
+                value,
+                "__name__",
+                None,
+            )
+            rendered = (
+                f"{value.__class__.__name__}({callable_name})"
+                if callable_name
+                else f"{value.__class__.__name__}(...)"
+            )
         elif hasattr(value, "name"):
             rendered = format_named_value(value)
         else:
@@ -211,19 +222,24 @@ def log_method_call(
                 or func_name == "get_binprovider"
                 or func_name == "get_provider_with_overrides"
             )
-            rendered_call = _format_method_call(args, kwargs)
             trace_depth = TRACE_DEPTH.get()
             token = TRACE_DEPTH.set(trace_depth + 1) if should_trace else None
-            if should_trace and method_logger.isEnabledFor(level):
+            should_log_level = should_trace and method_logger.isEnabledFor(level)
+            should_log_error = (
+                should_trace
+                and trace_depth == 0
+                and method_logger.isEnabledFor(py_logging.ERROR)
+            )
+            rendered_call: str | None = None
+            if should_log_level:
+                rendered_call = _format_method_call(args, kwargs)
                 method_logger.log(level, "%s(%s)", qualname, rendered_call)
             try:
                 result = func(*args, **kwargs)
             except Exception as err:
-                if (
-                    should_trace
-                    and trace_depth == 0
-                    and method_logger.isEnabledFor(py_logging.ERROR)
-                ):
+                if should_log_error:
+                    if rendered_call is None:
+                        rendered_call = _format_method_call(args, kwargs)
                     method_logger.error(
                         "%s(%s) raised %r",
                         qualname,
@@ -234,7 +250,9 @@ def log_method_call(
             finally:
                 if token is not None:
                     TRACE_DEPTH.reset(token)
-            if should_trace and include_result and method_logger.isEnabledFor(level):
+            if should_log_level and include_result:
+                if rendered_call is None:
+                    rendered_call = _format_method_call(args, kwargs)
                 method_logger.log(
                     level,
                     "%s(%s) returned %s",

@@ -138,7 +138,11 @@ class YarnProvider(BinProvider):
     @model_validator(mode="after")
     def load_PATH_from_yarn_prefix(self) -> Self:
         if self.bin_dir:
-            self.PATH = self._merge_PATH(self.bin_dir)
+            self.PATH = self._merge_PATH(
+                self.bin_dir,
+                PATH=self.PATH,
+                prepend=True,
+            )
         return self
 
     def exec(
@@ -282,22 +286,28 @@ class YarnProvider(BinProvider):
             content = "\n".join(kept)
             yarnrc.write_text(content + "\n" if content else "")
 
-        cmd = ["add", *self.yarn_install_args, *install_args]
-        if no_cache and not is_berry and "--force" not in cmd:
-            cmd.insert(1, "--force")
-        if is_berry and not postinstall_scripts:
-            cmd = [
-                "add",
-                *self.yarn_install_args,
-                *(
-                    ["--force"]
-                    if no_cache and "--force" not in self.yarn_install_args
-                    else []
-                ),
-                "--mode",
-                "skip-build",
-                *install_args,
-            ]
+        if is_berry:
+            if no_cache:
+                cache_proc = self.exec(
+                    bin_name=installer_bin,
+                    cmd=["cache", "clean", "--all"],
+                    timeout=timeout,
+                )
+                if cache_proc.returncode != 0:
+                    self._raise_proc_error("install", install_args, cache_proc)
+            cmd = ["add", *self.yarn_install_args, *install_args]
+            if not postinstall_scripts:
+                cmd = [
+                    "add",
+                    *self.yarn_install_args,
+                    "--mode",
+                    "skip-build",
+                    *install_args,
+                ]
+        else:
+            cmd = ["add", *self.yarn_install_args, *install_args]
+            if no_cache and "--force" not in cmd:
+                cmd.insert(1, "--force")
 
         proc = self.exec(
             bin_name=installer_bin,
@@ -372,6 +382,14 @@ class YarnProvider(BinProvider):
             yarnrc.write_text(content + "\n" if content else "")
 
         if is_berry:
+            if no_cache:
+                cache_proc = self.exec(
+                    bin_name=installer_bin,
+                    cmd=["cache", "clean", "--all"],
+                    timeout=timeout,
+                )
+                if cache_proc.returncode != 0:
+                    self._raise_proc_error("update", install_args, cache_proc)
             cmd = ["up", *self.yarn_install_args, *install_args]
             if not postinstall_scripts:
                 cmd = [

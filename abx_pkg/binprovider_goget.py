@@ -81,10 +81,7 @@ class GoGetProvider(BinProvider):
     def load_PATH_from_go_env(self) -> Self:
         bin_dir = self.bin_dir
         assert bin_dir is not None
-        if self.install_root != DEFAULT_GOPATH or "bin_dir" in self.model_fields_set:
-            self.PATH = self._merge_PATH(bin_dir)
-        else:
-            self.PATH = self._merge_PATH(bin_dir, PATH=self.PATH)
+        self.PATH = self._merge_PATH(bin_dir, PATH=self.PATH)
         return self
 
     def setup(
@@ -234,6 +231,21 @@ class GoGetProvider(BinProvider):
         abspath = abspath or self.get_abspath(bin_name, quiet=True)
         if not abspath:
             return None
+        if str(bin_name) == self.INSTALLER_BIN:
+            version_provider = (
+                self.get_provider_with_overrides(dry_run=False)
+                if self.dry_run
+                else self
+            )
+            proc = version_provider.exec(
+                bin_name=abspath,
+                cmd=["version"],
+                timeout=timeout,
+                quiet=True,
+            )
+            if proc.returncode != 0:
+                return None
+            return SemVer.parse(proc.stdout.strip() or proc.stderr.strip())
         try:
             installer_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
             assert installer_abspath

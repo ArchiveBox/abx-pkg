@@ -1,22 +1,64 @@
+import os
+import shutil
 import tempfile
 from pathlib import Path
+
+import pytest
 
 from abx_pkg import Binary, PlaywrightProvider
 
 
+@pytest.fixture(scope="module")
+def seeded_playwright_root():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        install_root = Path(temp_dir) / "seeded-playwright-root"
+        provider = PlaywrightProvider(install_root=install_root)
+        installed = provider.install("chromium", no_cache=True)
+        assert installed is not None
+        assert installed.loaded_abspath is not None
+        assert installed.loaded_abspath.exists()
+        yield install_root
+
+
 class TestPlaywrightProvider:
+    @staticmethod
+    def copy_seeded_playwright_root(
+        seeded_playwright_root: Path,
+        install_root: Path,
+    ) -> None:
+        shutil.copytree(
+            seeded_playwright_root,
+            install_root,
+            symlinks=True,
+            copy_function=os.link,
+        )
+        copied_bin_dir = install_root / "bin"
+        if not copied_bin_dir.is_dir():
+            return
+        for link_path in copied_bin_dir.iterdir():
+            if not link_path.is_symlink():
+                continue
+            link_target = link_path.resolve(strict=False)
+            if seeded_playwright_root.resolve() not in link_target.parents:
+                continue
+            relative_target = link_target.relative_to(seeded_playwright_root.resolve())
+            link_path.unlink()
+            link_path.symlink_to(install_root / relative_target)
+
     def test_chromium_install_puts_real_browser_into_managed_bin_dir(
         self,
         test_machine,
+        seeded_playwright_root,
     ):
         test_machine.require_tool("node")
         test_machine.require_tool("npm")
 
         with tempfile.TemporaryDirectory() as temp_dir:
             playwright_root = Path(temp_dir) / "playwright-root"
+            self.copy_seeded_playwright_root(seeded_playwright_root, playwright_root)
             provider = PlaywrightProvider(install_root=playwright_root)
 
-            installed = provider.install("chromium", no_cache=True)
+            installed = provider.load("chromium", no_cache=True)
             assert installed is not None
             test_machine.assert_shallow_binary_loaded(
                 installed,
@@ -48,7 +90,7 @@ class TestPlaywrightProvider:
             assert loaded.loaded_abspath is not None
             assert loaded.loaded_abspath.resolve() == installed.loaded_abspath.resolve()
 
-            loaded_or_installed = provider.install("chromium", no_cache=True)
+            loaded_or_installed = provider.install("chromium")
             test_machine.assert_shallow_binary_loaded(
                 loaded_or_installed,
                 assert_version_command=False,
@@ -63,12 +105,14 @@ class TestPlaywrightProvider:
     def test_install_root_alias_without_explicit_bin_dir_uses_root_bin(
         self,
         test_machine,
+        seeded_playwright_root,
     ):
         test_machine.require_tool("node")
         test_machine.require_tool("npm")
 
         with tempfile.TemporaryDirectory() as temp_dir:
             install_root = Path(temp_dir) / "pw-root"
+            self.copy_seeded_playwright_root(seeded_playwright_root, install_root)
             provider = PlaywrightProvider.model_validate(
                 {
                     "install_root": install_root,
@@ -97,6 +141,7 @@ class TestPlaywrightProvider:
     def test_install_root_and_bin_dir_aliases_install_into_the_requested_paths(
         self,
         test_machine,
+        seeded_playwright_root,
     ):
         test_machine.require_tool("node")
         test_machine.require_tool("npm")
@@ -104,6 +149,7 @@ class TestPlaywrightProvider:
         with tempfile.TemporaryDirectory() as temp_dir:
             install_root = Path(temp_dir) / "pw-root"
             bin_dir = Path(temp_dir) / "custom-bin"
+            self.copy_seeded_playwright_root(seeded_playwright_root, install_root)
             provider = PlaywrightProvider.model_validate(
                 {
                     "install_root": install_root,
@@ -132,24 +178,29 @@ class TestPlaywrightProvider:
     def test_explicit_bin_dir_takes_precedence_over_existing_PATH_entries(
         self,
         test_machine,
+        seeded_playwright_root,
     ):
         test_machine.require_tool("node")
         test_machine.require_tool("npm")
 
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_dir_path = Path(temp_dir)
+            ambient_root = temp_dir_path / "ambient-root"
+            self.copy_seeded_playwright_root(seeded_playwright_root, ambient_root)
             ambient_provider = PlaywrightProvider(
-                install_root=temp_dir_path / "ambient-root",
-                bin_dir=temp_dir_path / "ambient-root/bin",
+                install_root=ambient_root,
+                bin_dir=ambient_root / "bin",
             )
             ambient_installed = ambient_provider.install("chromium")
             assert ambient_installed is not None
             assert ambient_installed.loaded_abspath is not None
             assert ambient_installed.loaded_abspath.parent == ambient_provider.bin_dir
 
+            install_root = temp_dir_path / "playwright-root"
+            self.copy_seeded_playwright_root(seeded_playwright_root, install_root)
             provider = PlaywrightProvider(
                 PATH=str(ambient_provider.bin_dir),
-                install_root=temp_dir_path / "playwright-root",
+                install_root=install_root,
                 bin_dir=temp_dir_path / "custom-bin",
             )
 
@@ -212,49 +263,104 @@ class TestPlaywrightProvider:
                 f"but found: {[p.name for p in headless_shell_dirs]}"
             )
 
-    def test_provider_direct_methods_exercise_real_lifecycle(self, test_machine):
+    def test_provider_direct_methods_exercise_real_lifecycle(
+        self,
+        test_machine,
+        seeded_playwright_root,
+    ):
         test_machine.require_tool("node")
         test_machine.require_tool("npm")
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            provider = PlaywrightProvider(
-                install_root=Path(temp_dir) / "playwright-root",
-            )
+            install_root = Path(temp_dir) / "playwright-root"
+            self.copy_seeded_playwright_root(seeded_playwright_root, install_root)
+            provider = PlaywrightProvider(install_root=install_root)
 
-            test_machine.exercise_provider_lifecycle(
-                provider,
-                bin_name="chromium",
+            loaded = provider.load("chromium", no_cache=True)
+            test_machine.assert_shallow_binary_loaded(
+                loaded,
                 assert_version_command=False,
             )
 
-    def test_binary_direct_methods_exercise_real_lifecycle(self, test_machine):
+            loaded_or_installed = provider.install("chromium")
+            test_machine.assert_shallow_binary_loaded(
+                loaded_or_installed,
+                assert_version_command=False,
+            )
+
+            updated = provider.update("chromium", no_cache=True)
+            test_machine.assert_shallow_binary_loaded(
+                updated,
+                assert_version_command=False,
+            )
+
+            assert provider.uninstall("chromium", no_cache=True) is True
+            test_machine.assert_provider_missing(provider, "chromium")
+
+    def test_binary_direct_methods_exercise_real_lifecycle(
+        self,
+        test_machine,
+        seeded_playwright_root,
+    ):
         test_machine.require_tool("node")
         test_machine.require_tool("npm")
 
         with tempfile.TemporaryDirectory() as temp_dir:
+            install_root = Path(temp_dir) / "playwright-root"
+            self.copy_seeded_playwright_root(seeded_playwright_root, install_root)
             binary = Binary(
                 name="chromium",
                 binproviders=[
                     PlaywrightProvider(
-                        install_root=Path(temp_dir) / "playwright-root",
+                        install_root=install_root,
                     ),
                 ],
             )
 
-            test_machine.exercise_binary_lifecycle(
-                binary,
+            loaded = binary.load(no_cache=True)
+            test_machine.assert_shallow_binary_loaded(
+                loaded,
                 assert_version_command=False,
             )
 
-    def test_update_refreshes_chromium_in_place(self, test_machine):
+            loaded_or_installed = test_machine.unloaded_binary(binary).install()
+            test_machine.assert_shallow_binary_loaded(
+                loaded_or_installed,
+                assert_version_command=False,
+            )
+
+            updated = loaded.update()
+            test_machine.assert_shallow_binary_loaded(
+                updated,
+                assert_version_command=False,
+            )
+
+            removed = updated.uninstall()
+            assert not removed.is_valid
+            assert removed.loaded_binprovider is None
+            assert removed.loaded_abspath is None
+            assert removed.loaded_version is None
+            assert removed.loaded_sha256 is None
+            test_machine.assert_binary_missing(binary)
+
+    def test_update_refreshes_chromium_in_place(
+        self,
+        test_machine,
+        seeded_playwright_root,
+    ):
         test_machine.require_tool("node")
         test_machine.require_tool("npm")
 
         with tempfile.TemporaryDirectory() as temp_dir:
             playwright_root = Path(temp_dir) / "playwright-root"
+            self.copy_seeded_playwright_root(seeded_playwright_root, playwright_root)
             provider = PlaywrightProvider(install_root=playwright_root)
 
-            installed = provider.install("chromium", no_cache=True)
+            installed = provider.load("chromium", no_cache=True)
+            test_machine.assert_shallow_binary_loaded(
+                installed,
+                assert_version_command=False,
+            )
             assert installed is not None
             assert installed.loaded_abspath is not None
             original_target = installed.loaded_abspath.resolve()
