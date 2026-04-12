@@ -1,0 +1,27 @@
+.github/workflows/deploy-pages.yml
+  fa9493a9fcca68b9 20,53
+.github/workflows/release.yml
+  fa9493a9fcca68b9 23
+.github/workflows/tests.yml
+  fa9493a9fcca68b9 23,53,84,214,256
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "2a29fe8b0f137cdf98c036f8c323cc505076d296",
+  "prompts": {
+    "fa9493a9fcca68b9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d7eb9-b345-7ba1-bae3-721151e5bc08",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 8,
+      "total_deletions": 8,
+      "accepted_lines": 8,
+      "overriden_lines": 0
+    }
+  }
+}
