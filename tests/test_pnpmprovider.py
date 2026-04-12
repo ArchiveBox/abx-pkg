@@ -10,13 +10,6 @@ from abx_pkg.exceptions import BinaryInstallError, BinProviderInstallError
 
 
 class TestPnpmProvider:
-    @staticmethod
-    def _require_pnpm_min_release_age_support(provider: PnpmProvider) -> None:
-        if not provider.supports_min_release_age("install"):
-            pytest.skip(
-                "pnpm on this host does not support --config.minimumReleaseAge",
-            )
-
     def test_install_args_win_for_ignore_scripts_and_min_release_age(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             pnpm_prefix = Path(temp_dir) / "pnpm"
@@ -232,7 +225,7 @@ class TestPnpmProvider:
                 postinstall_scripts=True,
                 min_release_age=36500,
             )
-            self._require_pnpm_min_release_age_support(strict_provider)
+            assert strict_provider.supports_min_release_age("install") is True
 
             with pytest.raises(BinProviderInstallError):
                 strict_provider.install("zx")
@@ -435,7 +428,7 @@ class TestPnpmProvider:
                 postinstall_scripts=True,
                 min_release_age=365,
             )
-            self._require_pnpm_min_release_age_support(strict_provider)
+            assert strict_provider.supports_min_release_age("install") is True
             installed = strict_provider.install("zx")
             assert installed is not None
             assert installed.loaded_version is not None
@@ -478,6 +471,6 @@ class TestPnpmProvider:
             )
             failing_provider = failing_binary.binproviders[0]
             assert isinstance(failing_provider, PnpmProvider)
-            self._require_pnpm_min_release_age_support(failing_provider)
+            assert failing_provider.supports_min_release_age("install") is True
             with pytest.raises(BinaryInstallError):
                 failing_binary.install()

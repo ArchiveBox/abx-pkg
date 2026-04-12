@@ -855,12 +855,12 @@ Source: [`abx_pkg/binprovider_yarn.py`](./abx_pkg/binprovider_yarn.py) • Tests
 ```python
 INSTALLER_BIN = "yarn"
 PATH = ""                            # prepends <yarn_prefix>/node_modules/.bin
-yarn_prefix = None                   # workspace dir, defaults to ABX_PKG_YARN_ROOT or ~/.cache/abx-pkg/yarn
+yarn_prefix = None                   # workspace dir, defaults to ABX_PKG_YARN_ROOT or ABX_PKG_LIB_DIR/yarn
 cache_dir = user_cache_path("yarn", "abx-pkg") or <system temp>/yarn-cache
 yarn_install_args = []
 ```
 
-- Install root: Yarn 4 / Yarn Berry is workspace-based, so the provider always operates inside a project directory. Set `install_root=Path(...)` or `install_root=Path(...)` for a hermetic workspace; the workspace is auto-initialized with a stub `package.json` and `.yarnrc.yml` (`nodeLinker: node-modules` so binaries land in `<workspace>/node_modules/.bin`). When unset, the provider uses `$ABX_PKG_YARN_ROOT` or `~/.cache/abx-pkg/yarn`.
+- Install root: Yarn 4 / Yarn Berry is workspace-based, so the provider always operates inside a project directory. Set `install_root=Path(...)` or `install_root=Path(...)` for a hermetic workspace; the workspace is auto-initialized with a stub `package.json` and `.yarnrc.yml` (`nodeLinker: node-modules` so binaries land in `<workspace>/node_modules/.bin`). When unset, the provider uses `$ABX_PKG_YARN_ROOT` or `$ABX_PKG_LIB_DIR/yarn`.
 - Auto-switching: none. Honors `YARN_BINARY=/abs/path/to/yarn`. Both Yarn classic (1.x) and Yarn Berry (2+) work for basic install/update/uninstall, but only Yarn 4.10+ supports the security flags.
 - `dry_run`: shared behavior.
 - Security: supports both `min_release_age` and `postinstall_scripts=False`, and hydrates their provider defaults from `ABX_PKG_MIN_RELEASE_AGE` and `ABX_PKG_POSTINSTALL_SCRIPTS`. Both controls require Yarn 4.10+; on older hosts `supports_min_release_age()` / `supports_postinstall_disable()` return `False` and explicit values are logged-and-ignored.
@@ -923,7 +923,7 @@ Source: [`abx_pkg/binprovider_bash.py`](./abx_pkg/binprovider_bash.py) • Tests
 ```python
 INSTALLER_BIN = "sh"
 PATH = ""
-bash_root = $ABX_PKG_BASH_ROOT or ~/.cache/abx-pkg/bash
+bash_root = $ABX_PKG_BASH_ROOT or $ABX_PKG_LIB_DIR/bash
 bash_bin_dir = <bash_root>/bin
 ```
 
@@ -1035,7 +1035,7 @@ Source: [`abx_pkg/binprovider_docker.py`](./abx_pkg/binprovider_docker.py) • T
 ```python
 INSTALLER_BIN = "docker"
 PATH = ""                            # prepends docker_shim_dir
-docker_shim_dir = ($ABX_PKG_DOCKER_ROOT or ~/.cache/abx-pkg/docker) / "bin"
+docker_shim_dir = ($ABX_PKG_DOCKER_ROOT or $ABX_PKG_LIB_DIR/docker) / "bin"
 docker_run_args = ["--rm", "-i"]
 ```
 
@@ -1056,7 +1056,7 @@ Source: [`abx_pkg/binprovider_chromewebstore.py`](./abx_pkg/binprovider_chromewe
 ```python
 INSTALLER_BIN = "node"
 PATH = ""
-extensions_root = $ABX_PKG_CHROMEWEBSTORE_ROOT or ~/.cache/abx-pkg/chromewebstore
+extensions_root = $ABX_PKG_CHROMEWEBSTORE_ROOT or $ABX_PKG_LIB_DIR/chromewebstore
 extensions_dir = <extensions_root>/extensions
 ```
 
@@ -1077,7 +1077,7 @@ Source: [`abx_pkg/binprovider_puppeteer.py`](./abx_pkg/binprovider_puppeteer.py)
 ```python
 INSTALLER_BIN = "puppeteer-browsers"
 PATH = ""
-puppeteer_root = $ABX_PKG_PUPPETEER_ROOT or ~/.cache/abx-pkg/puppeteer
+puppeteer_root = $ABX_PKG_PUPPETEER_ROOT or $ABX_PKG_LIB_DIR/puppeteer
 browser_bin_dir = <puppeteer_root>/bin
 browser_cache_dir = <puppeteer_root>/cache
 ```

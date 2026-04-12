@@ -113,29 +113,34 @@ jobs:
     - name: Setup pnpm
       uses: pnpm/action-setup@v5.0.0
       with:
-        version: 10
+        version: 10.19.0
 
     - name: Setup Node
       uses: actions/setup-node@v6
       with:
         node-version: '22'
 
-    - name: Setup Yarn (Berry / 4.x via corepack)
+    - name: Setup Yarn (classic + Berry)
       run: |
-        # github-hosted ubuntu runners ship a system-wide yarn 1.22 that
-        # shadows corepack's shim. Wipe it out before enabling corepack so
-        # `yarn` unambiguously resolves to the 4.x shim from node's bin dir.
-        sudo rm -f /usr/local/bin/yarn /usr/local/bin/yarnpkg /usr/bin/yarn /usr/bin/yarnpkg
-        corepack enable
-        corepack prepare yarn@4.13.0 --activate
-        # Pre-download pnpm via corepack so the very first ``pnpm --version``
-        # doesn't pollute logs with "Corepack is about to download ..."
-        # progress output.
-        corepack prepare pnpm@10.17.1 --activate || true
+        npm install -g yarn@1.22.22
+        if [ "$(uname -s)" = "Darwin" ]; then
+          YARN_BERRY_PREFIX="/opt/homebrew/opt/yarn-berry"
+          YARN_BERRY_ALIAS="/opt/homebrew/bin/yarn-berry"
+        elif [ -d /home/linuxbrew/.linuxbrew/opt ]; then
+          YARN_BERRY_PREFIX="/home/linuxbrew/.linuxbrew/opt/yarn-berry"
+          YARN_BERRY_ALIAS="/home/linuxbrew/.linuxbrew/bin/yarn-berry"
+        else
+          YARN_BERRY_PREFIX="/usr/local/yarn-berry"
+          YARN_BERRY_ALIAS="/usr/local/bin/yarn-berry"
+        fi
+        npm install --prefix "$YARN_BERRY_PREFIX" @yarnpkg/cli-dist@4.13.0
+        ln -sf "$YARN_BERRY_PREFIX/node_modules/.bin/yarn" "$YARN_BERRY_ALIAS"
+        "$YARN_BERRY_ALIAS" --version | grep -q '^4\.'
         which yarn
         yarn --version
-        yarn --version | grep -q '^4\.' || { echo "ERROR: yarn is not 4.x"; exit 1; }
-        pnpm --version || true
+        which yarn-berry
+        yarn-berry --version
+        yarn --version | grep -q '^1\.' || { echo "ERROR: yarn is not 1.x"; exit 1; }
 
     - name: Setup Bun
       uses: oven-sh/setup-bun@v2
@@ -278,29 +283,34 @@ jobs:
     - name: Setup pnpm
       uses: pnpm/action-setup@v5.0.0
       with:
-        version: 10
+        version: 10.19.0
 
     - name: Setup Node
       uses: actions/setup-node@v6
       with:
         node-version: '22'
 
-    - name: Setup Yarn (Berry / 4.x via corepack)
+    - name: Setup Yarn (classic + Berry)
       run: |
-        # github-hosted ubuntu runners ship a system-wide yarn 1.22 that
-        # shadows corepack's shim. Wipe it out before enabling corepack so
-        # `yarn` unambiguously resolves to the 4.x shim from node's bin dir.
-        sudo rm -f /usr/local/bin/yarn /usr/local/bin/yarnpkg /usr/bin/yarn /usr/bin/yarnpkg
-        corepack enable
-        corepack prepare yarn@4.13.0 --activate
-        # Pre-download pnpm via corepack so the very first ``pnpm --version``
-        # doesn't pollute logs with "Corepack is about to download ..."
-        # progress output.
-        corepack prepare pnpm@10.17.1 --activate || true
+        npm install -g yarn@1.22.22
+        if [ "$(uname -s)" = "Darwin" ]; then
+          YARN_BERRY_PREFIX="/opt/homebrew/opt/yarn-berry"
+          YARN_BERRY_ALIAS="/opt/homebrew/bin/yarn-berry"
+        elif [ -d /home/linuxbrew/.linuxbrew/opt ]; then
+          YARN_BERRY_PREFIX="/home/linuxbrew/.linuxbrew/opt/yarn-berry"
+          YARN_BERRY_ALIAS="/home/linuxbrew/.linuxbrew/bin/yarn-berry"
+        else
+          YARN_BERRY_PREFIX="/usr/local/yarn-berry"
+          YARN_BERRY_ALIAS="/usr/local/bin/yarn-berry"
+        fi
+        npm install --prefix "$YARN_BERRY_PREFIX" @yarnpkg/cli-dist@4.13.0
+        ln -sf "$YARN_BERRY_PREFIX/node_modules/.bin/yarn" "$YARN_BERRY_ALIAS"
+        "$YARN_BERRY_ALIAS" --version | grep -q '^4\.'
         which yarn
         yarn --version
-        yarn --version | grep -q '^4\.' || { echo "ERROR: yarn is not 4.x"; exit 1; }
-        pnpm --version || true
+        which yarn-berry
+        yarn-berry --version
+        yarn --version | grep -q '^1\.' || { echo "ERROR: yarn is not 1.x"; exit 1; }
 
     - name: Setup Bun
       uses: oven-sh/setup-bun@v2

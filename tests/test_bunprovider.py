@@ -1,7 +1,4 @@
-import functools
 import logging
-import os
-import subprocess
 import tempfile
 from pathlib import Path
 
@@ -12,62 +9,6 @@ from abx_pkg.exceptions import BinaryInstallError, BinProviderInstallError
 
 
 class TestBunProvider:
-    @staticmethod
-    def _require_bun_min_release_age_support(provider: BunProvider) -> None:
-        if not provider.supports_min_release_age("install"):
-            pytest.skip(
-                "bun on this host does not support --minimum-release-age",
-            )
-
-    @staticmethod
-    @functools.cache
-    def _bun_supports_trusted_global_postinstall(bun_binary: str) -> bool:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            bun_prefix = Path(tmpdir) / "bun"
-            env = os.environ.copy()
-            env["BUN_INSTALL"] = str(bun_prefix)
-            env["PATH"] = f"{bun_prefix / 'bin'}:{env.get('PATH', '')}"
-
-            install_proc = subprocess.run(
-                [bun_binary, "add", "-g", "optipng-bin", "--trust"],
-                capture_output=True,
-                text=True,
-                env=env,
-            )
-            if install_proc.returncode != 0:
-                return False
-
-            optipng = bun_prefix / "bin" / "optipng"
-            if not optipng.exists():
-                return False
-
-            version_proc = subprocess.run(
-                [str(optipng), "--version"],
-                capture_output=True,
-                text=True,
-                env=env,
-            )
-            return version_proc.returncode == 0
-
-    @classmethod
-    def _require_bun_trusted_global_postinstall_support(
-        cls,
-        provider: BunProvider,
-    ) -> None:
-        installer_binary = provider.INSTALLER_BINARY()
-        bun_binary = installer_binary.loaded_abspath if installer_binary else None
-        if not bun_binary:
-            pytest.skip("bun is not available on this host")
-
-        if not cls._bun_supports_trusted_global_postinstall(str(bun_binary)):
-            version = installer_binary
-            pytest.skip(
-                "bun "
-                f"{version.loaded_version if version else 'unknown'} "
-                "on this host cannot materialize working trusted global "
-                "postinstall binaries",
-            )
-
     def test_install_args_win_for_ignore_scripts_and_min_release_age(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             bun_prefix = Path(temp_dir) / "bun"
@@ -251,7 +192,7 @@ class TestBunProvider:
                 postinstall_scripts=True,
                 min_release_age=36500,
             )
-            self._require_bun_min_release_age_support(strict_provider)
+            assert strict_provider.supports_min_release_age("install") is True
 
             with pytest.raises(BinProviderInstallError):
                 strict_provider.install("zx")
@@ -283,7 +224,7 @@ class TestBunProvider:
                 postinstall_scripts=True,
                 min_release_age=365,
             )
-            self._require_bun_min_release_age_support(strict_provider)
+            assert strict_provider.supports_min_release_age("install") is True
             installed = strict_provider.install("zx")
             assert installed is not None
             assert installed.loaded_version is not None
@@ -327,8 +268,6 @@ class TestBunProvider:
             assert dry_run_override is not None
             assert "--trust" in caplog.text
             assert "--ignore-scripts" not in caplog.text
-
-            self._require_bun_trusted_global_postinstall_support(override_provider)
 
             direct_override = override_provider.install(
                 "optipng",
@@ -422,6 +361,6 @@ class TestBunProvider:
             )
             failing_provider = failing_binary.binproviders[0]
             assert isinstance(failing_provider, BunProvider)
-            self._require_bun_min_release_age_support(failing_provider)
+            assert failing_provider.supports_min_release_age("install") is True
             with pytest.raises(BinaryInstallError):
                 failing_binary.install()

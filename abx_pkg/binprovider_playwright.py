@@ -179,15 +179,41 @@ class PlaywrightProvider(BinProvider):
         min_version: SemVer | None = None,
         no_cache: bool = False,
     ) -> None:
+        if self.install_root is not None:
+            self.install_root.mkdir(parents=True, exist_ok=True)
+        if self.bin_dir is not None:
+            self.bin_dir.mkdir(parents=True, exist_ok=True)
+        lib_dir = os.environ.get("ABX_PKG_LIB_DIR")
+        if (
+            self.install_root is not None
+            and lib_dir
+            and str(self.install_root).startswith(lib_dir.rstrip("/") + "/")
+        ):
+            npm_install_root = Path(lib_dir) / "npm"
+        elif self.install_root is not None:
+            npm_install_root = self.install_root / "npm"
+        else:
+            npm_install_root = None
+        expected_playwright_module = (
+            npm_install_root / "node_modules" / "playwright"
+            if npm_install_root is not None
+            else None
+        )
         try:
             cached = self.INSTALLER_BINARY(no_cache=no_cache)
         except Exception:
             cached = None
-        if cached and cached.loaded_abspath:
+        if (
+            cached
+            and cached.loaded_abspath
+            and (
+                expected_playwright_module is None
+                or expected_playwright_module.is_dir()
+            )
+        ):
             path_entries: list[Path] = []
             if self.bin_dir is not None:
                 path_entries.append(self.bin_dir)
-            lib_dir = os.environ.get("ABX_PKG_LIB_DIR")
             if self.install_root is not None and (
                 not lib_dir
                 or not str(self.install_root).startswith(lib_dir.rstrip("/") + "/")
@@ -202,11 +228,6 @@ class PlaywrightProvider(BinProvider):
                     prepend=True,
                 )
             return
-        if self.install_root is not None:
-            self.install_root.mkdir(parents=True, exist_ok=True)
-        if self.bin_dir is not None:
-            self.bin_dir.mkdir(parents=True, exist_ok=True)
-
         # Bootstrap the ``playwright`` npm package (which ships the CLI
         # and its ``playwright-core`` peer). Nest it under
         # ``playwright_root`` when one is pinned; otherwise leave
@@ -235,17 +256,12 @@ class PlaywrightProvider(BinProvider):
         # Hermetic: install_root/npm
         # Managed LIB_DIR: LIB_DIR/npm (shared with NpmProvider)
         # Global: no install_root (NpmProvider picks its own default)
-        lib_dir = os.environ.get("ABX_PKG_LIB_DIR")
         if (
             self.install_root is not None
             and lib_dir
             and str(self.install_root).startswith(lib_dir.rstrip("/") + "/")
         ):
             npm_install_root = Path(lib_dir) / "npm"
-        elif self.install_root is not None:
-            npm_install_root = self.install_root / "npm"
-        else:
-            npm_install_root = None
         cli_provider = NpmProvider(
             install_root=npm_install_root,
             postinstall_scripts=effective_postinstall,
@@ -258,7 +274,6 @@ class PlaywrightProvider(BinProvider):
             postinstall_scripts=effective_postinstall,
             min_release_age=effective_min_release_age,
         ).install(no_cache=no_cache)
-        self._INSTALLER_BINARY = cli  # bootstrap: seed cache after npm install
         path_entries: list[Path] = []
         if self.bin_dir is not None:
             path_entries.append(self.bin_dir)
@@ -270,6 +285,10 @@ class PlaywrightProvider(BinProvider):
                 PATH="",
                 prepend=True,
             )
+        loaded_cli = self.load(self.INSTALLER_BIN, quiet=True, no_cache=True)
+        self._INSTALLER_BINARY = (
+            loaded_cli if loaded_cli is not None else cli
+        )  # bootstrap: seed cache after npm install
 
     def _playwright_browser_path(
         self,
@@ -430,7 +449,7 @@ class PlaywrightProvider(BinProvider):
             return f"DRY_RUN would run: playwright install {' '.join(merged_args)}"
 
         effective_timeout = timeout if timeout is not None else self.install_timeout
-        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        installer_bin = self.INSTALLER_BINARY().loaded_abspath
         assert installer_bin
         install_cmd = ["install", *merged_args]
         # Retry on dpkg lock contention (apt-get may be held by a

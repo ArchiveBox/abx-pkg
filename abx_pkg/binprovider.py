@@ -13,7 +13,6 @@ import subprocess
 import functools
 import tempfile
 from contextvars import ContextVar
-from types import SimpleNamespace
 
 from typing import (
     Optional,
@@ -453,17 +452,22 @@ class BinProvider(BaseModel):
 
         return candidate_euid if candidate_euid is not None else current_euid
 
-    def get_pw_record(self, uid: int) -> Any:
+    def get_pw_record(self, uid: int) -> pwd.struct_passwd:
         try:
             return pwd.getpwuid(uid)
         except KeyError:
             if uid != os.geteuid():
                 raise
-            return SimpleNamespace(
-                pw_uid=uid,
-                pw_gid=os.getegid(),
-                pw_dir=os.environ.get("HOME", tempfile.gettempdir()),
-                pw_name=os.environ.get("USER") or os.environ.get("LOGNAME") or str(uid),
+            return pwd.struct_passwd(
+                (
+                    os.environ.get("USER") or os.environ.get("LOGNAME") or str(uid),
+                    "x",
+                    uid,
+                    os.getegid(),
+                    "",
+                    os.environ.get("HOME", tempfile.gettempdir()),
+                    os.environ.get("SHELL", "/bin/sh"),
+                ),
             )
 
     @property
@@ -542,7 +546,7 @@ class BinProvider(BaseModel):
             self.INSTALLER_BIN,
         )
 
-    @computed_field
+    @computed_field(repr=False)
     @property
     def is_valid(self) -> bool:
         try:
@@ -985,6 +989,7 @@ class BinProvider(BaseModel):
         )
         cwd_path = Path(cwd).resolve()
         cmd = [str(bin_abspath), *(str(arg) for arg in cmd)]
+        is_version_probe = len(cmd) == 2 and cmd[1] in {"--version", "-version", "-v"}
         exec_log_prefix = ACTIVE_EXEC_LOG_PREFIX.get()
         if should_log_command:
             if exec_log_prefix:
@@ -1033,7 +1038,7 @@ class BinProvider(BaseModel):
             except Exception:
                 pass
 
-        if self.dry_run:
+        if self.dry_run and not is_version_probe:
             return subprocess.CompletedProcess(cmd, 0, "", "skipped (dry run)")
 
         kwargs.setdefault("capture_output", True)
@@ -1404,15 +1409,14 @@ class BinProvider(BaseModel):
         if self.dry_run:
             # return fake ShallowBinary if we're just doing a dry run
             # no point trying to get real abspath or version if nothing was actually installed
-            return ShallowBinary.model_validate(
-                {
-                    "name": bin_name,
-                    "binprovider": self,
-                    "abspath": Path(shutil.which(bin_name) or UNKNOWN_ABSPATH),
-                    "version": UNKNOWN_VERSION,
-                    "sha256": UNKNOWN_SHA256,
-                    "binproviders": [self],
-                },
+            return ShallowBinary.model_construct(
+                name=bin_name,
+                description=bin_name,
+                loaded_binprovider=self,
+                loaded_abspath=UNKNOWN_ABSPATH,
+                loaded_version=UNKNOWN_VERSION,
+                loaded_sha256=UNKNOWN_SHA256,
+                binproviders=[self],
             )
 
         self.invalidate_cache(bin_name)
@@ -1558,15 +1562,14 @@ class BinProvider(BaseModel):
             ACTIVE_EXEC_LOG_PREFIX.reset(exec_log_prefix_token)
 
         if self.dry_run:
-            return ShallowBinary.model_validate(
-                {
-                    "name": bin_name,
-                    "binprovider": self,
-                    "abspath": Path(shutil.which(bin_name) or UNKNOWN_ABSPATH),
-                    "version": UNKNOWN_VERSION,
-                    "sha256": UNKNOWN_SHA256,
-                    "binproviders": [self],
-                },
+            return ShallowBinary.model_construct(
+                name=bin_name,
+                description=bin_name,
+                loaded_binprovider=self,
+                loaded_abspath=UNKNOWN_ABSPATH,
+                loaded_version=UNKNOWN_VERSION,
+                loaded_sha256=UNKNOWN_SHA256,
+                binproviders=[self],
             )
 
         self.invalidate_cache(bin_name)
