@@ -1,0 +1,43 @@
+abx_pkg/logging.py
+  fa9493a9fcca68b9 179-189,227-235,240-242,253-255
+README.md
+  fa9493a9fcca68b9 858,863,926,1038,1059,1080
+tests/test_playwrightprovider.py
+  fa9493a9fcca68b9 1-2,6-7,11-20,22,24-35,39,46,49,81,96,103,132,140,169,176-177,179-180,187-188,191,254-258,263-276,279-281,285-292,297-298,303,308-310,314-317,320-322,326-338,344,347-351
+tests/test_yarnprovider.py
+  fa9493a9fcca68b9 8,13-20,22-29,31-65,190,195,217,231,236,253,260,275,298,315-405,441,458,461,468-469,472-491,498,509
+abx_pkg/binprovider.py
+  fa9493a9fcca68b9 455,461-470,549,992,1041,1412-1419,1565-1572
+tests/test_cli.py
+  fa9493a9fcca68b9 130,132,135,149,154,160,162,165,178,185,187,190,200,207,209,212,225
+abx_pkg/binprovider_yarn.py
+  fa9493a9fcca68b9 141-145,289-310,385-392
+tests/test_pnpmprovider.py
+  fa9493a9fcca68b9 228,431,474
+abx_pkg/binprovider_playwright.py
+  fa9493a9fcca68b9 182-201,206-213,288-291,452
+tests/test_bunprovider.py
+  fa9493a9fcca68b9 195,227,364
+.github/workflows/tests.yml
+  fa9493a9fcca68b9 116,123,125-138,141-143,286,293,295-308,311-313
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "e85c74163634973807b1a07da5cdce9402761769",
+  "prompts": {
+    "fa9493a9fcca68b9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d7eb9-b345-7ba1-bae3-721151e5bc08",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 503,
+      "total_deletions": 402,
+      "accepted_lines": 486,
+      "overriden_lines": 0
+    }
+  }
+}
