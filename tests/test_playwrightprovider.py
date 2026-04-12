@@ -32,6 +32,18 @@ class TestPlaywrightProvider:
             symlinks=True,
             copy_function=os.link,
         )
+        copied_bin_dir = install_root / "bin"
+        if not copied_bin_dir.is_dir():
+            return
+        for link_path in copied_bin_dir.iterdir():
+            if not link_path.is_symlink():
+                continue
+            link_target = link_path.resolve(strict=False)
+            if seeded_playwright_root.resolve() not in link_target.parents:
+                continue
+            relative_target = link_target.relative_to(seeded_playwright_root.resolve())
+            link_path.unlink()
+            link_path.symlink_to(install_root / relative_target)
 
     def test_chromium_install_puts_real_browser_into_managed_bin_dir(
         self,
