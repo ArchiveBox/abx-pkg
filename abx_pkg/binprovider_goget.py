@@ -81,10 +81,7 @@ class GoGetProvider(BinProvider):
     def load_PATH_from_go_env(self) -> Self:
         bin_dir = self.bin_dir
         assert bin_dir is not None
-        if self.install_root != DEFAULT_GOPATH or "bin_dir" in self.model_fields_set:
-            self.PATH = self._merge_PATH(bin_dir, PATH=self.PATH)
-        else:
-            self.PATH = self._merge_PATH(bin_dir, PATH=self.PATH)
+        self.PATH = self._merge_PATH(bin_dir, PATH=self.PATH)
         return self
 
     def setup(
