@@ -1,0 +1,57 @@
+abxpkg/binprovider_chromewebstore.py
+  67a976da5825c26a 56-57
+abxpkg/binprovider_docker.py
+  67a976da5825c26a 46-47
+abxpkg/binprovider_apt.py
+  67a976da5825c26a 25-27
+abxpkg/binprovider_goget.py
+  67a976da5825c26a 46-47
+abxpkg/binprovider_playwright.py
+  67a976da5825c26a 70-71
+abxpkg/binprovider_gem.py
+  67a976da5825c26a 38-39
+abxpkg/binprovider_bash.py
+  67a976da5825c26a 49-50
+abxpkg/binprovider_cargo.py
+  67a976da5825c26a 37-38
+abxpkg/binprovider_pip.py
+  67a976da5825c26a 72-73
+abxpkg/binprovider_uv.py
+  67a976da5825c26a 65-66
+abxpkg/binprovider_yarn.py
+  67a976da5825c26a 75-76
+abxpkg/binprovider_brew.py
+  67a976da5825c26a 56-57
+abxpkg/binprovider_pnpm.py
+  67a976da5825c26a 60-61
+abxpkg/binprovider_puppeteer.py
+  67a976da5825c26a 66-67
+abxpkg/binprovider_bun.py
+  67a976da5825c26a 62-63
+abxpkg/binprovider_nix.py
+  67a976da5825c26a 48-49
+abxpkg/binprovider_npm.py
+  67a976da5825c26a 63-64
+abxpkg/binprovider_deno.py
+  67a976da5825c26a 62-63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "cb80fcaf8bf490a61fd250ebc23e9ae6341a7462",
+  "prompts": {
+    "67a976da5825c26a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d717c-705b-75f1-8c2f-c652b4164be1",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 37,
+      "total_deletions": 1,
+      "accepted_lines": 37,
+      "overriden_lines": 0
+    }
+  }
+}
