@@ -642,9 +642,6 @@ class BinProvider(BaseModel):
         resolved_provider_name: str | None = None,
         cache_kind: str = "binary",
     ) -> tuple[MTimeNs, EUID] | None:
-        install_root = self.install_root
-        if install_root is not None and not install_root.exists():
-            return None
         derived_env_path = self.derived_env_path
         cache_info = self.get_cache_info(bin_name, abspath)
         if cache_info is None:
@@ -675,6 +672,7 @@ class BinProvider(BaseModel):
         }
         if derived_env_path is None:
             return None
+        derived_env_path.parent.mkdir(parents=True, exist_ok=True)
         cache = load_derived_cache(derived_env_path)
         cache[self._cache_key(bin_name, abspath)] = record
         try:
@@ -2432,7 +2430,7 @@ class EnvProvider(BinProvider):
         bin_name: BinName | str,
         abspath: HostBinPath | Path,
     ) -> HostBinPath:
-        target = Path(abspath).expanduser().resolve(strict=False)
+        target = Path(abspath).expanduser().absolute()
         if self.bin_dir is None:
             return TypeAdapter(HostBinPath).validate_python(target)
 
@@ -2442,7 +2440,7 @@ class EnvProvider(BinProvider):
 
         link_path = self.bin_dir / link_name
         if link_path.exists() or link_path.is_symlink():
-            if link_path.is_symlink() and link_path.resolve(strict=False) == target:
+            if link_path.is_symlink() and link_path.readlink() == target:
                 return TypeAdapter(HostBinPath).validate_python(target)
             link_path.unlink()
         link_path.symlink_to(target)

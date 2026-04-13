@@ -845,7 +845,7 @@ def list_cached_binaries(
             seen_installer_lines.add(line)
             installer_lines.append(line)
         else:
-            if line in seen_binary_lines:
+            if line in seen_binary_lines or line in seen_installer_lines:
                 continue
             seen_binary_lines.add(line)
             binary_lines.append(line)

@@ -25,7 +25,10 @@ class TestUvProvider:
             assert installer.loaded_abspath is not None
             cache = load_derived_cache(install_root / "derived.env")
             assert any(
-                f'"{provider.name}","{provider.INSTALLER_BIN}"' in key for key in cache
+                isinstance(record, dict)
+                and record.get("provider_name") == provider.name
+                and record.get("bin_name") == provider.INSTALLER_BIN
+                for record in cache.values()
             )
 
             old_path = os.environ.get("PATH", "")
