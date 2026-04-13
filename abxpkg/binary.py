@@ -560,7 +560,7 @@ class Binary(ShallowBinary):
         )
         uninstall_candidates: list[BinProvider] = []
         for binprovider in self._binprovider_order(binproviders):
-            if isinstance(binprovider, EnvProvider):
+            if type(binprovider) is EnvProvider:
                 binprovider.invalidate_cache(self.name)
                 continue
             uninstall_candidates.append(binprovider)
@@ -568,7 +568,7 @@ class Binary(ShallowBinary):
             for binprovider in self.binproviders:
                 if binproviders and binprovider.name not in binproviders:
                     continue
-                if isinstance(binprovider, EnvProvider):
+                if type(binprovider) is EnvProvider:
                     binprovider.invalidate_cache(self.name)
                     continue
                 uninstall_candidates.append(binprovider)

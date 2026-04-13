@@ -635,6 +635,9 @@ class BinProvider(BaseModel):
         resolved_provider_name: str | None = None,
         cache_kind: str = "binary",
     ) -> tuple[MTimeNs, EUID] | None:
+        install_root = self.install_root
+        if install_root is not None and not install_root.exists():
+            return None
         derived_env_path = self.derived_env_path
         cache_info = self.get_cache_info(bin_name, abspath)
         if cache_info is None:
@@ -667,7 +670,16 @@ class BinProvider(BaseModel):
             return None
         cache = load_derived_cache(derived_env_path)
         cache[self._cache_key(bin_name, abspath)] = record
-        save_derived_cache(derived_env_path, cache)
+        try:
+            save_derived_cache(derived_env_path, cache)
+        except Exception as err:
+            logger.debug(
+                "Skipping cache write for %s via %s: %s",
+                bin_name,
+                self.name,
+                err,
+            )
+            return None
         return (
             TypeAdapter(MTimeNs).validate_python(fingerprints[0]["mtime_ns"]),
             TypeAdapter(EUID).validate_python(fingerprints[0]["euid"]),

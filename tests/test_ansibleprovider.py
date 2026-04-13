@@ -60,7 +60,7 @@ class TestAnsibleProvider:
 
         with pytest.raises(subprocess.TimeoutExpired):
             ansible_package_install(
-                "sleep 5",
+                ["sleep 5"],
                 ansible_playbook_abspath=str(installer),
                 playbook_template=playbook_template,
                 installer_module="ansible.builtin.command",
@@ -68,7 +68,7 @@ class TestAnsibleProvider:
             )
         with pytest.raises(subprocess.TimeoutExpired):
             ansible_package_install(
-                "sleep 5",
+                ["sleep 5"],
                 ansible_playbook_abspath=str(installer),
                 playbook_template=playbook_template,
                 installer_module="ansible.builtin.command",

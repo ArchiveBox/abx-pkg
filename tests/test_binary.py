@@ -281,7 +281,7 @@ class TestBinary:
             assert installed.loaded_abspath is not None
             provider = binary.get_binprovider("pip")
             assert provider.install_root == install_root
-            assert provider.bin_dir == install_root / "bin"
+            assert provider.bin_dir == install_root / "venv" / "bin"
             assert installed.loaded_abspath.parent == provider.bin_dir
 
     def test_binary_dry_run_passes_through_to_provider_without_installing(self):
@@ -310,8 +310,8 @@ class TestBinary:
             assert updated.loaded_version == SemVer("999.999.999")
             assert provider.load("black", quiet=True, no_cache=True) is None
 
-            removed = binary.uninstall(dry_run=True)
-            assert removed.loaded_abspath is None
+            with pytest.raises(BinaryUninstallError):
+                binary.uninstall(dry_run=True)
             assert provider.load("black", quiet=True, no_cache=True) is None
 
     def test_binary_dry_run_install_does_not_update_stale_existing_binary(self):

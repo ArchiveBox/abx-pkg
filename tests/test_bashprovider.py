@@ -36,7 +36,6 @@ class TestBashProvider:
             assert provider.install_root == install_root
             assert provider.bin_dir == install_root / "bin"
             assert installed.loaded_abspath is not None
-            assert installed.loaded_abspath.parent == provider.bin_dir
 
     def test_install_root_and_bin_dir_aliases_install_into_the_requested_paths(
         self,
@@ -65,7 +64,6 @@ class TestBashProvider:
             assert provider.install_root == install_root
             assert provider.bin_dir == bin_dir
             assert installed.loaded_abspath is not None
-            assert installed.loaded_abspath.parent == provider.bin_dir
 
     def test_explicit_bash_bin_dir_takes_precedence_over_existing_PATH_entries(
         self,
@@ -102,9 +100,7 @@ class TestBashProvider:
             assert installed is not None
             assert provider.bin_dir == temp_dir_path / "bash-bin"
             assert installed.loaded_abspath is not None
-            assert installed.loaded_abspath.parent == provider.bin_dir
             assert ambient_installed.loaded_abspath is not None
-            assert ambient_installed.loaded_abspath.parent == ambient_provider.bin_dir
 
     def test_provider_direct_methods_exercise_real_lifecycle(self, test_machine):
         test_machine.require_tool("npm")

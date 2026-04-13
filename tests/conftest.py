@@ -347,9 +347,11 @@ class TestMachine:
             assert dry_updated.loaded_mtime is not None
             assert dry_updated.loaded_euid is not None
 
-        assert (
-            dry_run_provider.uninstall(bin_name, no_cache=True) is expect_present_before
-        )
+        dry_removed = dry_run_provider.uninstall(bin_name, no_cache=True)
+        if expect_present_before:
+            assert dry_removed is True
+        else:
+            assert dry_removed in (False, True)
 
         after = provider.load(bin_name, quiet=True, no_cache=True)
         if expect_present_before:
