@@ -76,7 +76,7 @@ class PnpmProvider(BinProvider):
                 if self.bin_dir
                 else (
                     Path(os.environ["PNPM_HOME"])
-                    if "PNPM_HOME" in os.environ
+                    if os.environ.get("PNPM_HOME")
                     else self.cache_dir / "pnpm-home"
                 ),
             ),

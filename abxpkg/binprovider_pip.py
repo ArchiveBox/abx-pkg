@@ -84,7 +84,7 @@ class PipProvider(BinProvider):
         for sp in sorted(
             (venv_root / "lib").glob("python*/site-packages"),
         ):
-            env["PYTHONPATH"] = str(sp)
+            env["PYTHONPATH"] = ":" + str(sp)
             break
         return env
 
