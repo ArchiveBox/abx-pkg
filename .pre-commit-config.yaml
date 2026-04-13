@@ -38,13 +38,13 @@ repos:
         name: ty-check
         entry: uv run --active --no-sources ty check
         language: system
-        files: ^(abx_pkg/|tests\.py$|django_example_project/project/(?!migrations/).+\.py$)
+        files: ^(abxpkg/|tests\.py$|django_example_project/project/(?!migrations/).+\.py$)
         pass_filenames: false
       - id: pyright
         name: pyright
         entry: uv run --active --no-sources pyright
         language: system
-        files: ^(abx_pkg/|tests\.py$|django_example_project/project/(?!migrations/).+\.py$)
+        files: ^(abxpkg/|tests\.py$|django_example_project/project/(?!migrations/).+\.py$)
         pass_filenames: false
       # see pyproject.toml for more details on ruff config
 
