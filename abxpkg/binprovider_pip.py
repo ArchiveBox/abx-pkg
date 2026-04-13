@@ -244,21 +244,23 @@ class PipProvider(BinProvider):
             if raw_provider_names
             else list(DEFAULT_PROVIDER_NAMES)
         )
-        for provider_name in DEFAULT_PROVIDER_NAMES:
-            if provider_name not in selected_provider_names:
-                selected_provider_names.append(provider_name)
-        python_loaded = Binary(
-            name="python",
-            binproviders=[
-                EnvProvider(install_root=None, bin_dir=None)
-                if provider_name == "env"
-                else PROVIDER_CLASS_BY_NAME[provider_name]()
-                for provider_name in selected_provider_names
-                if provider_name
-                and provider_name in PROVIDER_CLASS_BY_NAME
-                and provider_name != self.name
-            ],
-        ).load(no_cache=no_cache)
+        dependency_providers = [
+            EnvProvider(install_root=None, bin_dir=None)
+            if provider_name == "env"
+            else PROVIDER_CLASS_BY_NAME[provider_name]()
+            for provider_name in selected_provider_names
+            if provider_name
+            and provider_name in PROVIDER_CLASS_BY_NAME
+            and provider_name != self.name
+        ]
+        python_loaded = (
+            Binary(
+                name="python",
+                binproviders=dependency_providers,
+            ).load(no_cache=no_cache)
+            if dependency_providers
+            else None
+        )
         if (
             python_loaded
             and python_loaded.loaded_abspath
