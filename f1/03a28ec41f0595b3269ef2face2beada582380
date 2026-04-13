@@ -1,0 +1,85 @@
+abxpkg/binprovider_pnpm.py
+  675681f7d2b2b8ca 67-73,141,148,248,258
+abxpkg/js/chrome/chrome_utils.js
+  675681f7d2b2b8ca 2105-2107
+abxpkg/binprovider.py
+  675681f7d2b2b8ca 822,827,2073-2081
+abxpkg/binprovider_nix.py
+  675681f7d2b2b8ca 79,128
+abxpkg/binprovider_yarn.py
+  675681f7d2b2b8ca 23-29,37-38,95,168,186-232
+abxpkg/binprovider_gem.py
+  675681f7d2b2b8ca 58,142
+tests/conftest.py
+  67a976da5825c26a 147-148,318-324,327-333
+  675681f7d2b2b8ca 337-348,350-352
+abxpkg/binprovider_npm.py
+  675681f7d2b2b8ca 80,138,147,163,214,386,396
+abxpkg/binprovider_brew.py
+  675681f7d2b2b8ca 75,117,150,160
+abxpkg/binprovider_uv.py
+  675681f7d2b2b8ca 107,114,119,191,220,253,265,305
+abxpkg/binprovider_goget.py
+  675681f7d2b2b8ca 79
+abxpkg/binprovider_ansible.py
+  675681f7d2b2b8ca 345
+abxpkg/binprovider_cargo.py
+  675681f7d2b2b8ca 60,106
+abxpkg/binprovider_bash.py
+  675681f7d2b2b8ca 64,107,129,157
+tests/test_binprovider.py
+  67a976da5825c26a 79-80
+tests/test_envprovider.py
+  67a976da5825c26a 114
+docs/index.html
+  675681f7d2b2b8ca 1607-1608,1619,1772,1786,1807,1814,1833,1844,1860,1964,1985,1992,2005,2016,2032,2122,2136,2143,2157,2164,2316,2323,2330,2351,2358,2510,2517,2524,2545,2552,2715,2729,2736,2743,2750,2757,2913,2920,2927,2948,2955,3112,3126,3133,3140,3147,3154,3310,3317,3324,3345,3352,3508,3515,3522,3543,3550,3707,3721,3728,3735,3742,3749,3906,3920,3927,3934,3941,3948,4105,4119,4126,4133,4140,4147,4305,4319,4326,4333,4340,4347,4504,4518,4525,4532,4539,4546,4708,4715,4722,4729,4743,4750,4902,4916,4937,4944,5095,5109,5116,5130,5137,5222,5280,5294,5301,5308,5329,5336,5507,5528,5535,5678,5699,5706,5780-5781,5785-5786,5924
+abxpkg/binprovider_bun.py
+  675681f7d2b2b8ca 125,151,158
+abxpkg/binprovider_pip.py
+  675681f7d2b2b8ca 108,129,136,296,600,612
+docs/index.html.j2
+  675681f7d2b2b8ca 1607-1608,1619
+abxpkg/binprovider_deno.py
+  675681f7d2b2b8ca 75,118
+abxpkg/binprovider_playwright.py
+  675681f7d2b2b8ca 509
+docs/generate.py
+  675681f7d2b2b8ca 15,77,88-90,398,401-402,407,409,411,574-579,582-586
+abxpkg/binprovider_docker.py
+  675681f7d2b2b8ca 50,99,107,115,129,143,169
+abxpkg/binprovider_chromewebstore.py
+  675681f7d2b2b8ca 81,117,121,134,143,172,184,202,255
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "f103a28ec41f0595b3269ef2face2beada582380",
+  "prompts": {
+    "675681f7d2b2b8ca": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d84cf-f8bf-7421-aa46-1ef0e140c385",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 307,
+      "total_deletions": 153,
+      "accepted_lines": 303,
+      "overriden_lines": 0
+    },
+    "67a976da5825c26a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d717c-705b-75f1-8c2f-c652b4164be1",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 26,
+      "total_deletions": 21,
+      "accepted_lines": 21,
+      "overriden_lines": 0
+    }
+  }
+}
