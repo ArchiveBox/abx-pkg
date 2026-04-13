@@ -4,7 +4,7 @@ import logging
 
 import pytest
 
-from abx_pkg import Binary, GoGetProvider, SemVer
+from abxpkg import Binary, GoGetProvider, SemVer
 
 
 class TestGoGetProvider:
@@ -261,7 +261,7 @@ class TestGoGetProvider:
         test_machine.require_tool("go")
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+            with caplog.at_level(logging.WARNING, logger="abxpkg.binprovider"):
                 installed = (
                     GoGetProvider(
                         bin_dir=Path(temp_dir) / "bad-go/bin",
@@ -301,7 +301,7 @@ class TestGoGetProvider:
                     },
                 },
             )
-            with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+            with caplog.at_level(logging.WARNING, logger="abxpkg.binprovider"):
                 installed = binary.install()
             test_machine.assert_shallow_binary_loaded(installed)
             assert "ignoring unsupported min_release_age=1" in caplog.text

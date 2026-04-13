@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from abx_pkg import Binary, BinProvider, EnvProvider, PipProvider, SemVer
-from abx_pkg.exceptions import (
+from abxpkg import Binary, BinProvider, EnvProvider, PipProvider, SemVer
+from abxpkg.exceptions import (
     BinaryLoadError,
     BinaryInstallError,
     BinaryUninstallError,
@@ -35,7 +35,7 @@ class TestBinary:
         with tempfile.TemporaryDirectory() as tmpdir:
             # Point EnvProvider at an empty PATH so the test stays hermetic
             # even when ``black`` is already installed elsewhere on the host
-            # (common on dev machines and any image with uv-managed tools).
+            # (common on dev machines and any image with uv tool installs).
             empty_bin_dir = Path(tmpdir) / "empty_bin"
             empty_bin_dir.mkdir()
             env_provider = EnvProvider(PATH=str(empty_bin_dir))

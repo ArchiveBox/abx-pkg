@@ -4,9 +4,9 @@ import logging
 
 import pytest
 
-from abx_pkg import Binary, SemVer
-from abx_pkg.binprovider_ansible import AnsibleProvider
-from abx_pkg.exceptions import BinaryInstallError
+from abxpkg import Binary, SemVer
+from abxpkg.binprovider_ansible import AnsibleProvider
+from abxpkg.exceptions import BinaryInstallError
 
 
 def _ansible_provider_for_host(test_machine):
@@ -95,7 +95,7 @@ class TestAnsibleProvider:
             min_release_age=0,
         )
         try:
-            with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+            with caplog.at_level(logging.WARNING, logger="abxpkg.binprovider"):
                 installed = AnsibleProvider(
                     ansible_installer_module=provider.ansible_installer_module,
                 ).install(
@@ -118,7 +118,7 @@ class TestAnsibleProvider:
                 postinstall_scripts=False,
                 min_release_age=1,
             )
-            with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+            with caplog.at_level(logging.WARNING, logger="abxpkg.binprovider"):
                 installed = binary.install()
             test_machine.assert_shallow_binary_loaded(installed)
             assert "ignoring unsupported min_release_age=1" in caplog.text

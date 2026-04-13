@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from abx_pkg import Binary, NpmProvider, SemVer
+from abxpkg import Binary, NpmProvider, SemVer
 
 
 class TestNpmProvider:

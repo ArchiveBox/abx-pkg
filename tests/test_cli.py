@@ -11,18 +11,18 @@ import pytest
 import rich_click as click
 from click.testing import CliRunner
 
-from abx_pkg import SemVer
-import abx_pkg.cli as cli_module
+from abxpkg import SemVer
+import abxpkg.cli as cli_module
 
 
-def _abx_pkg_executable() -> Path:
-    """Locate the installed abx-pkg console script for subprocess-based tests."""
+def _abxpkg_executable() -> Path:
+    """Locate the installed abxpkg console script for subprocess-based tests."""
 
-    candidate = Path(sys.executable).parent / "abx-pkg"
+    candidate = Path(sys.executable).parent / "abxpkg"
     if candidate.exists():
         return candidate
-    resolved = shutil.which("abx-pkg")
-    assert resolved, "abx-pkg console script must be installed in the active venv"
+    resolved = shutil.which("abxpkg")
+    assert resolved, "abxpkg console script must be installed in the active venv"
     return Path(resolved)
 
 
@@ -43,12 +43,10 @@ def _run_cli(
     env_overrides: dict[str, str] | None = None,
     timeout: float = 600,
 ) -> subprocess.CompletedProcess[str]:
-    """Invoke a console script with a clean ABX_PKG_* environment."""
+    """Invoke a console script with a clean ABXPKG_* environment."""
 
     env = {
-        key: value
-        for key, value in os.environ.items()
-        if not key.startswith("ABX_PKG_")
+        key: value for key, value in os.environ.items() if not key.startswith("ABXPKG_")
     }
     if env_overrides:
         env.update(env_overrides)
@@ -62,15 +60,15 @@ def _run_cli(
     )
 
 
-def _run_abx_pkg_cli(
+def _run_abxpkg_cli(
     *args: str,
     env_overrides: dict[str, str] | None = None,
     timeout: float = 600,
 ) -> subprocess.CompletedProcess[str]:
-    """Invoke the real `abx-pkg` console script with a clean env."""
+    """Invoke the real `abxpkg` console script with a clean env."""
 
     return _run_cli(
-        _abx_pkg_executable(),
+        _abxpkg_executable(),
         *args,
         env_overrides=env_overrides,
         timeout=timeout,
@@ -93,8 +91,8 @@ def _run_abx_cli(
 
 
 @pytest.fixture(autouse=True)
-def restore_abx_pkg_logger():
-    package_logger = logging.getLogger("abx_pkg")
+def restore_abxpkg_logger():
+    package_logger = logging.getLogger("abxpkg")
     original_level = package_logger.level
     original_handlers = list(package_logger.handlers)
     original_propagate = package_logger.propagate
@@ -110,7 +108,7 @@ def restore_abx_pkg_logger():
 
 
 def test_build_providers_uses_managed_lib_layout(tmp_path, monkeypatch):
-    monkeypatch.setenv("ABX_PKG_LIB_DIR", str(tmp_path))
+    monkeypatch.setenv("ABXPKG_LIB_DIR", str(tmp_path))
     providers = cli_module.build_providers(
         ["uv", "pip", "pnpm", "cargo", "env"],
         dry_run=True,
@@ -122,6 +120,118 @@ def test_build_providers_uses_managed_lib_layout(tmp_path, monkeypatch):
     assert providers[3].install_root == tmp_path / "cargo"
     assert providers[4].name == "env"
     assert all(provider.dry_run for provider in providers)
+
+
+def test_parse_provider_names_uses_preferred_default_cli_order(monkeypatch):
+    monkeypatch.delenv("ABXPKG_BINPROVIDERS", raising=False)
+
+    assert cli_module.parse_provider_names(None) == [
+        "env",
+        "uv",
+        "pip",
+        "pnpm",
+        "npm",
+        "yarn",
+        "bun",
+        "brew",
+        "gem",
+        "goget",
+        "cargo",
+        "playwright",
+        "puppeteer",
+        "apt",
+        "nix",
+        "docker",
+        "deno",
+        "ansible",
+        "pyinfra",
+        "chromewebstore",
+        "bash",
+    ]
+
+
+def test_default_cli_sets_managed_lib_dir(monkeypatch):
+    monkeypatch.delenv("ABXPKG_LIB_DIR", raising=False)
+    captured = {}
+
+    def fake_run_binary_command(binary_name, *, action, options):
+        captured["binary_name"] = binary_name
+        captured["action"] = action
+        captured["options"] = options
+        captured["env_lib_dir"] = os.environ.get("ABXPKG_LIB_DIR")
+        captured["install_root"] = cli_module.build_providers(
+            ["pip"],
+            dry_run=True,
+        )[0].install_root
+
+    monkeypatch.setattr(cli_module, "run_binary_command", fake_run_binary_command)
+
+    result = CliRunner().invoke(
+        cli_module.cli,
+        ["load", "python"],
+    )
+
+    assert result.exit_code == 0
+    assert captured["binary_name"] == "python"
+    assert captured["action"] == "load"
+    assert captured["options"].lib_dir == cli_module.DEFAULT_LIB_DIR.resolve()
+    assert captured["env_lib_dir"] == str(cli_module.DEFAULT_LIB_DIR.resolve())
+    assert captured["install_root"] == cli_module.DEFAULT_LIB_DIR.resolve() / "pip"
+
+
+def test_cli_lib_none_disables_managed_mode(monkeypatch, tmp_path):
+    monkeypatch.setenv("ABXPKG_LIB_DIR", str(tmp_path))
+    captured = {}
+
+    def fake_run_binary_command(binary_name, *, action, options):
+        captured["binary_name"] = binary_name
+        captured["action"] = action
+        captured["options"] = options
+        captured["env_lib_dir"] = os.environ.get("ABXPKG_LIB_DIR")
+        captured["install_root"] = cli_module.build_providers(
+            ["pip"],
+            dry_run=True,
+        )[0].install_root
+
+    monkeypatch.setattr(cli_module, "run_binary_command", fake_run_binary_command)
+
+    result = CliRunner().invoke(
+        cli_module.cli,
+        ["--lib=None", "load", "python"],
+    )
+
+    assert result.exit_code == 0
+    assert captured["binary_name"] == "python"
+    assert captured["action"] == "load"
+    assert captured["options"].lib_dir == cli_module.DEFAULT_LIB_DIR.resolve()
+    assert captured["env_lib_dir"] is None
+    assert captured["install_root"] is None
+
+
+def test_env_lib_none_disables_managed_mode(monkeypatch):
+    monkeypatch.setenv("ABXPKG_LIB_DIR", "None")
+
+    options = cli_module.build_cli_options(
+        None,
+        lib_dir=None,
+        binproviders="pip",
+        dry_run=None,
+        debug=None,
+        no_cache=None,
+        min_version=None,
+        postinstall_scripts=None,
+        min_release_age=None,
+        overrides=None,
+        install_root=None,
+        bin_dir=None,
+        euid=None,
+        install_timeout=None,
+        version_timeout=None,
+    )
+
+    assert options.lib_dir == cli_module.DEFAULT_LIB_DIR.resolve()
+    assert os.environ.get("ABXPKG_LIB_DIR") is None
+    assert cli_module.build_providers(["pip"], dry_run=True)[0].install_root is None
 
 
 def test_install_command_uses_env_defaults(monkeypatch, tmp_path):
@@ -138,9 +248,9 @@ def test_install_command_uses_env_defaults(monkeypatch, tmp_path):
         cli_module.cli,
         ["install", "prettier"],
         env={
-            "ABX_PKG_LIB_DIR": str(tmp_path),
-            "ABX_PKG_BINPROVIDERS": "pnpm,uv",
-            "ABX_PKG_DRY_RUN": "1",
+            "ABXPKG_LIB_DIR": str(tmp_path),
+            "ABXPKG_BINPROVIDERS": "pnpm,uv",
+            "ABXPKG_DRY_RUN": "1",
         },
     )
 
@@ -168,8 +278,8 @@ def test_install_command_uses_debug_env_default(monkeypatch, tmp_path):
         cli_module.cli,
         ["install", "prettier"],
         env={
-            "ABX_PKG_LIB_DIR": str(tmp_path),
-            "ABX_PKG_DEBUG": "1",
+            "ABXPKG_LIB_DIR": str(tmp_path),
+            "ABXPKG_DEBUG": "1",
         },
     )
 
@@ -192,7 +302,7 @@ def test_install_command_uses_debug_flag(monkeypatch, tmp_path):
     result = CliRunner().invoke(
         cli_module.cli,
         ["--debug=True", "install", "prettier"],
-        env={"ABX_PKG_LIB_DIR": str(tmp_path)},
+        env={"ABXPKG_LIB_DIR": str(tmp_path)},
     )
 
     assert result.exit_code == 0
@@ -215,8 +325,8 @@ def test_install_command_uses_no_cache_env_default(monkeypatch, tmp_path):
         cli_module.cli,
         ["install", "prettier"],
         env={
-            "ABX_PKG_LIB_DIR": str(tmp_path),
-            "ABX_PKG_NO_CACHE": "1",
+            "ABXPKG_LIB_DIR": str(tmp_path),
+            "ABXPKG_NO_CACHE": "1",
         },
     )
 
@@ -246,7 +356,7 @@ def test_clear_command_uses_env_lib_dir(tmp_path):
     result = CliRunner().invoke(
         cli_module.cli,
         ["clear"],
-        env={"ABX_PKG_LIB_DIR": str(tmp_path)},
+        env={"ABXPKG_LIB_DIR": str(tmp_path)},
     )
 
     assert result.exit_code == 0
@@ -281,19 +391,19 @@ def test_expand_bare_bool_flags_rewrites_debug_before_run():
 
 
 # ---------------------------------------------------------------------------
-# `abx-pkg run` subcommand (real live subprocess-based tests)
+# `abxpkg run` subcommand (real live subprocess-based tests)
 # ---------------------------------------------------------------------------
 
 
 def test_run_executes_preinstalled_binary_via_env_provider():
-    """`abx-pkg run` with an already-installed binary should stream its output.
+    """`abxpkg run` with an already-installed binary should stream its output.
 
     Uses ``python3`` rather than ``ls`` because BSD ``ls`` (macOS) does
     not support ``--version`` / ``-version`` / ``-v``, so the env
     provider can't ``load()`` it.
     """
 
-    proc = _run_abx_pkg_cli(
+    proc = _run_abxpkg_cli(
         "--binproviders=env",
         "run",
         "python3",
@@ -307,7 +417,7 @@ def test_run_executes_preinstalled_binary_via_env_provider():
 
 
 def test_run_accepts_update_flag_after_subcommand_for_env_provider():
-    proc = _run_abx_pkg_cli(
+    proc = _run_abxpkg_cli(
         "--binproviders=env",
         "run",
         "--update",
@@ -320,7 +430,7 @@ def test_run_accepts_update_flag_after_subcommand_for_env_provider():
 
 
 def test_run_accepts_binproviders_flag_after_subcommand():
-    proc = _run_abx_pkg_cli(
+    proc = _run_abxpkg_cli(
         "run",
         "--binproviders=env",
         "python3",
@@ -332,7 +442,7 @@ def test_run_accepts_binproviders_flag_after_subcommand():
 
 
 def test_version_subcommand_loads_normal_binary_via_env_provider():
-    proc = _run_abx_pkg_cli("--binproviders=env", "version", "python3")
+    proc = _run_abxpkg_cli("--binproviders=env", "version", "python3")
 
     assert proc.returncode == 0, proc.stderr
     assert "python3" in proc.stdout
@@ -340,7 +450,7 @@ def test_version_subcommand_loads_normal_binary_via_env_provider():
 
 
 def test_version_subcommand_loads_installer_binary_via_env_provider():
-    proc = _run_abx_pkg_cli("--binproviders=env", "version", "uv")
+    proc = _run_abxpkg_cli("--binproviders=env", "version", "uv")
 
     assert proc.returncode == 0, proc.stderr
     assert "uv" in proc.stdout
@@ -354,7 +464,7 @@ def test_run_passes_flag_args_through_without_requiring_dash_dash():
     BSD ``ls``, which does not understand ``--help`` and exits non-zero.
     """
 
-    proc = _run_abx_pkg_cli("--binproviders=env", "run", "python3", "--version")
+    proc = _run_abxpkg_cli("--binproviders=env", "run", "python3", "--version")
 
     assert proc.returncode == 0, proc.stderr
     assert proc.stdout.strip().startswith("Python "), proc.stdout
@@ -364,7 +474,7 @@ def test_run_passes_flag_args_through_without_requiring_dash_dash():
 def test_run_propagates_nonzero_exit_code_from_underlying_binary():
     """Exit codes from the underlying binary must flow back unchanged."""
 
-    proc = _run_abx_pkg_cli(
+    proc = _run_abxpkg_cli(
         "--binproviders=env",
         "run",
         "python3",
@@ -448,11 +558,11 @@ def test_run_stdout_stderr_are_separated_and_not_buffered(tmp_path):
     # provider will pick up. The script must respond to --version so
     # EnvProvider can .load() it, then return a non-zero exit code with
     # output split across stdout/stderr.
-    script = tmp_path / "abx-pkg-run-shim"
+    script = tmp_path / "abxpkg-run-shim"
     script.write_text(
         "#!/bin/sh\n"
         'if [ "$1" = "--version" ]; then\n'
-        '  echo "abx-pkg-run-shim 1.2.3"\n'
+        '  echo "abxpkg-run-shim 1.2.3"\n'
         "  exit 0\n"
         "fi\n"
         "echo 'this goes to stdout'\n"
@@ -462,7 +572,7 @@ def test_run_stdout_stderr_are_separated_and_not_buffered(tmp_path):
     script.chmod(0o755)
 
     # Use an ad-hoc PATH that exposes the custom script as a "binary".
-    proc = _run_abx_pkg_cli(
+    proc = _run_abxpkg_cli(
         "--binproviders=env",
         "run",
         script.name,
@@ -472,34 +582,34 @@ def test_run_stdout_stderr_are_separated_and_not_buffered(tmp_path):
     assert proc.returncode == 7, proc.stderr
     assert proc.stdout == "this goes to stdout\n"
     assert "this goes to stderr" in proc.stderr
-    # Nothing from abx-pkg itself should leak into stdout.
-    assert "abx-pkg" not in proc.stdout.lower()
+    # Nothing from abxpkg itself should leak into stdout.
+    assert "abxpkg" not in proc.stdout.lower()
 
 
 def test_run_without_install_exits_one_when_binary_is_missing():
     """If the binary is not installed by any provider, we exit 1."""
 
-    proc = _run_abx_pkg_cli(
+    proc = _run_abxpkg_cli(
         "--binproviders=env",
         "run",
-        "abx-pkg-test-definitely-not-installed-xyz",
+        "abxpkg-test-definitely-not-installed-xyz",
         "--help",
     )
 
     assert proc.returncode == 1
     assert proc.stdout == ""
-    assert "abx-pkg-test-definitely-not-installed-xyz" in proc.stderr
+    assert "abxpkg-test-definitely-not-installed-xyz" in proc.stderr
 
 
-def test_run_respects_abx_pkg_binproviders_env_var():
-    """The ABX_PKG_BINPROVIDERS env var should restrict provider resolution."""
+def test_run_respects_abxpkg_binproviders_env_var():
+    """The ABXPKG_BINPROVIDERS env var should restrict provider resolution."""
 
-    proc = _run_abx_pkg_cli(
+    proc = _run_abxpkg_cli(
         "run",
         "python3",
         "-c",
         "print('from env var')",
-        env_overrides={"ABX_PKG_BINPROVIDERS": "env"},
+        env_overrides={"ABXPKG_BINPROVIDERS": "env"},
     )
 
     assert proc.returncode == 0, proc.stderr
@@ -507,15 +617,15 @@ def test_run_respects_abx_pkg_binproviders_env_var():
 
 
 def test_run_binproviders_flag_overrides_env_var():
-    """`--binproviders` on the command line wins over ABX_PKG_BINPROVIDERS."""
+    """`--binproviders` on the command line wins over ABXPKG_BINPROVIDERS."""
 
-    proc = _run_abx_pkg_cli(
+    proc = _run_abxpkg_cli(
         "--binproviders=env",
         "run",
         "python3",
         "-c",
         "print('flag wins')",
-        env_overrides={"ABX_PKG_BINPROVIDERS": "pip,brew"},
+        env_overrides={"ABXPKG_BINPROVIDERS": "pip,brew"},
     )
 
     assert proc.returncode == 0, proc.stderr
@@ -525,7 +635,7 @@ def test_run_binproviders_flag_overrides_env_var():
 def test_run_with_install_flag_installs_binary_before_executing(tmp_path):
     """`--install` should install the binary if needed, then exec."""
 
-    proc = _run_abx_pkg_cli(
+    proc = _run_abxpkg_cli(
         f"--lib={tmp_path}",
         "--binproviders=pip",
         "--install",
@@ -549,7 +659,7 @@ def test_run_with_install_flag_installs_binary_before_executing(tmp_path):
 def test_run_with_update_flag_installs_and_updates_before_executing(tmp_path):
     """`--update` should ensure the binary is available, then update it."""
 
-    proc = _run_abx_pkg_cli(
+    proc = _run_abxpkg_cli(
         f"--lib={tmp_path}",
         "--binproviders=pip",
         "--update",
@@ -568,7 +678,7 @@ def test_run_with_update_flag_installs_and_updates_before_executing(tmp_path):
 def test_run_with_install_keeps_install_logs_off_stdout(tmp_path):
     """Install progress logs must go to stderr, stdout stays clean."""
 
-    proc = _run_abx_pkg_cli(
+    proc = _run_abxpkg_cli(
         f"--lib={tmp_path}",
         "--binproviders=pip",
         "--install",
@@ -578,13 +688,13 @@ def test_run_with_install_keeps_install_logs_off_stdout(tmp_path):
         timeout=900,
         # Force a deterministic, non-TTY log level so we can assert on it.
         env_overrides={
-            "ABX_PKG_LIB_DIR": str(tmp_path),
-            "ABX_PKG_BINPROVIDERS": "pip",
+            "ABXPKG_LIB_DIR": str(tmp_path),
+            "ABXPKG_BINPROVIDERS": "pip",
         },
     )
 
     assert proc.returncode == 0, proc.stderr
-    # stdout must be *only* the black --version output, nothing abx-pkg-ish.
+    # stdout must be *only* the black --version output, nothing abxpkg-ish.
     stdout_lines = proc.stdout.strip().splitlines()
     assert stdout_lines
     assert stdout_lines[0].startswith("black"), stdout_lines
@@ -595,10 +705,10 @@ def test_run_with_install_keeps_install_logs_off_stdout(tmp_path):
 
 
 def test_run_pip_subcommand_uses_pip_provider_exec(tmp_path):
-    """`abx-pkg --binproviders=pip run pip show X` exercises PipProvider.exec."""
+    """`abxpkg --binproviders=pip run pip show X` exercises PipProvider.exec."""
 
     # Prime a fresh pip venv so we control what's inside.
-    install_proc = _run_abx_pkg_cli(
+    install_proc = _run_abxpkg_cli(
         f"--lib={tmp_path}",
         "--binproviders=pip",
         "install",
@@ -607,7 +717,7 @@ def test_run_pip_subcommand_uses_pip_provider_exec(tmp_path):
     )
     assert install_proc.returncode == 0, install_proc.stderr
 
-    proc = _run_abx_pkg_cli(
+    proc = _run_abxpkg_cli(
         f"--lib={tmp_path}",
         "--binproviders=pip",
         "run",
@@ -656,7 +766,7 @@ def test_run_forwards_variadic_positional_args_to_binary(
     expected_exit,
     expected_stdout,
 ):
-    proc = _run_abx_pkg_cli(
+    proc = _run_abxpkg_cli(
         "--binproviders=env",
         "run",
         "python3",
@@ -668,7 +778,7 @@ def test_run_forwards_variadic_positional_args_to_binary(
 
 
 # ---------------------------------------------------------------------------
-# `abx` — thin alias for `abx-pkg run --install ...` (argv-rewriting wrapper)
+# `abx` — thin alias for `abxpkg run --install ...` (argv-rewriting wrapper)
 # ---------------------------------------------------------------------------
 
 
@@ -752,7 +862,7 @@ def test_abx_auto_installs_and_runs_preinstalled_env_binary():
 
 
 def test_abx_passes_flag_args_through_to_underlying_binary():
-    """Flags after the binary name must reach the binary, not abx-pkg.
+    """Flags after the binary name must reach the binary, not abxpkg.
 
     Uses ``python3 --version`` because macOS ships BSD ``ls`` which does
     not recognise ``--help``.
@@ -763,6 +873,26 @@ def test_abx_passes_flag_args_through_to_underlying_binary():
     assert proc.returncode == 0, proc.stderr
     assert proc.stdout.strip().startswith("Python "), proc.stdout
     assert proc.stderr == ""
+
+
+def test_abx_debug_does_not_probe_later_providers_before_env_resolves():
+    proc = _run_abx_cli(
+        "--debug",
+        "--binproviders=env,brew,apt",
+        "python3",
+        "--version",
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.strip().startswith("Python "), proc.stdout
+    assert (
+        "BinProvider.load(BrewProvider(name='brew'), bin_name='brew')"
+        not in proc.stderr
+    )
+    assert (
+        "BinProvider.load(AptProvider(name='apt'), bin_name='apt-get')"
+        not in proc.stderr
+    )
 
 
 def test_abx_propagates_underlying_exit_code():
@@ -779,7 +909,7 @@ def test_abx_propagates_underlying_exit_code():
 
 
 def test_abx_respects_binproviders_flag_before_binary_name():
-    """`abx --binproviders=LIST BIN ARGS` must forward LIST to abx-pkg."""
+    """`abx --binproviders=LIST BIN ARGS` must forward LIST to abxpkg."""
 
     proc = _run_abx_cli(
         "--binproviders=env,uv,pip,apt,brew",
@@ -796,7 +926,7 @@ def test_abx_version_flag_is_forwarded_without_running_a_binary():
     proc = _run_abx_cli("--version")
 
     assert proc.returncode == 0, proc.stderr
-    from abx_pkg.cli import get_package_version
+    from abxpkg.cli import get_package_version
 
     assert get_package_version() in proc.stdout
 
@@ -822,7 +952,7 @@ def test_abx_installs_missing_binary_via_selected_provider(tmp_path):
     )
 
     assert proc.returncode == 0, proc.stderr
-    # stdout must be *only* black --version output, not abx-pkg's install logs.
+    # stdout must be *only* black --version output, not abxpkg's install logs.
     stdout_lines = proc.stdout.strip().splitlines()
     assert stdout_lines
     assert stdout_lines[0].startswith("black"), stdout_lines
@@ -939,7 +1069,7 @@ def test_build_cli_options_nones_all_leave_fields_at_default(tmp_path):
 def test_build_providers_passes_provider_level_flags_through(tmp_path):
     """Provider constructors should receive the configured knobs."""
 
-    from abx_pkg import PipProvider
+    from abxpkg import PipProvider
 
     providers = cli_module.build_providers(
         ["pip", "env"],
@@ -1023,7 +1153,7 @@ def test_install_postinstall_scripts_false_warns_on_unsupporting_providers(tmp_p
     successful ``load()`` would short-circuit install().
     """
 
-    proc = _run_abx_pkg_cli(
+    proc = _run_abxpkg_cli(
         f"--lib={tmp_path}",
         "--binproviders=apt,uv,pip",
         "--postinstall-scripts=False",
@@ -1044,7 +1174,7 @@ def test_install_postinstall_scripts_false_warns_on_unsupporting_providers(tmp_p
 def test_install_min_version_too_high_fails_loudly(tmp_path):
     """--min-version should gate Binary.is_valid after install."""
 
-    proc = _run_abx_pkg_cli(
+    proc = _run_abxpkg_cli(
         f"--lib={tmp_path}",
         "--binproviders=pip",
         "--min-version=9999.0.0",
@@ -1062,7 +1192,7 @@ def test_install_with_install_root_override_installs_there(tmp_path):
     """--install-root should pin pip_venv to the override directory."""
 
     custom_root = tmp_path / "custom-pip-root"
-    proc = _run_abx_pkg_cli(
+    proc = _run_abxpkg_cli(
         f"--lib={tmp_path}",
         "--binproviders=pip",
         f"--install-root={custom_root}",
@@ -1083,7 +1213,7 @@ def test_install_with_install_root_override_installs_there(tmp_path):
 def test_install_with_overrides_json_uses_custom_install_args(tmp_path):
     """--overrides should thread through to Binary.overrides verbatim."""
 
-    proc = _run_abx_pkg_cli(
+    proc = _run_abxpkg_cli(
         f"--lib={tmp_path}",
         "--binproviders=pip",
         '--overrides={"pip":{"install_args":["black==24.2.0"]}}',
@@ -1223,7 +1353,7 @@ def test_expand_bare_bool_flags_rewrites_bare_forms_in_place(argv, expected):
 def test_install_command_accepts_every_supported_flag_form(extra_flag, tmp_path):
     """Live smoke-test: every flag form resolves python3 via env without raising."""
 
-    proc = _run_abx_pkg_cli(
+    proc = _run_abxpkg_cli(
         f"--lib={tmp_path}",
         "--binproviders=env",
         extra_flag,
@@ -1244,7 +1374,7 @@ def test_install_command_accepts_every_supported_flag_form(extra_flag, tmp_path)
 def test_every_subcommand_accepts_the_full_option_surface(subcommand, tmp_path):
     """Every subcommand honours every option by reusing shared_options."""
 
-    proc = _run_abx_pkg_cli(
+    proc = _run_abxpkg_cli(
         f"--lib={tmp_path}",
         "--binproviders=env",
         "--min-version=0.0.0",
@@ -1265,7 +1395,7 @@ def test_every_subcommand_accepts_the_full_option_surface(subcommand, tmp_path):
 def test_update_subcommand_accepts_the_full_option_surface(tmp_path):
     """`update` must also honour every option, just like install."""
 
-    proc = _run_abx_pkg_cli(
+    proc = _run_abxpkg_cli(
         f"--lib={tmp_path}",
         "--binproviders=env",
         "--min-version=0.0.0",
@@ -1284,7 +1414,7 @@ def test_update_subcommand_accepts_the_full_option_surface(tmp_path):
 def test_subcommand_level_option_overrides_group_level():
     """A subcommand-level flag should override the group-level flag field-by-field."""
 
-    proc = _run_abx_pkg_cli(
+    proc = _run_abxpkg_cli(
         "--binproviders=apt",  # group-level: would match nothing useful
         "install",
         "--binproviders=env",  # subcommand-level: wins
@@ -1317,9 +1447,9 @@ def test_subcommand_level_option_overrides_group_level():
 )
 def test_run_command_honours_group_level_options(flag, tmp_path):
     """`run` reads its options off the group-level CliOptions, so every
-    abx-pkg group flag must survive the round-trip through build_binary."""
+    abxpkg group flag must survive the round-trip through build_binary."""
 
-    proc = _run_abx_pkg_cli(
+    proc = _run_abxpkg_cli(
         f"--lib={tmp_path}",
         "--binproviders=env",
         flag,
@@ -1334,7 +1464,7 @@ def test_run_command_honours_group_level_options(flag, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Real-live coverage: `abx` forwards every option to abx-pkg unchanged.
+# Real-live coverage: `abx` forwards every option to abxpkg unchanged.
 # ---------------------------------------------------------------------------
 
 
@@ -1354,7 +1484,7 @@ def test_run_command_honours_group_level_options(flag, tmp_path):
         "--dry-run=False",
     ],
 )
-def test_abx_forwards_every_option_to_abx_pkg(flag, tmp_path):
+def test_abx_forwards_every_option_to_abxpkg(flag, tmp_path):
     proc = _run_abx_cli(
         f"--lib={tmp_path}",
         "--binproviders=env",
@@ -1368,7 +1498,7 @@ def test_abx_forwards_every_option_to_abx_pkg(flag, tmp_path):
     assert proc.stdout.strip() == "abx-ok"
 
 
-def test_abx_dry_run_value_form_is_forwarded_to_abx_pkg(tmp_path):
+def test_abx_dry_run_value_form_is_forwarded_to_abxpkg(tmp_path):
     """`abx --dry-run=True BIN ...` must propagate as dry_run=True."""
 
     proc = _run_abx_cli(
@@ -1452,26 +1582,26 @@ class TestParseScriptMetadata:
     def test_indentation_preserved(self, tmp_path):
         script = tmp_path / "nested.py"
         script.write_text(
-            "# /// script\n# [tool.abx-pkg]\n# postinstall_scripts = true\n# ///\n",
+            "# /// script\n# [tool.abxpkg]\n# postinstall_scripts = true\n# ///\n",
         )
         meta = cli_module.parse_script_metadata(script)
         assert meta is not None
-        assert meta["tool"]["abx-pkg"]["postinstall_scripts"] is True
+        assert meta["tool"]["abxpkg"]["postinstall_scripts"] is True
 
     def test_tool_section(self, tmp_path):
         script = tmp_path / "tool.py"
         script.write_text(
             "# /// script\n"
             '# dependencies = ["python3"]\n'
-            "# [tool.abx-pkg]\n"
-            "# ABX_PKG_MIN_RELEASE_AGE = 14\n"
-            "# ABX_PKG_POSTINSTALL_SCRIPTS = true\n"
+            "# [tool.abxpkg]\n"
+            "# ABXPKG_MIN_RELEASE_AGE = 14\n"
+            "# ABXPKG_POSTINSTALL_SCRIPTS = true\n"
             "# ///\n",
         )
         meta = cli_module.parse_script_metadata(script)
         assert meta is not None
-        assert meta["tool"]["abx-pkg"]["ABX_PKG_MIN_RELEASE_AGE"] == 14
-        assert meta["tool"]["abx-pkg"]["ABX_PKG_POSTINSTALL_SCRIPTS"] is True
+        assert meta["tool"]["abxpkg"]["ABXPKG_MIN_RELEASE_AGE"] == 14
+        assert meta["tool"]["abxpkg"]["ABXPKG_POSTINSTALL_SCRIPTS"] is True
 
     def test_dict_dependencies(self, tmp_path):
         script = tmp_path / "deps.py"
@@ -1518,14 +1648,14 @@ class TestParseScriptMetadata:
 
 
 def test_run_script_with_interpreter_on_cli(tmp_path):
-    """abx-pkg run --script python3 <script> should parse metadata and run."""
+    """abxpkg run --script python3 <script> should parse metadata and run."""
 
     script = tmp_path / "hello.py"
     script.write_text(
         '# /// script\n# dependencies = ["python3"]\n# ///\nprint("script-ok")\n',
     )
 
-    proc = _run_abx_pkg_cli(
+    proc = _run_abxpkg_cli(
         f"--lib={tmp_path / 'lib'}",
         "--binproviders=env",
         "run",
@@ -1550,7 +1680,7 @@ def test_run_script_passes_args_to_script(tmp_path):
         'print(" ".join(sys.argv[1:]))\n',
     )
 
-    proc = _run_abx_pkg_cli(
+    proc = _run_abxpkg_cli(
         f"--lib={tmp_path / 'lib'}",
         "--binproviders=env",
         "run",
@@ -1571,7 +1701,7 @@ def test_run_script_no_metadata_exits_with_error(tmp_path):
     script = tmp_path / "plain.py"
     script.write_text('print("no metadata")\n')
 
-    proc = _run_abx_pkg_cli(
+    proc = _run_abxpkg_cli(
         f"--lib={tmp_path / 'lib'}",
         "--binproviders=env",
         "run",
@@ -1587,7 +1717,7 @@ def test_run_script_no_metadata_exits_with_error(tmp_path):
 def test_run_script_missing_script_path_exits_with_error(tmp_path):
     """--script with no script path arg should exit 1."""
 
-    proc = _run_abx_pkg_cli(
+    proc = _run_abxpkg_cli(
         f"--lib={tmp_path / 'lib'}",
         "--binproviders=env",
         "run",
@@ -1602,7 +1732,7 @@ def test_run_script_missing_script_path_exits_with_error(tmp_path):
 def test_run_script_nonexistent_file_exits_with_error(tmp_path):
     """--script pointing at a nonexistent file should exit 1."""
 
-    proc = _run_abx_pkg_cli(
+    proc = _run_abxpkg_cli(
         f"--lib={tmp_path / 'lib'}",
         "--binproviders=env",
         "run",
@@ -1623,7 +1753,7 @@ def test_run_script_cli_interpreter_overrides_metadata(tmp_path):
         '# /// script\n# dependencies = ["python3"]\n# ///\nprint("override-ok")\n',
     )
 
-    proc = _run_abx_pkg_cli(
+    proc = _run_abxpkg_cli(
         f"--lib={tmp_path / 'lib'}",
         "--binproviders=env",
         "run",
@@ -1644,7 +1774,7 @@ def test_run_script_propagates_exit_code(tmp_path):
         '# /// script\n# dependencies = ["python3"]\n# ///\nimport sys\nsys.exit(42)\n',
     )
 
-    proc = _run_abx_pkg_cli(
+    proc = _run_abxpkg_cli(
         f"--lib={tmp_path / 'lib'}",
         "--binproviders=env",
         "run",
@@ -1654,6 +1784,40 @@ def test_run_script_propagates_exit_code(tmp_path):
         str(script),
     )
     assert proc.returncode == 42
+
+
+def test_run_script_dependency_provider_path_is_available_inside_script(tmp_path):
+    """Dependency provider PATH should be merged into the script runtime env."""
+
+    lib = tmp_path / "lib"
+    script = tmp_path / "black_check.py"
+    script.write_text(
+        "# /// script\n"
+        "# [[dependencies]]\n"
+        '# name = "black"\n'
+        '# binproviders = ["pip"]\n'
+        "# ///\n"
+        "import subprocess\n"
+        "import sys\n"
+        "proc = subprocess.run(['black', '--version'], capture_output=True, text=True)\n"
+        "sys.stdout.write((proc.stdout or proc.stderr).strip())\n"
+        "sys.exit(proc.returncode)\n",
+    )
+
+    proc = _run_abxpkg_cli(
+        f"--lib={lib}",
+        "--binproviders=env,pip",
+        "--postinstall-scripts=True",
+        "--min-release-age=0",
+        "run",
+        "--script",
+        "--install",
+        "python3",
+        str(script),
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert "black" in proc.stdout.lower()
 
 
 @pytest.fixture()
@@ -1673,7 +1837,7 @@ def abx_e2e_lib():
 
     # 1. install playwright npm package (provides the CLI + require('playwright'))
     if not (npm_prefix / "node_modules" / "playwright").is_dir():
-        proc = _run_abx_pkg_cli(
+        proc = _run_abxpkg_cli(
             f"--lib={lib}",
             "--binproviders=npm",
             "--postinstall-scripts=True",
@@ -1689,7 +1853,7 @@ def abx_e2e_lib():
     # 2. install chromium via the playwright binprovider
     chromium_installed = (playwright_root / "bin" / "chromium").exists()
     if not chromium_installed:
-        proc = _run_abx_pkg_cli(
+        proc = _run_abxpkg_cli(
             f"--lib={lib}",
             "--binproviders=playwright",
             "--postinstall-scripts=True",
@@ -1712,11 +1876,11 @@ def abx_e2e_lib():
 def test_run_script_node_playwright_chromium_end_to_end(abx_e2e_lib, tmp_path):
     """Full end-to-end: resolve node, playwright (npm), chromium (playwright),
     launch a browser with explicit executablePath, and verify everything came
-    from abx-pkg's lib dir — not system binaries."""
+    from abxpkg's lib dir — not system binaries."""
 
     script = tmp_path / "e2e.js"
     script.write_text(
-        "#!/usr/bin/env -S abx-pkg run --script node\n"
+        "#!/usr/bin/env -S abxpkg run --script node\n"
         "\n"
         "// /// script\n"
         "// dependencies = [\n"
@@ -1724,8 +1888,8 @@ def test_run_script_node_playwright_chromium_end_to_end(abx_e2e_lib, tmp_path):
         '//     {name = "playwright", binproviders = ["npm", "pnpm"]},\n'
         '//     {name = "chromium", binproviders = ["playwright", "puppeteer", "apt"], min_version = "131.0.0"},\n'
         "// ]\n"
-        "// [tool.abx-pkg]\n"
-        "// ABX_PKG_POSTINSTALL_SCRIPTS = true\n"
+        "// [tool.abxpkg]\n"
+        "// ABXPKG_POSTINSTALL_SCRIPTS = true\n"
         "// ///\n"
         "\n"
         "const path = require('path');\n"
@@ -1744,7 +1908,7 @@ def test_run_script_node_playwright_chromium_end_to_end(abx_e2e_lib, tmp_path):
         "if (!pwPath.includes('node_modules'))\n"
         "    errors.push('playwright not from node_modules: ' + pwPath);\n"
         "\n"
-        "// 3. find chromium on PATH (provided by abx-pkg, not system)\n"
+        "// 3. find chromium on PATH (provided by abxpkg, not system)\n"
         "const chromiumPath = execSync('which chromium', {encoding: 'utf-8'}).trim();\n"
         "if (!chromiumPath || chromiumPath.startsWith('/usr/bin') || chromiumPath.startsWith('/usr/local/bin'))\n"
         "    errors.push('chromium looks like system binary: ' + chromiumPath);\n"
@@ -1765,7 +1929,7 @@ def test_run_script_node_playwright_chromium_end_to_end(abx_e2e_lib, tmp_path):
         "    const browser = await chromium.launch({headless: true, executablePath: chromiumPath});\n"
         "    const page = await browser.newPage();\n"
         "    await page.setContent('<html><head><title>Test</title></head>'\n"
-        "        + '<body><h1>Hello</h1><p>abx-pkg e2e</p></body></html>');\n"
+        "        + '<body><h1>Hello</h1><p>abxpkg e2e</p></body></html>');\n"
         "    const title = await page.title();\n"
         "    if (title !== 'Test') errors.push('title was: ' + title);\n"
         "    const h1 = await page.textContent('h1');\n"
@@ -1780,7 +1944,7 @@ def test_run_script_node_playwright_chromium_end_to_end(abx_e2e_lib, tmp_path):
         "})();\n",
     )
 
-    proc = _run_abx_pkg_cli(
+    proc = _run_abxpkg_cli(
         f"--lib={abx_e2e_lib}",
         "--binproviders=env,npm,playwright",
         "--postinstall-scripts=True",

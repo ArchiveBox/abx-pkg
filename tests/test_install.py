@@ -1,7 +1,7 @@
 import tempfile
 from pathlib import Path
 
-from abx_pkg import Binary, EnvProvider, NpmProvider, PipProvider
+from abxpkg import Binary, EnvProvider, NpmProvider, PipProvider
 
 
 class TestInstall:

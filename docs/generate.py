@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the abx-pkg landing page (GitHub Pages)."""
+"""Build the abxpkg landing page (GitHub Pages)."""
 
 from __future__ import annotations
 
@@ -13,16 +13,16 @@ from typing import Any
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup
 
-import abx_pkg
-from abx_pkg.binprovider import BinProvider
+import abxpkg
+from abxpkg.binprovider import BinProvider
 
 
 SITE_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SITE_DIR.parent
 TEMPLATE_DIR = SITE_DIR
 DEFAULT_OUTPUT_DIR = SITE_DIR
-GITHUB_REPO = "https://github.com/ArchiveBox/abx-pkg"
-DEFAULT_GITHUB_REF = os.environ.get("ABX_PKG_GITHUB_REF", "main")
+GITHUB_REPO = "https://github.com/ArchiveBox/abxpkg"
+DEFAULT_GITHUB_REF = os.environ.get("ABXPKG_GITHUB_REF", "main")
 
 # Categories for grouping providers on the landing page.
 CATEGORY_FALLBACK = "fallback"
@@ -63,7 +63,7 @@ PROVIDER_METADATA: dict[str, dict[str, Any]] = {
             "already installed on the host. Does not install anything."
         ),
         "tags": ["path-only", "no-install", "read-only"],
-        "source_file": "abx_pkg/binprovider.py",
+        "source_file": "abxpkg/binprovider.py",
         "example_binary": "curl",
         "example_arg": "--version",
     },
@@ -77,7 +77,7 @@ PROVIDER_METADATA: dict[str, dict[str, Any]] = {
             "first, then falls back to direct apt-get."
         ),
         "tags": ["linux", "root", "no-hermetic"],
-        "source_file": "abx_pkg/binprovider_apt.py",
+        "source_file": "abxpkg/binprovider_apt.py",
         "example_binary": "wget",
     },
     "brew": {
@@ -90,7 +90,7 @@ PROVIDER_METADATA: dict[str, dict[str, Any]] = {
             "pyinfra/ansible when postinstall_scripts=True."
         ),
         "tags": ["macos", "linuxbrew", "postinstall-opt-in"],
-        "source_file": "abx_pkg/binprovider_brew.py",
+        "source_file": "abxpkg/binprovider_brew.py",
         "example_binary": "yt-dlp",
     },
     "pip": {
@@ -103,7 +103,7 @@ PROVIDER_METADATA: dict[str, dict[str, Any]] = {
             "installs via postinstall_scripts=False."
         ),
         "tags": ["python", "venv-support", "security-controls"],
-        "source_file": "abx_pkg/binprovider_pip.py",
+        "source_file": "abxpkg/binprovider_pip.py",
         "example_binary": "yt-dlp",
     },
     "uv": {
@@ -116,7 +116,7 @@ PROVIDER_METADATA: dict[str, dict[str, Any]] = {
             "support for postinstall_scripts=False and min_release_age."
         ),
         "tags": ["python", "venv-support", "tool-mode", "security-controls"],
-        "source_file": "abx_pkg/binprovider_uv.py",
+        "source_file": "abxpkg/binprovider_uv.py",
         "example_binary": "ruff",
     },
     "npm": {
@@ -130,7 +130,7 @@ PROVIDER_METADATA: dict[str, dict[str, Any]] = {
             "ship --min-release-age)."
         ),
         "tags": ["javascript", "prefix-support", "security-controls"],
-        "source_file": "abx_pkg/binprovider_npm.py",
+        "source_file": "abxpkg/binprovider_npm.py",
         "example_binary": "prettier",
     },
     "pnpm": {
@@ -144,7 +144,7 @@ PROVIDER_METADATA: dict[str, dict[str, Any]] = {
             "min_release_age."
         ),
         "tags": ["javascript", "prefix-support", "security-controls"],
-        "source_file": "abx_pkg/binprovider_pnpm.py",
+        "source_file": "abxpkg/binprovider_pnpm.py",
         "example_binary": "prettier",
     },
     "yarn": {
@@ -158,7 +158,7 @@ PROVIDER_METADATA: dict[str, dict[str, Any]] = {
             "security flags."
         ),
         "tags": ["javascript", "workspace", "security-controls"],
-        "source_file": "abx_pkg/binprovider_yarn.py",
+        "source_file": "abxpkg/binprovider_yarn.py",
         "example_binary": "prettier",
     },
     "bun": {
@@ -171,7 +171,7 @@ PROVIDER_METADATA: dict[str, dict[str, Any]] = {
             "postinstall_scripts=False via --ignore-scripts."
         ),
         "tags": ["javascript", "prefix-support", "security-controls"],
-        "source_file": "abx_pkg/binprovider_bun.py",
+        "source_file": "abxpkg/binprovider_bun.py",
         "example_binary": "prettier",
     },
     "deno": {
@@ -184,7 +184,7 @@ PROVIDER_METADATA: dict[str, dict[str, Any]] = {
             "(reverse of npm). Supports min_release_age on Deno 2.5+."
         ),
         "tags": ["javascript", "typescript", "security-controls"],
-        "source_file": "abx_pkg/binprovider_deno.py",
+        "source_file": "abxpkg/binprovider_deno.py",
         "example_binary": "prettier",
     },
     "cargo": {
@@ -197,7 +197,7 @@ PROVIDER_METADATA: dict[str, dict[str, Any]] = {
             "default; min_version becomes cargo install --version >=..."
         ),
         "tags": ["rust", "hermetic-support"],
-        "source_file": "abx_pkg/binprovider_cargo.py",
+        "source_file": "abxpkg/binprovider_cargo.py",
         "example_binary": "ripgrep",
     },
     "gem": {
@@ -210,7 +210,7 @@ PROVIDER_METADATA: dict[str, dict[str, Any]] = {
             "the configured GEM_HOME instead of the host default."
         ),
         "tags": ["ruby", "hermetic-support"],
-        "source_file": "abx_pkg/binprovider_gem.py",
+        "source_file": "abxpkg/binprovider_gem.py",
         "example_binary": "jekyll",
     },
     "goget": {
@@ -223,7 +223,7 @@ PROVIDER_METADATA: dict[str, dict[str, Any]] = {
             "the provider name is goget, not go_get."
         ),
         "tags": ["go", "hermetic-support"],
-        "source_file": "abx_pkg/binprovider_goget.py",
+        "source_file": "abxpkg/binprovider_goget.py",
         "example_binary": "golangci-lint",
     },
     "nix": {
@@ -236,7 +236,7 @@ PROVIDER_METADATA: dict[str, dict[str, Any]] = {
             "state/cache. Default install arg is nixpkgs#<bin_name>."
         ),
         "tags": ["nix", "flakes", "hermetic-support"],
-        "source_file": "abx_pkg/binprovider_nix.py",
+        "source_file": "abxpkg/binprovider_nix.py",
         "example_binary": "ffmpeg",
     },
     "docker": {
@@ -249,7 +249,7 @@ PROVIDER_METADATA: dict[str, dict[str, Any]] = {
             "semver-like tags work best. Pass image refs as install_args."
         ),
         "tags": ["docker", "image", "shim"],
-        "source_file": "abx_pkg/binprovider_docker.py",
+        "source_file": "abxpkg/binprovider_docker.py",
         "example_binary": "hello-world",
     },
     "chromewebstore": {
@@ -258,11 +258,11 @@ PROVIDER_METADATA: dict[str, dict[str, Any]] = {
         "category": CATEGORY_BROWSER,
         "summary": (
             "Downloads, unpacks, and caches Chrome Web Store extensions using the "
-            "packaged JS runtime under abx_pkg/js/chrome/. The resolved binary path "
+            "packaged JS runtime under abxpkg/js/chrome/. The resolved binary path "
             "is the unpacked manifest.json."
         ),
         "tags": ["chrome", "extensions"],
-        "source_file": "abx_pkg/binprovider_chromewebstore.py",
+        "source_file": "abxpkg/binprovider_chromewebstore.py",
         "example_binary": "ublock-origin",
     },
     "puppeteer": {
@@ -275,7 +275,7 @@ PROVIDER_METADATA: dict[str, dict[str, Any]] = {
             "not lexicographic string sorting."
         ),
         "tags": ["browsers", "npm-bootstrap"],
-        "source_file": "abx_pkg/binprovider_puppeteer.py",
+        "source_file": "abxpkg/binprovider_puppeteer.py",
         "example_binary": "chrome",
     },
     "playwright": {
@@ -289,7 +289,7 @@ PROVIDER_METADATA: dict[str, dict[str, Any]] = {
             "so --with-deps can install system packages."
         ),
         "tags": ["browsers", "npm-bootstrap", "sudo"],
-        "source_file": "abx_pkg/binprovider_playwright.py",
+        "source_file": "abxpkg/binprovider_playwright.py",
         "example_binary": "chromium",
     },
     "bash": {
@@ -302,7 +302,7 @@ PROVIDER_METADATA: dict[str, dict[str, Any]] = {
             "into the shell environment for those commands."
         ),
         "tags": ["shell", "literal-overrides"],
-        "source_file": "abx_pkg/binprovider_bash.py",
+        "source_file": "abxpkg/binprovider_bash.py",
         "example_binary": "custom-script",
     },
     "pyinfra": {
@@ -315,7 +315,7 @@ PROVIDER_METADATA: dict[str, dict[str, Any]] = {
             "operations.server.packages on Linux. No hermetic prefix support."
         ),
         "tags": ["driver", "infra"],
-        "source_file": "abx_pkg/binprovider_pyinfra.py",
+        "source_file": "abxpkg/binprovider_pyinfra.py",
         "example_binary": "wget",
     },
     "ansible": {
@@ -328,7 +328,7 @@ PROVIDER_METADATA: dict[str, dict[str, Any]] = {
             "ansible.builtin.package on Linux. No hermetic prefix support."
         ),
         "tags": ["driver", "infra"],
-        "source_file": "abx_pkg/binprovider_ansible.py",
+        "source_file": "abxpkg/binprovider_ansible.py",
         "example_binary": "wget",
     },
 }
@@ -337,7 +337,7 @@ PROVIDER_METADATA: dict[str, dict[str, Any]] = {
 # Global env vars (apply to more than one provider or to the CLI).
 GLOBAL_ENV_VARS: list[dict[str, str]] = [
     {
-        "name": "ABX_PKG_DRY_RUN",
+        "name": "ABXPKG_DRY_RUN",
         "default": "0",
         "description": (
             "Flips the shared dry_run default. Provider subprocesses are logged "
@@ -349,11 +349,11 @@ GLOBAL_ENV_VARS: list[dict[str, str]] = [
         "name": "DRY_RUN",
         "default": "0",
         "description": (
-            "Alternative dry-run toggle. ABX_PKG_DRY_RUN wins if both are set."
+            "Alternative dry-run toggle. ABXPKG_DRY_RUN wins if both are set."
         ),
     },
     {
-        "name": "ABX_PKG_NO_CACHE",
+        "name": "ABXPKG_NO_CACHE",
         "default": "0",
         "description": (
             "Flips the shared no_cache default. install() skips the initial "
@@ -362,14 +362,14 @@ GLOBAL_ENV_VARS: list[dict[str, str]] = [
         ),
     },
     {
-        "name": "ABX_PKG_INSTALL_TIMEOUT",
+        "name": "ABXPKG_INSTALL_TIMEOUT",
         "default": "120",
         "description": (
             "Seconds to wait for install()/update()/uninstall() handler subprocesses."
         ),
     },
     {
-        "name": "ABX_PKG_VERSION_TIMEOUT",
+        "name": "ABXPKG_VERSION_TIMEOUT",
         "default": "10",
         "description": (
             "Seconds to wait for version / metadata probes (--version, npm show, "
@@ -377,7 +377,7 @@ GLOBAL_ENV_VARS: list[dict[str, str]] = [
         ),
     },
     {
-        "name": "ABX_PKG_POSTINSTALL_SCRIPTS",
+        "name": "ABXPKG_POSTINSTALL_SCRIPTS",
         "default": "unset",
         "description": (
             "Hydrates the provider-level default for postinstall_scripts on "
@@ -386,7 +386,7 @@ GLOBAL_ENV_VARS: list[dict[str, str]] = [
         ),
     },
     {
-        "name": "ABX_PKG_MIN_RELEASE_AGE",
+        "name": "ABXPKG_MIN_RELEASE_AGE",
         "default": "7",
         "description": (
             "Days of release age to require on supporting providers (pip, uv, "
@@ -394,19 +394,19 @@ GLOBAL_ENV_VARS: list[dict[str, str]] = [
         ),
     },
     {
-        "name": "ABX_PKG_BINPROVIDERS",
+        "name": "ABXPKG_BINPROVIDERS",
         "default": "all",
         "description": (
             "Comma-separated provider names to enable (and their order) for the "
-            "abx-pkg CLI. Example: env,uv,pip,apt,brew"
+            "abxpkg CLI. Example: env,uv,pip,apt,brew"
         ),
     },
     {
-        "name": "ABX_PKG_LIB_DIR",
+        "name": "ABXPKG_LIB_DIR",
         "default": "~/.config/abx/lib",
         "description": (
             "Centralized install root. When set, each provider defaults its "
-            "install root to $ABX_PKG_LIB_DIR/<provider name>. Accepts relative, "
+            "install root to $ABXPKG_LIB_DIR/<provider name>. Accepts relative, "
             "tilde, and absolute paths."
         ),
     },
@@ -416,79 +416,79 @@ GLOBAL_ENV_VARS: list[dict[str, str]] = [
 # the <NAME>_ROOT and <NAME>_BINARY overrides documented in the README.
 PROVIDER_ENV_VARS: dict[str, list[dict[str, str]]] = {
     "pip": [
-        {"name": "ABX_PKG_PIP_ROOT", "description": "Overrides pip_venv path."},
+        {"name": "ABXPKG_PIP_ROOT", "description": "Overrides pip_venv path."},
         {"name": "PIP_BINARY", "description": "Pin the exact pip executable used."},
     ],
     "uv": [
-        {"name": "ABX_PKG_UV_ROOT", "description": "Overrides uv_venv path."},
+        {"name": "ABXPKG_UV_ROOT", "description": "Overrides uv_venv path."},
         {"name": "UV_BINARY", "description": "Pin the exact uv executable used."},
     ],
     "npm": [
-        {"name": "ABX_PKG_NPM_ROOT", "description": "Overrides npm_prefix path."},
+        {"name": "ABXPKG_NPM_ROOT", "description": "Overrides npm_prefix path."},
         {"name": "NPM_BINARY", "description": "Pin the exact npm executable used."},
     ],
     "pnpm": [
-        {"name": "ABX_PKG_PNPM_ROOT", "description": "Overrides pnpm_prefix path."},
+        {"name": "ABXPKG_PNPM_ROOT", "description": "Overrides pnpm_prefix path."},
         {"name": "PNPM_BINARY", "description": "Pin the exact pnpm executable used."},
     ],
     "yarn": [
-        {"name": "ABX_PKG_YARN_ROOT", "description": "Overrides yarn_prefix path."},
+        {"name": "ABXPKG_YARN_ROOT", "description": "Overrides yarn_prefix path."},
         {"name": "YARN_BINARY", "description": "Pin the exact yarn executable used."},
     ],
     "bun": [
-        {"name": "ABX_PKG_BUN_ROOT", "description": "Overrides bun_prefix path."},
+        {"name": "ABXPKG_BUN_ROOT", "description": "Overrides bun_prefix path."},
         {"name": "BUN_BINARY", "description": "Pin the exact bun executable used."},
     ],
     "deno": [
-        {"name": "ABX_PKG_DENO_ROOT", "description": "Overrides deno_root path."},
+        {"name": "ABXPKG_DENO_ROOT", "description": "Overrides deno_root path."},
         {"name": "DENO_BINARY", "description": "Pin the exact deno executable used."},
     ],
     "cargo": [
-        {"name": "ABX_PKG_CARGO_ROOT", "description": "Overrides cargo_root path."},
+        {"name": "ABXPKG_CARGO_ROOT", "description": "Overrides cargo_root path."},
         {"name": "CARGO_HOME", "description": "Standard cargo home directory."},
     ],
     "gem": [
-        {"name": "ABX_PKG_GEM_ROOT", "description": "Overrides gem_home path."},
+        {"name": "ABXPKG_GEM_ROOT", "description": "Overrides gem_home path."},
         {"name": "GEM_HOME", "description": "Standard gem home directory."},
     ],
     "goget": [
-        {"name": "ABX_PKG_GOGET_ROOT", "description": "Overrides gopath."},
+        {"name": "ABXPKG_GOGET_ROOT", "description": "Overrides gopath."},
         {"name": "GOPATH", "description": "Standard Go workspace path."},
     ],
     "nix": [
-        {"name": "ABX_PKG_NIX_ROOT", "description": "Overrides nix_profile path."},
-        {"name": "ABX_PKG_NIX_PROFILE", "description": "Legacy alias for nix_profile."},
+        {"name": "ABXPKG_NIX_ROOT", "description": "Overrides nix_profile path."},
+        {"name": "ABXPKG_NIX_PROFILE", "description": "Legacy alias for nix_profile."},
     ],
     "docker": [
         {
-            "name": "ABX_PKG_DOCKER_ROOT",
+            "name": "ABXPKG_DOCKER_ROOT",
             "description": "Overrides docker_root / install_root.",
         },
     ],
     "brew": [
         {
-            "name": "ABX_PKG_BREW_ROOT",
+            "name": "ABXPKG_BREW_ROOT",
             "description": "Overrides brew_prefix (discovery only).",
         },
     ],
     "bash": [
-        {"name": "ABX_PKG_BASH_ROOT", "description": "Overrides bash_root state dir."},
+        {"name": "ABXPKG_BASH_ROOT", "description": "Overrides bash_root state dir."},
     ],
     "chromewebstore": [
         {
-            "name": "ABX_PKG_CHROMEWEBSTORE_ROOT",
+            "name": "ABXPKG_CHROMEWEBSTORE_ROOT",
             "description": "Overrides extensions_root cache dir.",
         },
     ],
     "puppeteer": [
         {
-            "name": "ABX_PKG_PUPPETEER_ROOT",
+            "name": "ABXPKG_PUPPETEER_ROOT",
             "description": "Overrides puppeteer_root path.",
         },
     ],
     "playwright": [
         {
-            "name": "ABX_PKG_PLAYWRIGHT_ROOT",
+            "name": "ABXPKG_PLAYWRIGHT_ROOT",
             "description": "Overrides playwright_root AND pins PLAYWRIGHT_BROWSERS_PATH to it.",
         },
     ],
@@ -598,10 +598,10 @@ def build_provider(cls: type[BinProvider]) -> dict[str, Any]:
     meta = PROVIDER_METADATA.get(short_name, {})
     fields = collect_provider_fields(cls)
     env_vars = PROVIDER_ENV_VARS.get(short_name, [])
-    source_file = meta.get("source_file") or inspect.getfile(cls).split("abx_pkg/")[-1]
+    source_file = meta.get("source_file") or inspect.getfile(cls).split("abxpkg/")[-1]
     source_file = (
-        f"abx_pkg/{source_file}"
-        if not source_file.startswith("abx_pkg/")
+        f"abxpkg/{source_file}"
+        if not source_file.startswith("abxpkg/")
         else source_file
     )
     category = meta.get("category", CATEGORY_LANGUAGE)
@@ -613,12 +613,12 @@ def build_provider(cls: type[BinProvider]) -> dict[str, Any]:
     example_arg = meta.get("example_arg", "--version")
 
     commands = {
-        "cli_quick": f"abx-pkg --binproviders={short_name} install {example_binary}",
+        "cli_quick": f"abxpkg --binproviders={short_name} install {example_binary}",
         "cli_env": (
-            f"env ABX_PKG_BINPROVIDERS={short_name} abx-pkg install {example_binary}"
+            f"env ABXPKG_BINPROVIDERS={short_name} abxpkg install {example_binary}"
         ),
         "python": (
-            f"from abx_pkg import Binary, {short_name}\n\n"
+            f"from abxpkg import Binary, {short_name}\n\n"
             f"bin = Binary(name={example_binary!r}, binproviders=[{short_name}]).install()\n"
             f"bin.exec(cmd=[{example_arg!r}])"
         ),
@@ -667,8 +667,8 @@ def build_provider(cls: type[BinProvider]) -> dict[str, Any]:
 def collect_providers() -> list[dict[str, Any]]:
     providers: list[dict[str, Any]] = []
     seen: set[str] = set()
-    for attrname in sorted(dir(abx_pkg)):
-        obj = getattr(abx_pkg, attrname)
+    for attrname in sorted(dir(abxpkg)):
+        obj = getattr(abxpkg, attrname)
         if not inspect.isclass(obj):
             continue
         if not issubclass(obj, BinProvider) or obj is BinProvider:
@@ -723,7 +723,7 @@ def render_site(output_dir: Path, template_name: str) -> Path:
             "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
             "github_repo": GITHUB_REPO,
             "github_ref": DEFAULT_GITHUB_REF,
-            "package_version": getattr(abx_pkg, "__version__", ""),
+            "package_version": getattr(abxpkg, "__version__", ""),
             "provider_count": len(providers),
             "field_count": sum(p["field_count"] for p in providers),
             "env_var_count": sum(p["env_var_count"] for p in providers)
@@ -743,7 +743,7 @@ def render_site(output_dir: Path, template_name: str) -> Path:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Build the abx-pkg landing-page site.",
+        description="Build the abxpkg landing-page site.",
     )
     parser.add_argument(
         "--output-dir",
@@ -761,7 +761,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     output_path = render_site(Path(args.output_dir), args.template)
-    print(f"Generated abx-pkg landing page at {output_path}")
+    print(f"Generated abxpkg landing page at {output_path}")
     return 0
 
 

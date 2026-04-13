@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from abx_pkg import Binary, PlaywrightProvider
+from abxpkg import Binary, PlaywrightProvider
 
 
 @pytest.fixture(scope="module")

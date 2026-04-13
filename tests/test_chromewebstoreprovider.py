@@ -2,12 +2,12 @@ import json
 import tempfile
 from pathlib import Path
 
-from abx_pkg import Binary, ChromeWebstoreProvider
+from abxpkg import Binary, ChromeWebstoreProvider
 
 
 PACKAGED_CHROME_UTILS_PATH = (
     Path(__file__).resolve().parent.parent
-    / "abx_pkg"
+    / "abxpkg"
     / "js"
     / "chrome"
     / "chrome_utils.js"

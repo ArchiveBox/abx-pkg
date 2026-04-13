@@ -3,7 +3,7 @@ from pathlib import Path
 import logging
 
 
-from abx_pkg import Binary, CargoProvider, SemVer
+from abxpkg import Binary, CargoProvider, SemVer
 
 
 class TestCargoProvider:
@@ -184,7 +184,7 @@ class TestCargoProvider:
         test_machine.require_tool("cargo")
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+            with caplog.at_level(logging.WARNING, logger="abxpkg.binprovider"):
                 installed = CargoProvider(
                     install_root=Path(temp_dir) / "bad-cargo",
                     cargo_home=Path(temp_dir) / "bad-home",
@@ -209,7 +209,7 @@ class TestCargoProvider:
                 postinstall_scripts=False,
                 min_release_age=1,
             )
-            with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+            with caplog.at_level(logging.WARNING, logger="abxpkg.binprovider"):
                 installed = binary.install()
             test_machine.assert_shallow_binary_loaded(installed)
             assert "ignoring unsupported min_release_age=1" in caplog.text

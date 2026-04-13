@@ -1,4 +1,4 @@
-# abx-pkg Guide
+# abxpkg Guide
 
 This is a python package and CLI tool to help install and run binary package dependencies from a variety 
 of providers (etc apt, brew, pip, npm, docker, env, bash script, etc.).
@@ -8,7 +8,7 @@ It provides nice safe pydantic type interfaces for `Binary`, `BinProvider`, `Sem
 ### Python API
 
 ```python
-from abx_pkg import Binary, apt, brew, env, BinProvider
+from abxpkg import Binary, apt, brew, env, BinProvider
 
 wget = env.load('wget') or apt.install('wget') or brew.install('wget')
 
@@ -29,27 +29,27 @@ wget.uninstall()
 ### CLI
 
 ```
-abx-pkg --version
-abx-pkg install --binproviders=env,apt,brew wget
-abx-pkg load|install|update|uninstall|run [--flags...] [binary] [args...]
+abxpkg --version
+abxpkg install --binproviders=env,apt,brew wget
+abxpkg load|install|update|uninstall|run [--flags...] [binary] [args...]
 
 # abx alias cli:
-abx wget --version    # just a thin wrapper around `abx-pkg run --install [--flags...] [binary] [args...]`
+abx wget --version    # just a thin wrapper around `abxpkg run --install [--flags...] [binary] [args...]`
 ```
 
 also usable as a shebang in scripts similar to uv run -S, auto installs dependencies before running the script:
 ```javascript
-#!/usr/bin/env abx-pkg run --script node --abort-on-uncaught-exception
+#!/usr/bin/env abxpkg run --script node --abort-on-uncaught-exception
 // /// script
 // dependencies = [
 //    {name = "node", binproviders = ["env", "apt", "brew"], min_version: "22.0.0"},
 //    {name = "playwright", binproviders = ["playwright", "pnpm", "npm", "yarn"]},
 //    {name = "chromium", binproviders = ["env", "playwright", "puppeteer", "apt"], min_version: "146.0.0"},
 // ]
-// [tool.abx-pkg]
-// ABX_PKG_LIB_DIR=/tmp/abxlib
-// ABX_PKG_MIN_RELEASE_AGE=14
-// ABX_PKG_POSTINSTALL_SCRIPTS=False
+// [tool.abxpkg]
+// ABXPKG_LIB_DIR=/tmp/abxlib
+// ABXPKG_MIN_RELEASE_AGE=14
+// ABXPKG_POSTINSTALL_SCRIPTS=False
 // ///
 
 import {playwright} from 'playwright';

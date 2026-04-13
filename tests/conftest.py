@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from abx_pkg import AptProvider, Binary, BrewProvider, SemVer
-from abx_pkg.exceptions import BinaryLoadError
+from abxpkg import AptProvider, Binary, BrewProvider, SemVer
+from abxpkg.exceptions import BinaryLoadError
 
 
 def _brew_formula_is_installed(package: str) -> bool:

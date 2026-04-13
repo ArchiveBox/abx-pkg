@@ -2,7 +2,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from abx_pkg.semver import SemVer, bin_version, is_semver_str, semver_to_str
+from abxpkg.semver import SemVer, bin_version, is_semver_str, semver_to_str
 
 
 class TestSemVer:

@@ -8,7 +8,7 @@ WORKSPACE_DIR="$(cd "${REPO_DIR}/.." && pwd)"
 cd "${REPO_DIR}"
 
 TAG_PREFIX="v"
-PYPI_PACKAGE="abx-pkg"
+PYPI_PACKAGE="abxpkg"
 
 source_optional_env() {
     if [[ -f "${REPO_DIR}/.env" ]]; then

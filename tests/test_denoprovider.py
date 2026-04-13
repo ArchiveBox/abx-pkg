@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from abx_pkg import Binary, DenoProvider
-from abx_pkg.exceptions import BinaryInstallError, BinProviderInstallError
+from abxpkg import Binary, DenoProvider
+from abxpkg.exceptions import BinaryInstallError, BinProviderInstallError
 
 
 class TestDenoProvider:
@@ -201,7 +201,7 @@ class TestDenoProvider:
 
     def test_supports_methods_do_not_emit_unsupported_warnings(self, caplog):
         with tempfile.TemporaryDirectory() as tmpdir:
-            with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+            with caplog.at_level(logging.WARNING, logger="abxpkg.binprovider"):
                 provider = DenoProvider(
                     install_root=Path(tmpdir) / "deno",
                     deno_dir=Path(tmpdir) / "cache",

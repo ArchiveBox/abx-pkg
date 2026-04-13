@@ -4,7 +4,7 @@ import logging
 
 import pytest
 
-from abx_pkg import Binary, NixProvider, SemVer
+from abxpkg import Binary, NixProvider, SemVer
 
 
 class TestNixProvider:
@@ -136,7 +136,7 @@ class TestNixProvider:
         assert NixProvider().INSTALLER_BINARY(), "nix is required on this host"
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+            with caplog.at_level(logging.WARNING, logger="abxpkg.binprovider"):
                 installed = NixProvider(
                     install_root=Path(temp_dir) / "bad-profile",
                     nix_state_dir=Path(temp_dir) / "bad-state",
@@ -161,7 +161,7 @@ class TestNixProvider:
                 postinstall_scripts=False,
                 min_release_age=1,
             )
-            with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+            with caplog.at_level(logging.WARNING, logger="abxpkg.binprovider"):
                 installed = binary.install()
             test_machine.assert_shallow_binary_loaded(installed)
             assert "ignoring unsupported min_release_age=1" in caplog.text

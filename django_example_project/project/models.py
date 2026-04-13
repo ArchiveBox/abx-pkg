@@ -1,7 +1,7 @@
 from django.db import models
 from django_pydantic_field import SchemaField
 
-from abx_pkg import BinProvider, EnvProvider, Binary, SemVer
+from abxpkg import BinProvider, EnvProvider, Binary, SemVer
 
 
 DEFAULT_PROVIDER = EnvProvider()

@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from abx_pkg import Binary, SemVer, UvProvider
-from abx_pkg.exceptions import BinaryInstallError, BinProviderInstallError
+from abxpkg import Binary, SemVer, UvProvider
+from abxpkg.exceptions import BinaryInstallError, BinProviderInstallError
 
 
 class TestUvProvider:
@@ -460,7 +460,7 @@ class TestUvProvider:
 
     def test_supports_methods_do_not_emit_unsupported_warnings(self, caplog):
         with tempfile.TemporaryDirectory() as tmpdir:
-            with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+            with caplog.at_level(logging.WARNING, logger="abxpkg.binprovider"):
                 provider = UvProvider(
                     install_root=Path(tmpdir) / "venv",
                     cache_dir=Path(tmpdir) / "cache",
