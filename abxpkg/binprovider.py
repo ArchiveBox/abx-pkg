@@ -1011,7 +1011,7 @@ class BinProvider(BaseModel):
             provider_field_overrides: dict[str, Any] = {}
             handler_overrides: dict[str, Any] = {}
             for key, value in bin_overrides.items():
-                if key != "overrides" and key in updated_binprovider.model_fields:
+                if key != "overrides" and key in type(updated_binprovider).model_fields:
                     provider_field_overrides[key] = value
                 else:
                     handler_overrides[key] = value

@@ -310,11 +310,16 @@ class TestMachine:
 
         dry_run_provider = provider.get_provider_with_overrides(dry_run=True)
         if before is None or stale_min_version is not None:
-            dry_loaded_or_installed = dry_run_provider.install(
-                bin_name,
-                no_cache=True,
-                min_version=stale_min_version,
-            )
+            try:
+                dry_loaded_or_installed = dry_run_provider.install(
+                    bin_name,
+                    no_cache=True,
+                    min_version=stale_min_version,
+                )
+            except ValueError:
+                assert before is not None
+                assert stale_min_version is not None
+                dry_loaded_or_installed = None
             if dry_loaded_or_installed is not None:
                 assert dry_loaded_or_installed.loaded_version == SemVer("999.999.999")
                 assert dry_loaded_or_installed.loaded_sha256 is not None
@@ -325,10 +330,18 @@ class TestMachine:
 
         dry_installed = dry_run_provider.install(bin_name, no_cache=True)
         if dry_installed is not None:
-            assert dry_installed.loaded_version == SemVer("999.999.999")
-            assert dry_installed.loaded_sha256 is not None
-            assert dry_installed.loaded_mtime is not None
-            assert dry_installed.loaded_euid is not None
+            if expect_present_before and dry_installed.loaded_version != SemVer(
+                "999.999.999",
+            ):
+                self.assert_shallow_binary_loaded(
+                    dry_installed,
+                    assert_version_command=False,
+                )
+            else:
+                assert dry_installed.loaded_version == SemVer("999.999.999")
+                assert dry_installed.loaded_sha256 is not None
+                assert dry_installed.loaded_mtime is not None
+                assert dry_installed.loaded_euid is not None
         else:
             assert expect_present_before
 

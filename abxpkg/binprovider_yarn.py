@@ -203,6 +203,9 @@ class YarnProvider(BinProvider):
                 if raw_provider_names
                 else list(DEFAULT_PROVIDER_NAMES)
             )
+            for provider_name in DEFAULT_PROVIDER_NAMES:
+                if provider_name not in selected_provider_names:
+                    selected_provider_names.append(provider_name)
             installer_providers = [
                 env_provider
                 if provider_name == "env"
@@ -238,6 +241,9 @@ class YarnProvider(BinProvider):
             if raw_provider_names
             else list(DEFAULT_PROVIDER_NAMES)
         )
+        for provider_name in DEFAULT_PROVIDER_NAMES:
+            if provider_name not in selected_provider_names:
+                selected_provider_names.append(provider_name)
         node_loaded = Binary(
             name="node",
             binproviders=[

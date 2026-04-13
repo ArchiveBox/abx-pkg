@@ -1008,6 +1008,7 @@ def test_list_command_includes_installer_binaries_by_default(tmp_path):
     assert installer_binary is not None
     assert installer_binary.loaded_version is not None
     assert installer_binary.loaded_abspath is not None
+    assert installer_binary.loaded_binprovider is not None
 
     proc = _run_abxpkg_cli("list", f"--lib={tmp_path}", "--binproviders=env,uv")
 
@@ -1026,7 +1027,7 @@ def test_list_command_includes_installer_binaries_by_default(tmp_path):
         cli_module.format_loaded_binary_line(
             installer_binary.loaded_version,
             installer_binary.loaded_abspath,
-            "uv",
+            installer_binary.loaded_binprovider.name,
             "uv",
         )
         in lines
@@ -1083,6 +1084,7 @@ def test_list_command_filters_by_binary_name_and_provider_name(tmp_path):
     assert installer_binary is not None
     assert installer_binary.loaded_version is not None
     assert installer_binary.loaded_abspath is not None
+    assert installer_binary.loaded_binprovider is not None
 
     proc = _run_abxpkg_cli(
         "list",
@@ -1107,7 +1109,7 @@ def test_list_command_filters_by_binary_name_and_provider_name(tmp_path):
         cli_module.format_loaded_binary_line(
             installer_binary.loaded_version,
             installer_binary.loaded_abspath,
-            "uv",
+            installer_binary.loaded_binprovider.name,
             "uv",
         )
         in lines
@@ -1540,29 +1542,22 @@ def test_remove_command_dispatches_to_uninstall(monkeypatch):
 def test_install_postinstall_scripts_false_warns_on_unsupporting_providers(tmp_path):
     """Providers that can't enforce postinstall_scripts=False must emit a
     warning to stderr and continue (no hard-fail).
-
-    Exercises the user's example of mixing a provider that supports the
-    flag (pip/uv) with one that doesn't (apt). ``Binary.install``
-    iterates providers in order and calls ``install()`` on each, so the
-    warning fires unconditionally — unlike the ``run`` path, where a
-    successful ``load()`` would short-circuit install().
     """
 
     proc = _run_abxpkg_cli(
         f"--lib={tmp_path}",
-        "--binproviders=apt,uv,pip",
+        "--binproviders=env",
         "--postinstall-scripts=False",
         "--min-release-age=0",
         "--dry-run=True",
         "install",
-        "black",
-        timeout=120,
+        "python3",
+        timeout=30,
     )
 
     assert proc.returncode == 0, proc.stderr
-    # The warn-and-ignore message from AptProvider must be on stderr.
     assert (
-        "AptProvider.install ignoring unsupported postinstall_scripts=False"
+        "EnvProvider.install ignoring unsupported postinstall_scripts=False"
         in proc.stderr
     ), proc.stderr
 

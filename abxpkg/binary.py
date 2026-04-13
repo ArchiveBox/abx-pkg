@@ -270,7 +270,7 @@ class Binary(ShallowBinary):
             except Exception:
                 uncached_providers.append(binprovider)
 
-        return cached_providers or selected_providers
+        return [*cached_providers, *uncached_providers]
 
     def _validated_loaded_copy(
         self,

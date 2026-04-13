@@ -142,6 +142,9 @@ class PlaywrightProvider(BinProvider):
                     if raw_provider_names
                     else list(DEFAULT_PROVIDER_NAMES)
                 )
+                for provider_name in DEFAULT_PROVIDER_NAMES:
+                    if provider_name not in selected_provider_names:
+                        selected_provider_names.append(provider_name)
                 upstream_providers = [
                     EnvProvider(install_root=None, bin_dir=None)
                     if provider_name == "env"
@@ -198,6 +201,9 @@ class PlaywrightProvider(BinProvider):
             if raw_provider_names
             else list(DEFAULT_PROVIDER_NAMES)
         )
+        for provider_name in DEFAULT_PROVIDER_NAMES:
+            if provider_name not in selected_provider_names:
+                selected_provider_names.append(provider_name)
         upstream_providers = [
             EnvProvider(install_root=None, bin_dir=None)
             if provider_name == "env"

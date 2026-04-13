@@ -122,6 +122,9 @@ class PuppeteerProvider(BinProvider):
             if raw_provider_names
             else list(DEFAULT_PROVIDER_NAMES)
         )
+        for provider_name in DEFAULT_PROVIDER_NAMES:
+            if provider_name not in selected_provider_names:
+                selected_provider_names.append(provider_name)
         node_loaded = Binary(
             name="node",
             binproviders=[
@@ -526,7 +529,10 @@ class PuppeteerProvider(BinProvider):
         no_cache: bool = False,
     ) -> subprocess.CompletedProcess[str] | None:
         try:
-            installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+            installer_binary = self._INSTALLER_BINARY
+            if installer_binary is None or installer_binary.loaded_abspath is None:
+                installer_binary = self.INSTALLER_BINARY(no_cache=no_cache)
+            installer_bin = installer_binary.loaded_abspath
             assert installer_bin
         except Exception:
             return None
@@ -587,7 +593,10 @@ class PuppeteerProvider(BinProvider):
         if self.dry_run:
             return f"DRY_RUN would install {browser_name} via @puppeteer/browsers"
 
-        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        installer_binary = self._INSTALLER_BINARY
+        if installer_binary is None or installer_binary.loaded_abspath is None:
+            installer_binary = self.INSTALLER_BINARY(no_cache=no_cache)
+        installer_bin = installer_binary.loaded_abspath
         assert installer_bin
         proc = self.exec(
             bin_name=installer_bin,
@@ -622,7 +631,10 @@ class PuppeteerProvider(BinProvider):
             self._INSTALLER_BINARY = (
                 cli_binary  # bootstrap: seed cache after npm install
             )
-            installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+            installer_binary = self._INSTALLER_BINARY
+            if installer_binary is None or installer_binary.loaded_abspath is None:
+                installer_binary = self.INSTALLER_BINARY(no_cache=no_cache)
+            installer_bin = installer_binary.loaded_abspath
             assert installer_bin
             proc = self.exec(
                 bin_name=installer_bin,
