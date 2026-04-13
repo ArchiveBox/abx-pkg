@@ -179,8 +179,7 @@ class NpmProvider(BinProvider):
                     f"{self.__class__.__name__} got invalid --min-release-age value: {explicit_min_release_age!r}",
                 ) from err
         else:
-            assert min_release_age is not None
-            effective_min_release_age = min_release_age
+            effective_min_release_age = min_release_age or 0
 
         return effective_postinstall_scripts, effective_min_release_age
 

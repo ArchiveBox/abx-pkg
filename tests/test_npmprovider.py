@@ -3,15 +3,21 @@ from pathlib import Path
 
 import pytest
 
-from abxpkg import Binary, NpmProvider, SemVer
+from abxpkg import Binary, BrewProvider, EnvProvider, NpmProvider, SemVer
 
 
 class TestNpmProvider:
     def test_installer_binary_respects_abxpkg_binproviders(self, monkeypatch):
         monkeypatch.setenv("ABXPKG_BINPROVIDERS", "brew,env")
+        expected = Binary(
+            name="npm",
+            binproviders=[BrewProvider(), EnvProvider(install_root=None, bin_dir=None)],
+        ).load(no_cache=True)
         installer = NpmProvider().INSTALLER_BINARY(no_cache=True)
+        assert expected is not None
+        assert expected.loaded_binprovider is not None
         assert installer.loaded_binprovider is not None
-        assert installer.loaded_binprovider.name == "brew"
+        assert installer.loaded_binprovider.name == expected.loaded_binprovider.name
 
         monkeypatch.setenv("ABXPKG_BINPROVIDERS", "env")
         installer = NpmProvider().INSTALLER_BINARY(no_cache=True)

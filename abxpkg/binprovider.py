@@ -565,23 +565,29 @@ class BinProvider(BaseModel):
             save_derived_cache(derived_env_path, cache)
             return None
 
+        original_abspath = str(Path(abspath).expanduser().absolute())
         resolved_abspath = str(Path(abspath).expanduser().resolve(strict=False))
         cached_install_args = cached_record.get("install_args")
         resolved_provider_name = cached_record.get("resolved_provider_name")
         cache_kind = cached_record.get("cache_kind")
+        cached_abspath = cached_record.get("abspath")
         if not isinstance(resolved_provider_name, str):
             resolved_provider_name = self.name
         if not isinstance(cache_kind, str):
             cache_kind = (
                 "dependency" if str(bin_name) == str(self.INSTALLER_BIN) else "binary"
             )
+        if not isinstance(cached_abspath, str):
+            cache.pop(cache_key, None)
+            save_derived_cache(derived_env_path, cache)
+            return None
         primary_fingerprint = fingerprints[0]
         if (
             cached_record.get("provider_name") != self.name
             or cached_record.get("resolved_provider_name") != resolved_provider_name
             or cached_record.get("cache_kind") != cache_kind
             or cached_record.get("bin_name") != str(bin_name)
-            or cached_record.get("abspath") != resolved_abspath
+            or cached_abspath not in {original_abspath, resolved_abspath}
             or not isinstance(cached_install_args, list)
             or not all(isinstance(arg, str) for arg in cached_install_args)
             or cached_record.get("inode") != primary_fingerprint["inode"]
@@ -597,7 +603,7 @@ class BinProvider(BaseModel):
                 "provider_name": self.name,
                 "resolved_provider_name": resolved_provider_name,
                 "bin_name": str(bin_name),
-                "abspath": resolved_abspath,
+                "abspath": original_abspath,
                 "install_args": list(
                     self.get_install_args(bin_name, quiet=True, no_cache=True),
                 ),
@@ -606,6 +612,7 @@ class BinProvider(BaseModel):
                 "euid": primary_fingerprint["euid"],
             }
             save_derived_cache(derived_env_path, cache)
+            cached_abspath = original_abspath
 
         resolved_provider = (
             self
@@ -616,7 +623,7 @@ class BinProvider(BaseModel):
             {
                 "name": bin_name,
                 "binprovider": resolved_provider,
-                "abspath": abspath,
+                "abspath": Path(cached_abspath),
                 "version": version,
                 "sha256": sha256,
                 "mtime": mtime,
@@ -647,7 +654,7 @@ class BinProvider(BaseModel):
         if fingerprints is None:
             return None
 
-        resolved_abspath = str(Path(abspath).expanduser().resolve(strict=False))
+        original_abspath = str(Path(abspath).expanduser().absolute())
         primary_fingerprint = fingerprints[0]
         record: dict[str, object] = {
             "fingerprint": fingerprints,
@@ -658,7 +665,7 @@ class BinProvider(BaseModel):
             "provider_name": self.name,
             "resolved_provider_name": resolved_provider_name or self.name,
             "bin_name": str(bin_name),
-            "abspath": resolved_abspath,
+            "abspath": original_abspath,
             "install_args": list(
                 self.get_install_args(bin_name, quiet=True, no_cache=True),
             ),

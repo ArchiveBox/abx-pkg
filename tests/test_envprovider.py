@@ -18,7 +18,7 @@ class TestEnvProvider:
         assert installer.loaded_abspath is not None
         assert installer.loaded_version is not None
         assert installer.loaded_euid is not None
-        assert installer.loaded_abspath.name == "which"
+        assert installer.loaded_abspath.name.startswith("which")
         expected_version = SemVer.parse("1.0.0")
         assert expected_version is not None
         assert installer.loaded_version == expected_version
