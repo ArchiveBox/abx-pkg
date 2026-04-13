@@ -71,7 +71,7 @@ class BrewProvider(BinProvider):
         return False
 
     def supports_postinstall_disable(self, action, no_cache: bool = False) -> bool:
-        return action in ("install", "update")
+        return action == "install"
 
     def _brew_prefixes(self, no_cache: bool = False) -> list[Path]:
         """Collect candidate Homebrew prefixes from the installer binary and current PATH."""
