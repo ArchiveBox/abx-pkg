@@ -1,0 +1,25 @@
+abxpkg/binprovider.py
+  67a976da5825c26a 844-846,1931-1939,2467,2470
+tests/test_cli.py
+  67a976da5825c26a 549,959-960,982,1019,1028,1057,1061,1100,1109,1556,1559
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "31a4043e86846a2954266cbc22d4cdca5dd5b43a",
+  "prompts": {
+    "67a976da5825c26a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d717c-705b-75f1-8c2f-c652b4164be1",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 26,
+      "total_deletions": 17,
+      "accepted_lines": 26,
+      "overriden_lines": 0
+    }
+  }
+}
