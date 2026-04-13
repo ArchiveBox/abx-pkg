@@ -841,6 +841,9 @@ class BinProvider(BaseModel):
             if raw_provider_names
             else list(DEFAULT_PROVIDER_NAMES)
         )
+        for provider_name in DEFAULT_PROVIDER_NAMES:
+            if provider_name not in selected_provider_names:
+                selected_provider_names.append(provider_name)
         installer_provider_names = [
             provider_name
             for provider_name in selected_provider_names
@@ -1925,7 +1928,15 @@ class BinProvider(BaseModel):
             )
             == "install_noop"
         ):
-            return None
+            result = self.load(bin_name=bin_name, quiet=quiet, no_cache=no_cache)
+            if result is not None:
+                self._assert_min_version_satisfied(
+                    bin_name=bin_name,
+                    action="install",
+                    loaded_version=result.loaded_version,
+                    min_version=min_version,
+                )
+            return result
 
         install_args = self.get_install_args(bin_name, quiet=quiet, no_cache=no_cache)
         self.setup(
@@ -2453,10 +2464,10 @@ class EnvProvider(BinProvider):
         link_path = self.bin_dir / link_name
         if link_path.exists() or link_path.is_symlink():
             if link_path.is_symlink() and link_path.readlink() == target:
-                return TypeAdapter(HostBinPath).validate_python(target)
+                return TypeAdapter(HostBinPath).validate_python(link_path)
             link_path.unlink()
         link_path.symlink_to(target)
-        return TypeAdapter(HostBinPath).validate_python(target)
+        return TypeAdapter(HostBinPath).validate_python(link_path)
 
     def _is_managed_by_other_provider(
         self,

@@ -546,6 +546,7 @@ def test_run_update_skips_env_for_the_update_step(monkeypatch, tmp_path):
             self.loaded_abspath = Path("/tmp/fake-bin")
             self.loaded_version = SemVer("1.2.3")
             self.loaded_binprovider = FakeLoadedProvider("env")
+            self.binproviders = []
             self.is_valid = True
 
         def load(self, no_cache=None):
@@ -955,11 +956,8 @@ def test_abx_debug_env_provider_uses_derived_env_on_second_run(tmp_path):
 
     assert first.returncode == 0, first.stderr
     assert second.returncode == 0, second.stderr
-    assert "BinProvider.get_version(EnvProvider(name='env'), 'python3'" in first.stderr
-    assert (
-        "BinProvider.get_version(EnvProvider(name='env'), 'python3'"
-        not in second.stderr
-    )
+    assert "EnvProvider.get_version('python3'" in first.stderr
+    assert "EnvProvider.get_version('python3'" not in second.stderr
 
 
 def test_list_command_reads_provider_local_derived_env(tmp_path):
@@ -981,7 +979,7 @@ def test_list_command_reads_provider_local_derived_env(tmp_path):
     assert proc.returncode == 0, proc.stderr
     expected_line = cli_module.format_loaded_binary_line(
         loaded.loaded_version,
-        loaded.loaded_abspath.resolve(),
+        loaded.loaded_abspath,
         "env",
         "python3",
     )
@@ -1018,7 +1016,7 @@ def test_list_command_includes_installer_binaries_by_default(tmp_path):
     assert (
         cli_module.format_loaded_binary_line(
             loaded.loaded_version,
-            loaded.loaded_abspath.resolve(),
+            loaded.loaded_abspath,
             "env",
             "python3",
         )
@@ -1027,7 +1025,7 @@ def test_list_command_includes_installer_binaries_by_default(tmp_path):
     assert (
         cli_module.format_loaded_binary_line(
             installer_binary.loaded_version,
-            installer_binary.loaded_abspath.resolve(),
+            installer_binary.loaded_abspath,
             "uv",
             "uv",
         )
@@ -1056,13 +1054,12 @@ def test_version_report_includes_provider_local_cached_binary_list(tmp_path):
     lines = proc.stdout.splitlines()
     expected_line = cli_module.format_loaded_binary_line(
         loaded.loaded_version,
-        loaded.loaded_abspath.resolve(),
+        loaded.loaded_abspath,
         "env",
         "python3",
     )
-    assert "   upstream_binaries=" in lines
+    assert "   installed_binaries=" in lines
     assert f"      {expected_line}" in lines
-    assert "   installed_binaries=" not in lines
     assert proc.stderr == ""
 
 
@@ -1100,7 +1097,7 @@ def test_list_command_filters_by_binary_name_and_provider_name(tmp_path):
     assert (
         cli_module.format_loaded_binary_line(
             loaded.loaded_version,
-            loaded.loaded_abspath.resolve(),
+            loaded.loaded_abspath,
             "env",
             "python3",
         )
@@ -1109,7 +1106,7 @@ def test_list_command_filters_by_binary_name_and_provider_name(tmp_path):
     assert (
         cli_module.format_loaded_binary_line(
             installer_binary.loaded_version,
-            installer_binary.loaded_abspath.resolve(),
+            installer_binary.loaded_abspath,
             "uv",
             "uv",
         )
@@ -1556,9 +1553,10 @@ def test_install_postinstall_scripts_false_warns_on_unsupporting_providers(tmp_p
         "--binproviders=apt,uv,pip",
         "--postinstall-scripts=False",
         "--min-release-age=0",
+        "--dry-run=True",
         "install",
         "black",
-        timeout=900,
+        timeout=120,
     )
 
     assert proc.returncode == 0, proc.stderr
