@@ -1,0 +1,31 @@
+tests/test_binary.py
+  67a976da5825c26a 284,313-314
+tests/test_ansibleprovider.py
+  67a976da5825c26a 63,71
+abxpkg/binary.py
+  67a976da5825c26a 563,571
+abxpkg/binprovider.py
+  67a976da5825c26a 638-640,673-682
+tests/conftest.py
+  67a976da5825c26a 350-354
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "d3edcbb60d32a3eec77cb50e4ef9271222dc63e4",
+  "prompts": {
+    "67a976da5825c26a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d717c-705b-75f1-8c2f-c652b4164be1",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 25,
+      "total_deletions": 15,
+      "accepted_lines": 25,
+      "overriden_lines": 0
+    }
+  }
+}
