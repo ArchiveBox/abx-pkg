@@ -69,6 +69,8 @@ class PipProvider(BinProvider):
         default_factory=lambda: abxpkg_install_root_default("pip"),
         validation_alias="pip_venv",
     )
+    # detect_euid_to_use() fills this from ``<install_root>/venv/bin`` when using a managed
+    # virtualenv; global mode leaves it unset so setup_PATH() discovers ambient script dirs.
     bin_dir: Path | None = None
 
     @computed_field

@@ -63,6 +63,8 @@ class PuppeteerProvider(BinProvider):
         default_factory=lambda: abxpkg_install_root_default("puppeteer"),
         validation_alias="puppeteer_root",
     )
+    # Only set in managed mode: setup()/default_abspath_handler() use it to expose stable
+    # browser launch shims under ``<install_root>/bin``; global mode leaves it unset.
     bin_dir: Path | None = None
 
     @computed_field

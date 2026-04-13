@@ -57,6 +57,8 @@ class PnpmProvider(BinProvider):
         default_factory=lambda: abxpkg_install_root_default("pnpm"),
         validation_alias="pnpm_prefix",
     )
+    # detect_euid_to_use() fills this with ``<install_root>/node_modules/.bin`` in managed
+    # mode; global mode leaves it unset and exec/setup_PATH() fall back to PNPM_HOME.
     bin_dir: Path | None = None
 
     @computed_field

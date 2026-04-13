@@ -53,6 +53,8 @@ class BrewProvider(BinProvider):
         ),
         validation_alias="brew_prefix",
     )
+    # Starts unset so setup_PATH() can infer the real brew prefix first, then normalizes
+    # to ``<install_root>/bin`` for the shim/link refresh paths used by load().
     bin_dir: Path | None = None
 
     @computed_field

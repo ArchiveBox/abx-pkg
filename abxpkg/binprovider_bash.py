@@ -46,6 +46,8 @@ class BashProvider(EnvProvider):
         default_factory=lambda: abxpkg_install_root_default("bash"),
         validation_alias="bash_root",
     )
+    # detect_euid_to_use() fills this from install_root/bin and setup() creates it.
+    # default_*_handler methods then read it as the writable target dir for shell shims.
     bin_dir: Path | None = Field(default=None, validation_alias="bash_bin_dir")
 
     overrides: BinProviderOverrides = {

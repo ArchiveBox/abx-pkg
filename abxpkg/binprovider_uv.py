@@ -62,6 +62,8 @@ class UvProvider(BinProvider):
         default_factory=lambda: abxpkg_install_root_default("uv"),
         validation_alias="uv_venv",
     )
+    # Managed venv mode fills this with ``<install_root>/venv/bin`` in detect_euid_to_use();
+    # tool mode may accept an explicit ``uv_tool_bin_dir`` override or leave it unset.
     bin_dir: Path | None = Field(default=None, validation_alias="uv_tool_bin_dir")
 
     @computed_field

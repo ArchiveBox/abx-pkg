@@ -34,6 +34,8 @@ class CargoProvider(BinProvider):
         default_factory=lambda: abxpkg_install_root_default("cargo"),
         validation_alias="cargo_root",
     )
+    # detect_euid_to_use() resolves this to the active cargo install bin dir and setup()
+    # creates it when using a managed non-default cargo root.
     bin_dir: Path | None = None
 
     @computed_field

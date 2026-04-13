@@ -67,6 +67,8 @@ class PlaywrightProvider(BinProvider):
         default_factory=lambda: abxpkg_install_root_default("playwright"),
         validation_alias="playwright_root",
     )
+    # Only set in managed mode: setup()/default_abspath_handler() use it to create and read
+    # stable browser shims under ``<install_root>/bin``; global mode leaves it unset.
     bin_dir: Path | None = None
 
     # Only Linux needs the sudo-first execution path for

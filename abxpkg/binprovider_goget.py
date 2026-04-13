@@ -43,6 +43,8 @@ class GoGetProvider(BinProvider):
         default_factory=lambda: abxpkg_install_root_default("goget"),
         validation_alias="gopath",
     )
+    # detect_euid_to_use() fills this from GOPATH/bin (or explicit GOBIN) and setup()
+    # creates it before ``go install`` starts writing binaries into the provider root.
     bin_dir: Path | None = Field(default=None, validation_alias="gobin")
 
     overrides: "BinProviderOverrides" = {

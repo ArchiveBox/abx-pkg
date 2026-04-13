@@ -45,6 +45,8 @@ class NixProvider(BinProvider):
         ),
         validation_alias="nix_profile",
     )
+    # detect_euid_to_use() fills this from the active Nix profile path and setup_PATH()
+    # reads it to prepend the profile's runtime bin dir on every resolution pass.
     bin_dir: Path | None = None
 
     @computed_field

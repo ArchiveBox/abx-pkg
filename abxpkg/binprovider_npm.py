@@ -60,6 +60,8 @@ class NpmProvider(BinProvider):
         default_factory=lambda: abxpkg_install_root_default("npm"),
         validation_alias="npm_prefix",
     )
+    # detect_euid_to_use() fills this with ``<install_root>/node_modules/.bin`` in managed
+    # mode; ambient mode leaves it unset so _load_PATH() discovers npm's real global bins.
     bin_dir: Path | None = None
 
     @computed_field

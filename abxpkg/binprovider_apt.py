@@ -22,7 +22,9 @@ class AptProvider(BinProvider):
 
     PATH: PATHStr = ""  # Starts empty; setup_PATH() discovers package runtime bin dirs via dpkg and replaces PATH with those dirs.
 
-    euid: int | None = 0  # always run apt as root
+    euid: int | None = (
+        0  # Import-time default that forces every apt subprocess through the root/sudo execution path.
+    )
 
     def setup_PATH(self, no_cache: bool = False) -> None:
         """Populate PATH on first use from dpkg-discovered package runtime bin dirs, not from apt-get itself."""

@@ -72,6 +72,8 @@ class YarnProvider(BinProvider):
         default_factory=lambda: abxpkg_install_root_default("yarn"),
         validation_alias="yarn_prefix",
     )
+    # detect_euid_to_use() fills this with ``<install_root>/node_modules/.bin`` and setup()
+    # creates it as part of the managed Yarn workspace bootstrap flow.
     bin_dir: Path | None = None
 
     @computed_field

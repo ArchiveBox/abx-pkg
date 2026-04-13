@@ -59,6 +59,8 @@ class BunProvider(BinProvider):
         default_factory=lambda: abxpkg_install_root_default("bun"),
         validation_alias="bun_prefix",
     )
+    # detect_euid_to_use() fills this from install_root/bin in managed mode; ambient mode
+    # leaves it unset so setup_PATH() falls back to Bun's own global bin location.
     bin_dir: Path | None = None
 
     @computed_field

@@ -35,6 +35,8 @@ class GemProvider(BinProvider):
         default_factory=lambda: abxpkg_install_root_default("gem"),
         validation_alias="gem_home",
     )
+    # detect_euid_to_use() expands/fills this to the active gem bindir and setup() ensures
+    # it exists before gem writes wrappers that _patch_generated_wrappers() later edits.
     bin_dir: Path | None = Field(default=None, validation_alias="gem_bindir")
 
     @computed_field

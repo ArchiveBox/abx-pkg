@@ -53,6 +53,8 @@ class ChromeWebstoreProvider(BinProvider):
         default_factory=lambda: abxpkg_install_root_default("chromewebstore"),
         validation_alias="extensions_root",
     )
+    # detect_euid_to_use() fills this with the managed extensions dir and the install/
+    # uninstall handlers read it for unpacked CRX payloads plus ``*.extension.json`` metadata.
     bin_dir: Path | None = Field(default=None, validation_alias="extensions_dir")
     overrides: BinProviderOverrides = {
         "*": {

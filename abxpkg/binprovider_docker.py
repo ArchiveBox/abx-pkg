@@ -43,6 +43,8 @@ class DockerProvider(BinProvider):
         default_factory=lambda: abxpkg_install_root_default("docker"),
         validation_alias="docker_root",
     )
+    # detect_euid_to_use() resolves this to the managed shim dir, setup() creates it, and
+    # _write_shim()/default_abspath_handler() read it to surface docker-backed wrappers.
     bin_dir: Path | None = Field(default=None, validation_alias="docker_shim_dir")
 
     @model_validator(mode="after")

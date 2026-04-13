@@ -59,6 +59,8 @@ class DenoProvider(BinProvider):
         default_factory=lambda: abxpkg_install_root_default("deno"),
         validation_alias="deno_root",
     )
+    # detect_euid_to_use() fills this from install_root/bin in managed mode; ambient mode
+    # leaves it unset so setup_PATH() uses DENO_INSTALL_ROOT/~/.deno instead.
     bin_dir: Path | None = None
 
     @computed_field
