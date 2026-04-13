@@ -1,4 +1,4 @@
-name: Deploy abx-pkg landing page to GitHub Pages
+name: Deploy abxpkg landing page to GitHub Pages
 
 on:
   push:
