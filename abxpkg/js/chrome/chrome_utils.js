@@ -2102,7 +2102,9 @@ function getMachineType() {
 
 /**
  * Get LIB_DIR path for shared binaries and caches.
- * Returns ~/.config/abx/lib by default.
+ * Returns the chrome-hook legacy default (~/.config/abx/lib) if LIB_DIR is
+ * unset. This is separate from the main abxpkg CLI's platform-specific
+ * default library root handling.
  *
  * @returns {string} - Absolute path to lib directory
  */

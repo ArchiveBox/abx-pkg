@@ -105,6 +105,7 @@ class PipProvider(BinProvider):
 
     @staticmethod
     def _install_args_have_option(args: InstallArgs, *options: str) -> bool:
+        """Return True when install_args already contains any requested pip option."""
         return any(
             arg == option or arg.startswith(f"{option}=")
             for arg in args
@@ -125,12 +126,14 @@ class PipProvider(BinProvider):
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
+        """Derive the managed virtualenv bin_dir from install_root when one is pinned."""
         if self.bin_dir is None and self.install_root is not None:
             self.bin_dir = self.install_root / "venv" / "bin"
         return self
 
     @property
     def cache_dir(self) -> Path:
+        """Return pip's shared download/build cache dir."""
         return Path(USER_CACHE_PATH)
 
     def setup_PATH(self, no_cache: bool = False) -> None:
@@ -290,6 +293,7 @@ class PipProvider(BinProvider):
             self._setup_venv(self.install_root / "venv", no_cache=no_cache)
 
     def _setup_venv(self, pip_venv: Path, *, no_cache: bool = False) -> None:
+        """Create the managed virtualenv and bootstrap pip/setuptools into it."""
         pip_venv.parent.mkdir(parents=True, exist_ok=True)
 
         # create new venv in pip_venv if it doesn't exist
@@ -593,6 +597,7 @@ class PipProvider(BinProvider):
 
     @staticmethod
     def _package_name_from_install_arg(install_arg: str) -> str | None:
+        """Extract a bare Python package name from a pip install arg when possible."""
         if not install_arg or install_arg.startswith("-"):
             return None
         if "://" in install_arg:
@@ -604,6 +609,7 @@ class PipProvider(BinProvider):
         return package_name or None
 
     def _package_name_for_bin(self, bin_name: BinName) -> str | None:
+        """Pick the owning Python package name used to resolve version/metadata lookups."""
         install_args = self.get_install_args(bin_name, quiet=True)
         for install_arg in install_args:
             package_name = self._package_name_from_install_arg(install_arg)

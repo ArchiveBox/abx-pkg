@@ -55,6 +55,7 @@ class GemProvider(BinProvider):
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
+        """Resolve gem_home/bin_dir defaults and expand any user-relative paths."""
         if self.install_root is None:
             self.install_root = DEFAULT_GEM_HOME
         else:
@@ -138,6 +139,7 @@ class GemProvider(BinProvider):
         bin_dir.mkdir(parents=True, exist_ok=True)
 
     def _patch_generated_wrappers(self) -> None:
+        """Patch generated Ruby wrappers so they stay bound to this provider's GEM_HOME."""
         install_root = self.install_root
         bin_dir = self.bin_dir
         assert install_root is not None

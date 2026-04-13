@@ -47,6 +47,7 @@ class DockerProvider(BinProvider):
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
+        """Fill in the managed docker root and shim bin_dir defaults after validation."""
         if self.install_root is None:
             self.install_root = DEFAULT_DOCKER_ROOT
         if self.bin_dir is None:
@@ -95,6 +96,7 @@ class DockerProvider(BinProvider):
         bin_name: str,
         install_args: InstallArgs | None = None,
     ) -> str:
+        """Return the primary image ref that owns the shim/version metadata for bin_name."""
         package_list = list(install_args or self.get_install_args(bin_name))
         assert package_list, (
             f"{self.__class__.__name__} requires at least one docker image ref for {bin_name}"
@@ -102,6 +104,7 @@ class DockerProvider(BinProvider):
         return str(package_list[0])
 
     def _image_tag(self, image_ref: str) -> str:
+        """Extract the explicit docker tag from an image ref, defaulting to ``latest``."""
         image_without_digest = image_ref.split("@", 1)[0]
         last_component = image_without_digest.rsplit("/", 1)[-1]
         if ":" in last_component:
@@ -109,6 +112,7 @@ class DockerProvider(BinProvider):
         return "latest"
 
     def _write_metadata(self, bin_name: str, image_ref: str) -> None:
+        """Persist the resolved docker image ref/tag that currently backs a shim."""
         install_root = self.install_root
         assert install_root is not None
         (install_root / "metadata" / f"{bin_name}.json").write_text(
@@ -122,6 +126,7 @@ class DockerProvider(BinProvider):
         )
 
     def _read_metadata(self, bin_name: str) -> dict[str, Any] | None:
+        """Read the cached shim metadata for a docker-backed binary, if present."""
         install_root = self.install_root
         assert install_root is not None
         metadata_path = install_root / "metadata" / f"{bin_name}.json"
@@ -135,6 +140,7 @@ class DockerProvider(BinProvider):
         image_ref: str,
         no_cache: bool = False,
     ) -> Path:
+        """Write the executable wrapper that runs the selected docker image as a CLI."""
         bin_dir = self.bin_dir
         assert bin_dir is not None
         wrapper_path = bin_dir / bin_name
@@ -160,6 +166,7 @@ class DockerProvider(BinProvider):
 
     @staticmethod
     def _should_repair_failed_pull(output: str) -> bool:
+        """Detect known broken-layer states that should trigger a forced image cleanup."""
         return any(
             marker in output
             for marker in (

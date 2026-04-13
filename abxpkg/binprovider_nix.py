@@ -76,6 +76,7 @@ class NixProvider(BinProvider):
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
+        """Fill in the active Nix profile bin dir from the resolved install_root."""
         install_root = self.install_root
         assert install_root is not None
         if self.bin_dir is None:
@@ -124,6 +125,7 @@ class NixProvider(BinProvider):
         bin_name: str,
         install_args: InstallArgs | None = None,
     ) -> str:
+        """Map install_args to the Nix profile element name used by upgrade/remove."""
         install_args = install_args or self.get_install_args(bin_name)
         install_target = str(install_args[0]) if install_args else bin_name
         element = install_target.split("#", 1)[-1].split("^", 1)[0]

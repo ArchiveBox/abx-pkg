@@ -72,6 +72,7 @@ class DenoProvider(BinProvider):
 
     @property
     def cache_dir(self) -> Path:
+        """Return the Deno module cache dir, derived from install_root when managed."""
         # Deno's shared download/build cache is always derived from the
         # install_root when one is pinned, otherwise from the standard
         # platform cache dir.
@@ -114,6 +115,7 @@ class DenoProvider(BinProvider):
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
+        """Derive Deno's managed bin_dir from install_root when one is configured."""
         if self.bin_dir is None and self.install_root is not None:
             self.bin_dir = self.install_root / "bin"
         return self

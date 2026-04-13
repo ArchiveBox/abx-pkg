@@ -104,16 +104,19 @@ class UvProvider(BinProvider):
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
+        """Derive uv's managed virtualenv bin_dir from install_root when configured."""
         if self.bin_dir is None and self.install_root is not None:
             self.bin_dir = self.install_root / "venv" / "bin"
         return self
 
     @property
     def cache_dir(self) -> Path:
+        """Return uv's shared download/build cache dir."""
         return Path(USER_CACHE_PATH)
 
     @property
     def tool_dir(self) -> Path:
+        """Return uv's global tool install root used in ``uv tool`` mode."""
         return Path(
             os.environ.get("UV_TOOL_DIR")
             or (Path("~").expanduser() / ".local" / "share" / "uv" / "tools"),
@@ -185,6 +188,7 @@ class UvProvider(BinProvider):
                 self.bin_dir.mkdir(parents=True, exist_ok=True)
 
     def _ensure_venv(self, *, no_cache: bool = False) -> None:
+        """Create the managed uv virtualenv on first use when install_root is pinned."""
         assert self.install_root is not None
         venv_root = self.install_root / "venv"
         venv_python = venv_root / "bin" / "python"
@@ -213,6 +217,7 @@ class UvProvider(BinProvider):
 
     @staticmethod
     def _release_age_cutoff(min_release_age: float | None) -> str | None:
+        """Translate ``min_release_age`` days into uv's ``--exclude-newer`` timestamp."""
         if min_release_age is None or min_release_age <= 0:
             return None
         from datetime import datetime, timedelta, timezone
@@ -245,6 +250,7 @@ class UvProvider(BinProvider):
 
     @staticmethod
     def _package_name_from_install_arg(install_arg: str) -> str | None:
+        """Extract a bare Python package name from a uv install arg when possible."""
         if not install_arg or install_arg.startswith("-"):
             return None
         if "://" in install_arg:
@@ -256,6 +262,7 @@ class UvProvider(BinProvider):
         return package_name or None
 
     def _package_name_for_bin(self, bin_name: BinName, **context) -> str:
+        """Pick the owning Python package name used for uv metadata lookups."""
         install_args = self.get_install_args(str(bin_name), **context) or [
             str(bin_name),
         ]
@@ -295,6 +302,7 @@ class UvProvider(BinProvider):
         timeout: int | None = None,
         no_cache: bool = False,
     ) -> SemVer | None:
+        """Read a package version from ``uv pip show`` or ``uv tool list`` metadata."""
         try:
             uv_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
             assert uv_abspath

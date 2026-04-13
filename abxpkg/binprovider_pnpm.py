@@ -64,7 +64,13 @@ class PnpmProvider(BinProvider):
     def ENV(self) -> "dict[str, str]":
         env: dict[str, str] = {
             "PNPM_HOME": str(
-                self.bin_dir if self.bin_dir else self.cache_dir / "pnpm-home",
+                self.bin_dir
+                if self.bin_dir
+                else (
+                    Path(os.environ["PNPM_HOME"])
+                    if "PNPM_HOME" in os.environ
+                    else self.cache_dir / "pnpm-home"
+                ),
             ),
         }
         if self.install_root:
@@ -132,12 +138,14 @@ class PnpmProvider(BinProvider):
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
+        """Derive pnpm's managed node_modules/.bin dir from install_root."""
         if self.bin_dir is None and self.install_root is not None:
             self.bin_dir = self.install_root / "node_modules" / ".bin"
         return self
 
     @property
     def cache_dir(self) -> Path:
+        """Return the writable pnpm store dir, falling back to a temp dir if needed."""
         default_cache_dir = Path(USER_CACHE_PATH)
         if self._ensure_writable_cache_dir(default_cache_dir):
             return default_cache_dir
@@ -237,6 +245,7 @@ class PnpmProvider(BinProvider):
             self.bin_dir.mkdir(parents=True, exist_ok=True)
 
     def _linked_bin_path(self, bin_name: BinName | HostBinPath) -> Path | None:
+        """Return the managed shim path for a pnpm-installed executable, if any."""
         if self.bin_dir is None:
             return None
         return self.bin_dir / str(bin_name)
@@ -246,6 +255,7 @@ class PnpmProvider(BinProvider):
         bin_name: BinName | HostBinPath,
         target: HostBinPath,
     ) -> HostBinPath:
+        """Recreate the managed shim symlink pointing at the resolved pnpm executable."""
         link_path = self._linked_bin_path(bin_name)
         assert link_path is not None, "_refresh_bin_link requires bin_dir to be set"
         link_path.parent.mkdir(parents=True, exist_ok=True)

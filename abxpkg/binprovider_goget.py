@@ -76,6 +76,7 @@ class GoGetProvider(BinProvider):
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
+        """Resolve GOPATH/GOBIN defaults and expand the managed Go bin_dir."""
         if self.install_root is None:
             self.install_root = DEFAULT_GOPATH
         if self.bin_dir is None:

@@ -20,7 +20,13 @@ from .base_types import (
     PATHStr,
     abxpkg_install_root_default,
 )
-from .binprovider import BinProvider, env_flag_is_true, log_method_call, remap_kwargs
+from .binprovider import (
+    BinProvider,
+    EnvProvider,
+    env_flag_is_true,
+    log_method_call,
+    remap_kwargs,
+)
 from .logging import format_subprocess_output
 from .semver import SemVer
 
@@ -28,8 +34,8 @@ from .semver import SemVer
 USER_CACHE_PATH = user_cache_path("yarn", "abxpkg")
 
 
-# No forced fallback — when no explicit prefix is set, yarn uses its
-# native global mode (yarn global add / yarn global bin / etc.).
+# No forced fallback — when no explicit workspace root is set, this
+# provider stays unconfigured instead of inventing one implicitly.
 
 
 class YarnProvider(BinProvider):
@@ -86,6 +92,7 @@ class YarnProvider(BinProvider):
 
     @property
     def cache_dir(self) -> Path:
+        """Return Yarn's shared global cache directory."""
         # Yarn's global cache roots are always derived from the standard
         # platform cache dir; there is no separate provider field to override.
         return Path(USER_CACHE_PATH)
@@ -158,6 +165,7 @@ class YarnProvider(BinProvider):
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
+        """Derive Yarn's managed node_modules/.bin dir from install_root."""
         if self.bin_dir is None and self.install_root is not None:
             self.bin_dir = self.install_root / "node_modules" / ".bin"
         return self
@@ -175,7 +183,53 @@ class YarnProvider(BinProvider):
     def INSTALLER_BINARY(self, no_cache: bool = False):
         from . import DEFAULT_PROVIDER_NAMES, PROVIDER_CLASS_BY_NAME
 
-        loaded = super().INSTALLER_BINARY(no_cache=no_cache)
+        if not no_cache and self._INSTALLER_BINARY and self._INSTALLER_BINARY.is_valid:
+            loaded = self._INSTALLER_BINARY
+        else:
+            env_provider = EnvProvider(install_root=None, bin_dir=None)
+            env_provider.PATH = env_provider._merge_PATH(
+                self.PATH,
+                PATH=env_provider.PATH,
+                prepend=True,
+            )
+            raw_provider_names = os.environ.get("ABXPKG_BINPROVIDERS")
+            selected_provider_names = (
+                [
+                    provider_name.strip()
+                    for provider_name in raw_provider_names.split(",")
+                ]
+                if raw_provider_names
+                else list(DEFAULT_PROVIDER_NAMES)
+            )
+            installer_providers = [
+                env_provider
+                if provider_name == "env"
+                else PROVIDER_CLASS_BY_NAME[provider_name]()
+                for provider_name in selected_provider_names
+                if provider_name
+                and provider_name in PROVIDER_CLASS_BY_NAME
+                and provider_name != self.name
+            ]
+            loaded = Binary(
+                name=self.INSTALLER_BIN,
+                binproviders=installer_providers,
+            ).load(no_cache=no_cache)
+            if loaded and loaded.loaded_abspath:
+                if loaded.loaded_version and loaded.loaded_sha256:
+                    self.write_cached_binary(
+                        self.INSTALLER_BIN,
+                        loaded.loaded_abspath,
+                        loaded.loaded_version,
+                        loaded.loaded_sha256,
+                        resolved_provider_name=(
+                            loaded.loaded_binprovider.name
+                            if loaded.loaded_binprovider is not None
+                            else self.name
+                        ),
+                        cache_kind="dependency",
+                    )
+                self._INSTALLER_BINARY = loaded
+
         raw_provider_names = os.environ.get("ABXPKG_BINPROVIDERS")
         selected_provider_names = (
             [provider_name.strip() for provider_name in raw_provider_names.split(",")]

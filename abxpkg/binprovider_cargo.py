@@ -57,6 +57,7 @@ class CargoProvider(BinProvider):
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
+        """Resolve Cargo's install_root/bin_dir defaults from the active cargo home."""
         if self.install_root is None:
             self.install_root = DEFAULT_CARGO_HOME
         if self.bin_dir is None:
@@ -102,6 +103,7 @@ class CargoProvider(BinProvider):
         bin_name: str,
         install_args: InstallArgs | None = None,
     ) -> list[str]:
+        """Extract bare cargo package names from install_args for uninstall operations."""
         install_args = list(install_args or self.get_install_args(bin_name))
         options_with_values = {
             "--version",

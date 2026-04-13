@@ -122,6 +122,7 @@ class BunProvider(BinProvider):
 
     @staticmethod
     def _has_cli_flag(args: InstallArgs, *flags: str) -> bool:
+        """Return True when any explicit bun CLI flag is already present in install_args."""
         return any(
             arg == flag or arg.startswith(f"{flag}=") for arg in args for flag in flags
         )
@@ -147,12 +148,14 @@ class BunProvider(BinProvider):
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
+        """Derive bun's managed bin_dir from install_root when running in managed mode."""
         if self.bin_dir is None and self.install_root is not None:
             self.bin_dir = self.install_root / "bin"
         return self
 
     @property
     def cache_dir(self) -> Path:
+        """Return Bun's shared cache dir used for downloads and package metadata."""
         return Path(USER_CACHE_PATH)
 
     def setup_PATH(self, no_cache: bool = False) -> None:

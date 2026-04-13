@@ -77,6 +77,7 @@ class NpmProvider(BinProvider):
 
     @property
     def cache_dir(self) -> Path:
+        """Return npm's shared package cache dir used for install/update mutations."""
         return Path(USER_CACHE_PATH)
 
     def get_cache_info(
@@ -134,6 +135,7 @@ class NpmProvider(BinProvider):
 
     @staticmethod
     def _install_args_have_option(args: InstallArgs, *options: str) -> bool:
+        """Return True when install_args already contains any of the requested options."""
         return any(
             arg == option or arg.startswith(f"{option}=")
             for arg in args
@@ -142,6 +144,7 @@ class NpmProvider(BinProvider):
 
     @staticmethod
     def _install_arg_value(args: InstallArgs, *options: str) -> str | None:
+        """Return the explicit value for the first matching CLI option in install_args."""
         for idx, arg in enumerate(args):
             for option in options:
                 if arg == option and idx + 1 < len(args):
@@ -157,6 +160,7 @@ class NpmProvider(BinProvider):
         postinstall_scripts: bool,
         min_release_age: float | None,
     ) -> tuple[bool, float]:
+        """Resolve effective security settings after honoring explicit user CLI overrides."""
         effective_postinstall_scripts = postinstall_scripts
         if self._install_args_have_option(install_args, "--ignore-scripts"):
             effective_postinstall_scripts = False
@@ -207,6 +211,7 @@ class NpmProvider(BinProvider):
         return self
 
     def _load_PATH(self, no_cache: bool = False) -> str:
+        """Resolve npm's effective bin PATH from the current local/global npm prefixes."""
         PATH = self.PATH
 
         if self.bin_dir:
@@ -378,6 +383,7 @@ class NpmProvider(BinProvider):
         return mutation_args
 
     def _linked_bin_path(self, bin_name: BinName | HostBinPath) -> Path | None:
+        """Return the managed shim path for an npm-installed executable, if any."""
         if self.bin_dir is None:
             return None
         return self.bin_dir / str(bin_name)
@@ -387,6 +393,7 @@ class NpmProvider(BinProvider):
         bin_name: BinName | HostBinPath,
         target: HostBinPath,
     ) -> HostBinPath:
+        """Recreate the managed shim symlink pointing at the resolved npm executable."""
         link_path = self._linked_bin_path(bin_name)
         assert link_path is not None, "_refresh_bin_link requires bin_dir to be set"
         link_path.parent.mkdir(parents=True, exist_ok=True)

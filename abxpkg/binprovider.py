@@ -819,12 +819,12 @@ class BinProvider(BaseModel):
             if raw_provider_names
             else list(DEFAULT_PROVIDER_NAMES)
         )
-        installer_provider_names = ["env"] + [
+        installer_provider_names = [
             provider_name
             for provider_name in selected_provider_names
             if provider_name
             and provider_name in PROVIDER_CLASS_BY_NAME
-            and provider_name not in {self.name, "env"}
+            and provider_name != self.name
         ]
         installer_providers = [
             env_provider
@@ -2070,7 +2070,15 @@ class BinProvider(BaseModel):
             getattr(getattr(update_handler, "__func__", update_handler), "__name__", "")
             == "update_noop"
         ):
-            return self.load(bin_name=bin_name, quiet=quiet, no_cache=no_cache)
+            result = self.load(bin_name=bin_name, quiet=quiet, no_cache=no_cache)
+            if result is not None:
+                self._assert_min_version_satisfied(
+                    bin_name=bin_name,
+                    action="update",
+                    loaded_version=result.loaded_version,
+                    min_version=min_version,
+                )
+            return result
 
         self.setup(
             postinstall_scripts=postinstall_scripts,

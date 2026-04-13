@@ -72,6 +72,7 @@ class BrewProvider(BinProvider):
         return action in ("install", "update")
 
     def _brew_prefixes(self, no_cache: bool = False) -> list[Path]:
+        """Collect candidate Homebrew prefixes from the installer binary and current PATH."""
         prefixes: list[Path] = []
         seen: set[str] = set()
 
@@ -113,6 +114,7 @@ class BrewProvider(BinProvider):
         bin_name: BinName | HostBinPath,
         no_cache: bool = False,
     ) -> PATHStr:
+        """Build the brew-specific bin search PATH for the requested formula names."""
         package_names = [
             package
             for package in self.get_install_args(str(bin_name), quiet=True)
@@ -145,6 +147,7 @@ class BrewProvider(BinProvider):
         return TypeAdapter(PATHStr).validate_python(search_paths)
 
     def _linked_bin_path(self, bin_name: BinName | HostBinPath) -> Path | None:
+        """Return the managed shim path for a loaded brew binary, if shimming is enabled."""
         if self.bin_dir is None:
             return None
         return self.bin_dir / str(bin_name)
@@ -154,6 +157,7 @@ class BrewProvider(BinProvider):
         bin_name: BinName | HostBinPath,
         target: HostBinPath,
     ) -> HostBinPath:
+        """Repoint the managed shim path at the latest resolved brew binary target."""
         link_path = self._linked_bin_path(bin_name)
         assert link_path is not None, "_refresh_bin_link requires bin_dir to be set"
         link_path.parent.mkdir(parents=True, exist_ok=True)

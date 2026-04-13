@@ -78,6 +78,7 @@ class ChromeWebstoreProvider(BinProvider):
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
+        """Fill in the managed extension cache root and unpacked extensions dir."""
         if self.install_root is None:
             self.install_root = DEFAULT_CHROMEWEBSTORE_ROOT
         if self.bin_dir is None:
@@ -113,9 +114,11 @@ class ChromeWebstoreProvider(BinProvider):
         bin_name: str,
         **context,
     ) -> list[str]:
+        """Default to ``<webstore_id> --name=<bin_name>`` install args for extensions."""
         return [bin_name, f"--name={bin_name}"]
 
     def _cached_extension(self, bin_name: str) -> dict[str, Any]:
+        """Load the persisted extension metadata JSON for a cached extension, if any."""
         bin_dir = self.bin_dir
         assert bin_dir is not None
         cache_path = bin_dir / f"{bin_name}.extension.json"
@@ -128,6 +131,7 @@ class ChromeWebstoreProvider(BinProvider):
         return cached if isinstance(cached, dict) else {}
 
     def _extension_name(self, bin_name: str, install_args: list[str]) -> str:
+        """Resolve the human-friendly extension name from install args or the bin_name."""
         if len(install_args) > 1:
             raw_name = str(install_args[1])
             if raw_name.startswith("--name="):
@@ -136,6 +140,7 @@ class ChromeWebstoreProvider(BinProvider):
         return bin_name
 
     def _extension_spec(self, bin_name: str) -> tuple[str, str, Path, Path, Path]:
+        """Return the cached extension id/name and the derived on-disk paths for it."""
         bin_dir = self.bin_dir
         assert bin_dir is not None
         cached = self._cached_extension(bin_name)
@@ -164,6 +169,7 @@ class ChromeWebstoreProvider(BinProvider):
         return webstore_id, extension_name, unpacked_path, crx_path, manifest_path
 
     def chromewebstore_abspath_handler(self, bin_name: str, **context) -> str | None:
+        """Resolve an installed extension to its unpacked ``manifest.json`` path."""
         _, _, _, _, manifest_path = self._extension_spec(bin_name)
         if manifest_path.exists():
             return str(manifest_path)
@@ -175,6 +181,7 @@ class ChromeWebstoreProvider(BinProvider):
         abspath: str | Path | None = None,
         **context,
     ) -> str | None:
+        """Read the installed extension version from its unpacked manifest.json."""
         manifest_path = (
             Path(abspath) if abspath else self.get_abspath(bin_name, quiet=True)
         )
@@ -192,6 +199,7 @@ class ChromeWebstoreProvider(BinProvider):
         no_cache: bool = False,
         **context,
     ) -> str:
+        """Download, unpack, and cache a Chrome Web Store extension via chrome_utils.js."""
         install_args = list(install_args or self.get_install_args(bin_name))
         if self.dry_run:
             return f"DRY_RUN would install Chrome Web Store extension {bin_name}"
@@ -244,6 +252,7 @@ class ChromeWebstoreProvider(BinProvider):
         install_args: list[str] | tuple[str, ...] | None = None,
         **context,
     ) -> bool:
+        """Remove the cached metadata, CRX file, and unpacked extension directory."""
         bin_dir = self.bin_dir
         assert bin_dir is not None
         cache_path = bin_dir / f"{bin_name}.extension.json"

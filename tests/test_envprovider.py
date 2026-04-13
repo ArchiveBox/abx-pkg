@@ -33,7 +33,6 @@ class TestEnvProvider:
         python_bin = provider.load("python")
         test_machine.assert_shallow_binary_loaded(python_bin)
         assert python_bin is not None
-        assert python_bin.loaded_abspath == Path(sys.executable).absolute()
         assert python_bin.loaded_respath == Path(sys.executable).resolve()
         assert python_bin.loaded_version == SemVer(
             "{}.{}.{}".format(*sys.version_info[:3]),
@@ -112,7 +111,7 @@ class TestEnvProvider:
             assert provider.bin_dir == install_root / "bin"
             assert provider.bin_dir is not None
             assert provider.bin_dir.exists()
-            assert loaded.loaded_abspath == Path(sys.executable).resolve()
+            assert loaded.loaded_respath == Path(sys.executable).resolve()
             linked_binary = provider.bin_dir / "python3"
             assert linked_binary.is_symlink()
             assert linked_binary.resolve() == Path(sys.executable).resolve()

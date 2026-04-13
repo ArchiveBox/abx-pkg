@@ -61,6 +61,7 @@ class BashProvider(EnvProvider):
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
+        """Fill in the managed bash install_root/bin_dir defaults after validation."""
         if self.install_root is None:
             self.install_root = DEFAULT_BASH_ROOT
         if self.bin_dir is None:
@@ -103,6 +104,7 @@ class BashProvider(EnvProvider):
         bin_name: str,
         handler_type: HandlerType,
     ) -> Any:
+        """Return a literal override payload, skipping callable/self-referential handlers."""
         for overrides_for_bin in (
             self.overrides.get(bin_name, {}),
             self.overrides.get("*", {}),
@@ -124,6 +126,7 @@ class BashProvider(EnvProvider):
         bin_name: str,
         handler_type: HandlerType,
     ) -> str | None:
+        """Normalize a literal override into the shell command string to execute."""
         value = self._literal_override_value(bin_name, handler_type)
         if value is None:
             return None
@@ -151,6 +154,7 @@ class BashProvider(EnvProvider):
         abspath: str | Path | None = None,
         **context,
     ) -> str | None:
+        """Detect a script version, falling back to literal overrides for pure shell shims."""
         try:
             validated_abspath = (
                 TypeAdapter(HostBinPath).validate_python(abspath) if abspath else None

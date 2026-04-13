@@ -342,6 +342,7 @@ class AnsibleProvider(BinProvider):
         )
 
     def get_ansible_module_extra_kwargs(self) -> dict[str, Any]:
+        """Return provider-specific kwargs to splice into the ansible module block."""
         return {}
 
     @remap_kwargs({"packages": "install_args"})

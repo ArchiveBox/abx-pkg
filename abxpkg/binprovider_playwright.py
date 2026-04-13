@@ -506,6 +506,7 @@ class PlaywrightProvider(BinProvider):
         return path if path.exists() else None
 
     def _refresh_symlink(self, bin_name: str, target: Path) -> Path:
+        """Refresh the managed browser shim, using a tiny launcher for macOS .app bundles."""
         assert self.bin_dir is not None, (
             "_refresh_symlink must only be called when bin_dir is set"
         )

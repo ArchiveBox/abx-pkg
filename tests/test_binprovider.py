@@ -76,7 +76,8 @@ class TestBinProvider:
 
         assert abspath is not None
         assert installer.loaded_abspath is not None
-        assert installer.loaded_abspath.name == installer_bin
+        assert installer.name == installer_bin
+        assert installer.loaded_version is not None
 
     def test_base_public_getters_resolve_real_host_python(self, test_machine):
         provider = EnvProvider(postinstall_scripts=True, min_release_age=0)

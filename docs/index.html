@@ -1604,6 +1604,8 @@ uv tool add abxpkg
 
 # CLI
 abxpkg --version
+abxpkg version
+abxpkg list
 abxpkg install yt-dlp
 abxpkg update yt-dlp
 abxpkg uninstall yt-dlp
@@ -1614,7 +1616,7 @@ abxpkg install --binproviders=env,uv,pip,apt,brew prettier
 env ABXPKG_BINPROVIDERS=env,uv,pip,apt,brew abxpkg install yt-dlp
 
 # Customize install location
-abxpkg --lib=~/.config/abx/lib install yt-dlp
+abxpkg --lib=~/my-abx-lib install yt-dlp
 env ABXPKG_LIB_DIR=/tmp/abxlib abxpkg install yt-dlp
 
 # Dry-run mode
@@ -1767,7 +1769,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>install_root</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-null">None</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -1781,7 +1783,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>dry_run</code>
                       </td>
                       <td><code>bool</code></td>
-                      <td class="cfg-default"><span class="cfg-bool-false">False</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -1802,14 +1804,14 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>install_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">120</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>version_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">10</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                   </tbody>
                 </table>
@@ -1828,7 +1830,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="apt"
             class="plugin-card plugin-card--system"
-            data-search="apt aptprovider installs packages via debian / ubuntu&#39;s apt-get. always runs as root and targets the host package database. tries pyinfra/ansible drivers first, then falls back to direct apt-get. system system / os linux root no-hermetic name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout"
+            data-search="apt aptprovider installs packages via debian / ubuntu&#39;s apt-get. always runs as root and targets the host package database. shells out to apt-get directly. system system / os linux root no-hermetic name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout"
             data-hero-plugin="apt"
             data-hero-cli-command="abxpkg --binproviders=apt install wget"
             data-hero-python-command="from abxpkg import Binary, apt&#10;bin = Binary(name=&#34;wget&#34;, binproviders=[apt]).install()"
@@ -1839,7 +1841,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   <h2><span class="provider-hero-emoji">🐧</span>AptProvider</h2>
                 </div>
                 <div class="plugin-slug"><code>apt</code> &middot; <code>from abxpkg import apt</code></div>
-                <p class="plugin-summary-description">Installs packages via Debian / Ubuntu&#39;s apt-get. Always runs as root and targets the host package database. Tries pyinfra/ansible drivers first, then falls back to direct apt-get.</p>
+                <p class="plugin-summary-description">Installs packages via Debian / Ubuntu&#39;s apt-get. Always runs as root and targets the host package database. Shells out to apt-get directly.</p>
                 <div class="plugin-subline">
                   <span class="chip">System / OS</span>
                   <span class="chip">linux</span>
@@ -1855,7 +1857,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
             </summary>
 
             <div class="plugin-body">
-              <p class="plugin-modal-description">Installs packages via Debian / Ubuntu&#39;s apt-get. Always runs as root and targets the host package database. Tries pyinfra/ansible drivers first, then falls back to direct apt-get.</p>
+              <p class="plugin-modal-description">Installs packages via Debian / Ubuntu&#39;s apt-get. Always runs as root and targets the host package database. Shells out to apt-get directly.</p>
 
               <div class="actions">
                 <a class="button-link" href="https://github.com/ArchiveBox/abxpkg/blob/main/abxpkg/binprovider_apt.py" target="_blank" rel="noreferrer">Source on GitHub</a>
@@ -1959,7 +1961,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>dry_run</code>
                       </td>
                       <td><code>bool</code></td>
-                      <td class="cfg-default"><span class="cfg-bool-false">False</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -1980,14 +1982,14 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>install_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">120</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>version_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">10</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                   </tbody>
                 </table>
@@ -2000,7 +2002,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="brew"
             class="plugin-card plugin-card--system"
-            data-search="brew brewprovider installs packages via homebrew on macos/linuxbrew. discovery-only prefix; no isolated hermetic homebrew cellar. auto-switches to pyinfra/ansible when postinstall_scripts=true. system system / os macos linuxbrew postinstall-opt-in name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout abxpkg_brew_root"
+            data-search="brew brewprovider installs packages via homebrew on macos/linuxbrew. uses the host brew prefix for discovery and shells out to brew directly. no isolated hermetic homebrew cellar. system system / os macos linuxbrew postinstall-opt-in name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout abxpkg_brew_root"
             data-hero-plugin="brew"
             data-hero-cli-command="abxpkg --binproviders=brew install yt-dlp"
             data-hero-python-command="from abxpkg import Binary, brew&#10;bin = Binary(name=&#34;yt-dlp&#34;, binproviders=[brew]).install()"
@@ -2011,7 +2013,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   <h2><span class="provider-hero-emoji">🍺</span>BrewProvider</h2>
                 </div>
                 <div class="plugin-slug"><code>brew</code> &middot; <code>from abxpkg import brew</code></div>
-                <p class="plugin-summary-description">Installs packages via Homebrew on macOS/Linuxbrew. Discovery-only prefix; no isolated hermetic Homebrew cellar. Auto-switches to pyinfra/ansible when postinstall_scripts=True.</p>
+                <p class="plugin-summary-description">Installs packages via Homebrew on macOS/Linuxbrew. Uses the host brew prefix for discovery and shells out to brew directly. No isolated hermetic Homebrew cellar.</p>
                 <div class="plugin-subline">
                   <span class="chip">System / OS</span>
                   <span class="chip">macos</span>
@@ -2027,7 +2029,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
             </summary>
 
             <div class="plugin-body">
-              <p class="plugin-modal-description">Installs packages via Homebrew on macOS/Linuxbrew. Discovery-only prefix; no isolated hermetic Homebrew cellar. Auto-switches to pyinfra/ansible when postinstall_scripts=True.</p>
+              <p class="plugin-modal-description">Installs packages via Homebrew on macOS/Linuxbrew. Uses the host brew prefix for discovery and shells out to brew directly. No isolated hermetic Homebrew cellar.</p>
 
               <div class="actions">
                 <a class="button-link" href="https://github.com/ArchiveBox/abxpkg/blob/main/abxpkg/binprovider_brew.py" target="_blank" rel="noreferrer">Source on GitHub</a>
@@ -2117,7 +2119,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>install_root</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-path">Path(&quot;/opt/homebrew&quot;)</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -2131,14 +2133,14 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>dry_run</code>
                       </td>
                       <td><code>bool</code></td>
-                      <td class="cfg-default"><span class="cfg-bool-false">False</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>postinstall_scripts</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-bool-false">False</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -2152,14 +2154,14 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>install_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">120</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>version_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">10</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                   </tbody>
                 </table>
@@ -2311,21 +2313,21 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>install_root</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-path">Path(&quot;/Users/squash/Library/Application Support/abx/lib/docker&quot;)</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>bin_dir</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-path">Path(&quot;/Users/squash/Library/Application Support/abx/lib/docker/bin&quot;)</span></td>
+                      <td class="cfg-default"><span class="cfg-null">None</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>dry_run</code>
                       </td>
                       <td><code>bool</code></td>
-                      <td class="cfg-default"><span class="cfg-bool-false">False</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -2346,14 +2348,14 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>install_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">120</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>version_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">10</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                   </tbody>
                 </table>
@@ -2505,21 +2507,21 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>install_root</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-path">Path(&quot;/Users/squash/.nix-profile&quot;)</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>bin_dir</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-path">Path(&quot;/Users/squash/.nix-profile/bin&quot;)</span></td>
+                      <td class="cfg-default"><span class="cfg-null">None</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>dry_run</code>
                       </td>
                       <td><code>bool</code></td>
-                      <td class="cfg-default"><span class="cfg-bool-false">False</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -2540,14 +2542,14 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>install_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">120</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>version_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">10</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                   </tbody>
                 </table>
@@ -2710,7 +2712,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>install_root</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-null">None</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -2724,35 +2726,35 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>dry_run</code>
                       </td>
                       <td><code>bool</code></td>
-                      <td class="cfg-default"><span class="cfg-bool-false">False</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>postinstall_scripts</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-bool-false">False</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>min_release_age</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-number">7.0</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>install_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">120</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>version_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">10</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                   </tbody>
                 </table>
@@ -2908,21 +2910,21 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>install_root</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-path">Path(&quot;/Users/squash/.cargo&quot;)</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>bin_dir</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-path">Path(&quot;/Users/squash/.cargo/bin&quot;)</span></td>
+                      <td class="cfg-default"><span class="cfg-null">None</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>dry_run</code>
                       </td>
                       <td><code>bool</code></td>
-                      <td class="cfg-default"><span class="cfg-bool-false">False</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -2943,14 +2945,14 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>install_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">120</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>version_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">10</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                   </tbody>
                 </table>
@@ -3107,7 +3109,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>install_root</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-null">None</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -3121,35 +3123,35 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>dry_run</code>
                       </td>
                       <td><code>bool</code></td>
-                      <td class="cfg-default"><span class="cfg-bool-false">False</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>postinstall_scripts</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-bool-false">False</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>min_release_age</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-number">7.0</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>install_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">120</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>version_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">10</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                   </tbody>
                 </table>
@@ -3305,21 +3307,21 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>install_root</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-path">Path(&quot;/Users/squash/.local/share/gem&quot;)</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>bin_dir</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-path">Path(&quot;/Users/squash/.local/share/gem/bin&quot;)</span></td>
+                      <td class="cfg-default"><span class="cfg-null">None</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>dry_run</code>
                       </td>
                       <td><code>bool</code></td>
-                      <td class="cfg-default"><span class="cfg-bool-false">False</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -3340,14 +3342,14 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>install_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">120</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>version_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">10</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                   </tbody>
                 </table>
@@ -3503,21 +3505,21 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>install_root</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-path">Path(&quot;/Users/squash/go&quot;)</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>bin_dir</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-path">Path(&quot;/Users/squash/go/bin&quot;)</span></td>
+                      <td class="cfg-default"><span class="cfg-null">None</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>dry_run</code>
                       </td>
                       <td><code>bool</code></td>
-                      <td class="cfg-default"><span class="cfg-bool-false">False</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -3538,14 +3540,14 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>install_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">120</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>version_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">10</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                   </tbody>
                 </table>
@@ -3702,7 +3704,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>install_root</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-null">None</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -3716,35 +3718,35 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>dry_run</code>
                       </td>
                       <td><code>bool</code></td>
-                      <td class="cfg-default"><span class="cfg-bool-false">False</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>postinstall_scripts</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-bool-false">False</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>min_release_age</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-number">7.0</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>install_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">120</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>version_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">10</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                   </tbody>
                 </table>
@@ -3901,7 +3903,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>install_root</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-null">None</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -3915,35 +3917,35 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>dry_run</code>
                       </td>
                       <td><code>bool</code></td>
-                      <td class="cfg-default"><span class="cfg-bool-false">False</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>postinstall_scripts</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-bool-false">False</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>min_release_age</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-number">7.0</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>install_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">120</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>version_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">10</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                   </tbody>
                 </table>
@@ -4100,7 +4102,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>install_root</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-null">None</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -4114,35 +4116,35 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>dry_run</code>
                       </td>
                       <td><code>bool</code></td>
-                      <td class="cfg-default"><span class="cfg-bool-false">False</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>postinstall_scripts</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-bool-false">False</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>min_release_age</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-number">7.0</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>install_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">120</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>version_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">10</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                   </tbody>
                 </table>
@@ -4300,7 +4302,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>install_root</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-null">None</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -4314,35 +4316,35 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>dry_run</code>
                       </td>
                       <td><code>bool</code></td>
-                      <td class="cfg-default"><span class="cfg-bool-false">False</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>postinstall_scripts</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-bool-false">False</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>min_release_age</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-number">7.0</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>install_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">120</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>version_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">10</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                   </tbody>
                 </table>
@@ -4499,7 +4501,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>install_root</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-null">None</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -4513,35 +4515,35 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>dry_run</code>
                       </td>
                       <td><code>bool</code></td>
-                      <td class="cfg-default"><span class="cfg-bool-false">False</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>postinstall_scripts</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-bool-false">False</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>min_release_age</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-number">7.0</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>install_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">120</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>version_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">10</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                   </tbody>
                 </table>
@@ -4703,28 +4705,28 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>install_root</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-path">Path(&quot;/Users/squash/Library/Application Support/abx/lib/chromewebstore&quot;)</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>bin_dir</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-path">Path(&quot;/Users/squash/Library/Application Support/abx/lib/chromewebstore/extensions&quot;)</span></td>
+                      <td class="cfg-default"><span class="cfg-null">None</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>dry_run</code>
                       </td>
                       <td><code>bool</code></td>
-                      <td class="cfg-default"><span class="cfg-bool-false">False</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>postinstall_scripts</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-bool-false">False</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -4738,14 +4740,14 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>install_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">120</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>version_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">10</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                   </tbody>
                 </table>
@@ -4897,7 +4899,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>install_root</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-null">None</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -4911,7 +4913,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>dry_run</code>
                       </td>
                       <td><code>bool</code></td>
-                      <td class="cfg-default"><span class="cfg-bool-false">False</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -4932,14 +4934,14 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>install_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">120</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>version_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">10</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                   </tbody>
                 </table>
@@ -5090,7 +5092,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>install_root</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-null">None</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -5104,14 +5106,14 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>dry_run</code>
                       </td>
                       <td><code>bool</code></td>
-                      <td class="cfg-default"><span class="cfg-bool-false">False</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>postinstall_scripts</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-bool-false">False</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -5125,14 +5127,14 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>install_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">120</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>version_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">10</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                   </tbody>
                 </table>
@@ -5217,7 +5219,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                 </article>
                 <article>
                   <span>Installer binary</span>
-                  <code>sh</code>
+                  <code>bash</code>
                 </article>
                 <article>
                   <span>Source file</span>
@@ -5275,7 +5277,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>INSTALLER_BIN</code>
                       </td>
                       <td><code>str</code></td>
-                      <td class="cfg-default"><span class="cfg-string">&quot;sh&quot;</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;bash&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -5289,21 +5291,21 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>install_root</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-path">Path(&quot;/Users/squash/Library/Application Support/abx/lib/bash&quot;)</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>bin_dir</code>
                       </td>
                       <td><code>Union</code></td>
-                      <td class="cfg-default"><span class="cfg-path">Path(&quot;/Users/squash/Library/Application Support/abx/lib/bash/bin&quot;)</span></td>
+                      <td class="cfg-default"><span class="cfg-null">None</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>dry_run</code>
                       </td>
                       <td><code>bool</code></td>
-                      <td class="cfg-default"><span class="cfg-bool-false">False</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -5324,14 +5326,14 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>install_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">120</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>version_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">10</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                   </tbody>
                 </table>
@@ -5502,7 +5504,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>dry_run</code>
                       </td>
                       <td><code>bool</code></td>
-                      <td class="cfg-default"><span class="cfg-bool-false">False</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -5523,14 +5525,14 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>install_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">120</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>version_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">10</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                   </tbody>
                 </table>
@@ -5673,7 +5675,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>dry_run</code>
                       </td>
                       <td><code>bool</code></td>
-                      <td class="cfg-default"><span class="cfg-bool-false">False</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
@@ -5694,14 +5696,14 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                         <code>install_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">120</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                     <tr>
                       <td>
                         <code>version_timeout</code>
                       </td>
                       <td><code>int</code></td>
-                      <td class="cfg-default"><span class="cfg-number">10</span></td>
+                      <td class="cfg-default"><span class="cfg-string">&quot;&lt;dynamic&gt;&quot;</span></td>
                     </tr>
                   </tbody>
                 </table>
@@ -5775,13 +5777,13 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
               </tr>
               <tr>
                 <td><code>ABXPKG_BINPROVIDERS</code></td>
-                <td><code>all</code></td>
-                <td><small>Comma-separated provider names to enable (and their order) for the abxpkg CLI. Example: env,uv,pip,apt,brew</small></td>
+                <td><code>DEFAULT_PROVIDER_NAMES</code></td>
+                <td><small>Comma-separated provider names to enable (and their order) for the abxpkg CLI. Defaults to DEFAULT_PROVIDER_NAMES from abxpkg.__init__. Example: env,uv,pip,apt,brew</small></td>
               </tr>
               <tr>
                 <td><code>ABXPKG_LIB_DIR</code></td>
-                <td><code>~/.config/abx/lib</code></td>
-                <td><small>Centralized install root. When set, each provider defaults its install root to $ABXPKG_LIB_DIR/&lt;provider name&gt;. Accepts relative, tilde, and absolute paths.</small></td>
+                <td><code>&lt;platform default abx lib dir&gt;</code></td>
+                <td><small>Centralized library root. When set, each provider defaults its install root to $ABXPKG_LIB_DIR/&lt;provider name&gt;. Accepts relative, tilde, and absolute paths. --global is a thin alias for --lib=None.</small></td>
               </tr>
             </tbody>
           </table>
@@ -5919,7 +5921,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
 
         <div class="footer-meta">
           <span>Generated from <a href="https://github.com/ArchiveBox/abxpkg" target="_blank" rel="noreferrer">ArchiveBox/abxpkg</a> at ref <code>main</code>.</span>
-          <span>Updated 2026-04-13 09:08 UTC</span>
+          <span>Updated 2026-04-13 11:17 UTC</span>
         </div>
       </footer>
     </div>
