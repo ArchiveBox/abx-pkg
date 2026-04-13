@@ -1,0 +1,37 @@
+abxpkg/binprovider_npm.py
+  67a976da5825c26a 287-289
+abxpkg/binprovider_pnpm.py
+  67a976da5825c26a 25-31,188-190
+abxpkg/binprovider_pip.py
+  67a976da5825c26a 250-252
+abxpkg/binprovider_pyinfra.py
+  67a976da5825c26a 20-26,248-250
+abxpkg/binprovider_gem.py
+  67a976da5825c26a 20-26,101-103
+abxpkg/binprovider_yarn.py
+  67a976da5825c26a 244-246
+abxpkg/binprovider_ansible.py
+  67a976da5825c26a 18-24,318-320
+abxpkg/binprovider.py
+  67a976da5825c26a 585-586
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "be63b4b5487c00c51574000099be4bc8637318d9",
+  "prompts": {
+    "67a976da5825c26a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d717c-705b-75f1-8c2f-c652b4164be1",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 51,
+      "total_deletions": 11,
+      "accepted_lines": 51,
+      "overriden_lines": 0
+    }
+  }
+}
