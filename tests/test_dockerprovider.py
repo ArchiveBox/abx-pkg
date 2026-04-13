@@ -5,7 +5,7 @@ import subprocess
 
 import pytest
 
-from abx_pkg import Binary, DockerProvider, SemVer
+from abxpkg import Binary, DockerProvider, SemVer
 
 
 @pytest.mark.docker_required
@@ -278,7 +278,7 @@ class TestDockerProvider:
         test_machine.require_docker_daemon()
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+            with caplog.at_level(logging.WARNING, logger="abxpkg.binprovider"):
                 installed = (
                     DockerProvider(
                         bin_dir=Path(temp_dir) / "bad/bin",
@@ -314,7 +314,7 @@ class TestDockerProvider:
                     "docker": {"install_args": ["koalaman/shellcheck:v0.10.0"]},
                 },
             )
-            with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+            with caplog.at_level(logging.WARNING, logger="abxpkg.binprovider"):
                 installed = binary.install()
             test_machine.assert_shallow_binary_loaded(installed)
             assert "ignoring unsupported min_release_age=1" in caplog.text

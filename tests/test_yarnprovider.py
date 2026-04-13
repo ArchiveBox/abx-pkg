@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from abx_pkg import Binary, SemVer, YarnProvider
-from abx_pkg.base_types import bin_abspath
-from abx_pkg.exceptions import BinaryInstallError, BinProviderInstallError
+from abxpkg import Binary, SemVer, YarnProvider
+from abxpkg.base_types import bin_abspath
+from abxpkg.exceptions import BinaryInstallError, BinProviderInstallError
 
 
 class TestYarnProvider:
@@ -83,11 +83,11 @@ class TestYarnProvider:
             assert provider.install_root == install_root
             assert provider.bin_dir == install_root / "node_modules" / ".bin"
             assert installed.loaded_abspath.parent == provider.bin_dir
-            # The auto-initialized workspace must exist on disk.
+            # The auto-initialized install_root project dir must exist on disk.
             assert (install_root / "package.json").exists()
             assert (install_root / "node_modules" / "zx" / "package.json").exists()
             # The corepack-trap field must NOT be written, otherwise Yarn 1
-            # would refuse to run on the same workspace.
+            # would refuse to run in the same install_root project dir.
             import json as _json
 
             pkg = _json.loads((install_root / "package.json").read_text())
@@ -435,7 +435,7 @@ class TestYarnProvider:
     def test_workspace_setup_writes_node_modules_linker(self):
         # Yarn 4 defaults to PnP. The provider must write a .yarnrc.yml that
         # forces ``nodeLinker: node-modules`` so binaries land in
-        # ``<workspace>/node_modules/.bin``.
+        # ``<install_root>/node_modules/.bin``.
         with tempfile.TemporaryDirectory() as tmpdir:
             yarn_prefix = Path(tmpdir) / "yarn"
             provider = self._berry_provider(
@@ -457,7 +457,7 @@ class TestYarnProvider:
 
     def test_berry_supports_methods_do_not_emit_unsupported_warnings(self, caplog):
         with tempfile.TemporaryDirectory() as tmpdir:
-            with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+            with caplog.at_level(logging.WARNING, logger="abxpkg.binprovider"):
                 provider = self._berry_provider(
                     install_root=Path(tmpdir) / "yarn",
                     postinstall_scripts=False,
@@ -474,7 +474,7 @@ class TestYarnProvider:
         caplog,
     ):
         with tempfile.TemporaryDirectory() as tmpdir:
-            with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+            with caplog.at_level(logging.WARNING, logger="abxpkg.binprovider"):
                 provider = self._classic_provider(
                     install_root=Path(tmpdir) / "yarn",
                     postinstall_scripts=False,

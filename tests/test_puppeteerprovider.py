@@ -1,7 +1,7 @@
 import tempfile
 from pathlib import Path
 
-from abx_pkg import Binary, PuppeteerProvider
+from abxpkg import Binary, PuppeteerProvider
 
 
 PUPPETEER_CHROMEDRIVER_ARGS = ["chromedriver@stable"]

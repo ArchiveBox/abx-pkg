@@ -1,7 +1,7 @@
 import tempfile
 from pathlib import Path
 
-from abx_pkg import BashProvider, Binary
+from abxpkg import BashProvider, Binary
 
 
 BASH_ZX_INSTALL = (

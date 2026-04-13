@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>abx-pkg — Python interfaces for package managers &amp; installed binaries</title>
+    <title>abxpkg — Python interfaces for package managers &amp; installed binaries</title>
     <meta
       name="description"
-      content="abx-pkg is a Python library that provides typed interfaces to apt, brew, pip, uv, npm, pnpm, yarn, bun, deno, cargo, gem, go, nix, docker, bash, puppeteer, playwright, and more — for resolving and installing dependencies at runtime."
+      content="abxpkg is a Python library that provides typed interfaces to apt, brew, pip, uv, npm, pnpm, yarn, bun, deno, cargo, gem, go, nix, docker, bash, puppeteer, playwright, and more — for resolving and installing dependencies at runtime."
     >
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1362,7 +1362,7 @@
           display: none;
         }
       }
-      /* abx-pkg additions */
+      /* abxpkg additions */
       .plugin-card--fallback  { --card-tint: rgba(161, 161, 170, 0.08); --card-border: rgba(161, 161, 170, 0.35); --card-accent: #a1a1aa; }
       .plugin-card--system    { --card-tint: rgba(73, 154, 84, 0.08);  --card-border: rgba(73, 154, 84, 0.35);  --card-accent: #4ade80; }
       .plugin-card--language  { --card-tint: rgba(96, 165, 250, 0.08); --card-border: rgba(96, 165, 250, 0.35); --card-accent: #60a5fa; }
@@ -1526,7 +1526,7 @@
         <div class="hero-top">
           <div>
             <div class="eyebrow">An ORM for your package managers.</div>
-            <h1><code>abx-pkg</code></h1>
+            <h1><code>abxpkg</code></h1>
             <p class="hero-copy">
               A Python library for installing &amp; managing packages locally with a variety of
               package managers. Great for when <code>requirements.txt</code> isn't enough and
@@ -1544,12 +1544,12 @@
           <div class="hero-actions">
             <a
               class="stat stat-link stat-link--cta button-link--hero"
-              href="https://pypi.org/project/abx-pkg/"
+              href="https://pypi.org/project/abxpkg/"
               target="_blank"
               rel="noreferrer"
             >
               <strong><span class="cta-plus">↓</span> Install</strong>
-              <center><span>pip install abx-pkg</span></center>
+              <center><span>pip install abxpkg</span></center>
             </a>
           </div>
           <div class="hero-meta">
@@ -1574,14 +1574,14 @@
               <h2 class="hero-example-title" id="quickstart-heading">Quick Start</h2>
               <p class="hero-example-copy">
                 Pick a provider below to auto-fill an example command, or use
-                <code>abx-pkg</code> directly from the CLI.
+                <code>abxpkg</code> directly from the CLI.
               </p>
             </div>
             <div class="hero-runner-links">
               <span>Docs:</span>
-              <a class="runner-link" href="https://github.com/ArchiveBox/abx-pkg#readme" target="_blank" rel="noreferrer">README</a>
-              <a class="runner-link" href="https://pypi.org/project/abx-pkg/" target="_blank" rel="noreferrer">PyPI</a>
-              <a class="runner-link" href="https://github.com/ArchiveBox/abx-pkg" target="_blank" rel="noreferrer">GitHub</a>
+              <a class="runner-link" href="https://github.com/ArchiveBox/abxpkg#readme" target="_blank" rel="noreferrer">README</a>
+              <a class="runner-link" href="https://pypi.org/project/abxpkg/" target="_blank" rel="noreferrer">PyPI</a>
+              <a class="runner-link" href="https://github.com/ArchiveBox/abxpkg" target="_blank" rel="noreferrer">GitHub</a>
             </div>
           </div>
 
@@ -1589,7 +1589,7 @@
             <div class="hero-code-toolbar">
               <div class="hero-code-meta">
                 <span class="hero-code-kicker">Selected provider</span>
-                <code id="selected-plugin-name">abx-pkg</code>
+                <code id="selected-plugin-name">abxpkg</code>
               </div>
               <button type="button" class="copy-button" id="copy-example-button">Copy</button>
             </div>
@@ -1598,28 +1598,28 @@
 
           <details class="install-details">
             <summary>Expand to see install + library usage</summary>
-            <pre><code data-highlight-shell>pip install abx-pkg
+            <pre><code data-highlight-shell>pip install abxpkg
 # or
-uv tool add abx-pkg
+uv tool add abxpkg
 
 # CLI
-abx-pkg --version
-abx-pkg install yt-dlp
-abx-pkg update yt-dlp
-abx-pkg uninstall yt-dlp
-abx-pkg load yt-dlp
+abxpkg --version
+abxpkg install yt-dlp
+abxpkg update yt-dlp
+abxpkg uninstall yt-dlp
+abxpkg load yt-dlp
 
 # Select specific providers / re-order provider precedence
-abx-pkg install --binproviders=env,uv,pip,apt,brew prettier
-env ABX_PKG_BINPROVIDERS=env,uv,pip,apt,brew abx-pkg install yt-dlp
+abxpkg install --binproviders=env,uv,pip,apt,brew prettier
+env ABXPKG_BINPROVIDERS=env,uv,pip,apt,brew abxpkg install yt-dlp
 
 # Customize install location
-abx-pkg --lib=~/.config/abx/lib install yt-dlp
-env ABX_PKG_LIB_DIR=/tmp/abxlib abx-pkg install yt-dlp
+abxpkg --lib=~/.config/abx/lib install yt-dlp
+env ABXPKG_LIB_DIR=/tmp/abxlib abxpkg install yt-dlp
 
 # Dry-run mode
-abx-pkg install --dry-run some-package
-env ABX_PKG_DRY_RUN=1 abx-pkg install some-package</code></pre>
+abxpkg install --dry-run some-package
+env ABXPKG_DRY_RUN=1 abxpkg install some-package</code></pre>
           </details>
         </section>
       </section>
@@ -1652,15 +1652,15 @@ env ABX_PKG_DRY_RUN=1 abx-pkg install some-package</code></pre>
             class="plugin-card plugin-card--fallback"
             data-search="env envprovider read-only fallback that searches the existing $path for binaries already installed on the host. does not install anything. fallback path fallback path-only no-install read-only name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout"
             data-hero-plugin="env"
-            data-hero-cli-command="abx-pkg --binproviders=env install curl"
-            data-hero-python-command="from abx_pkg import Binary, env&#10;bin = Binary(name=&#34;curl&#34;, binproviders=[env]).install()"
+            data-hero-cli-command="abxpkg --binproviders=env install curl"
+            data-hero-python-command="from abxpkg import Binary, env&#10;bin = Binary(name=&#34;curl&#34;, binproviders=[env]).install()"
           >
             <summary>
               <div class="plugin-main">
                 <div class="plugin-title-row">
                   <h2><span class="provider-hero-emoji">🌍</span>EnvProvider</h2>
                 </div>
-                <div class="plugin-slug"><code>env</code> &middot; <code>from abx_pkg import env</code></div>
+                <div class="plugin-slug"><code>env</code> &middot; <code>from abxpkg import env</code></div>
                 <p class="plugin-summary-description">Read-only fallback that searches the existing $PATH for binaries already installed on the host. Does not install anything.</p>
                 <div class="plugin-subline">
                   <span class="chip">PATH Fallback</span>
@@ -1680,8 +1680,8 @@ env ABX_PKG_DRY_RUN=1 abx-pkg install some-package</code></pre>
               <p class="plugin-modal-description">Read-only fallback that searches the existing $PATH for binaries already installed on the host. Does not install anything.</p>
 
               <div class="actions">
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/binprovider.py" target="_blank" rel="noreferrer">Source on GitHub</a>
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg#readme" target="_blank" rel="noreferrer">README</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg/blob/main/abxpkg/binprovider.py" target="_blank" rel="noreferrer">Source on GitHub</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg#readme" target="_blank" rel="noreferrer">README</a>
               </div>
 
               <div class="provider-meta-grid">
@@ -1699,7 +1699,7 @@ env ABX_PKG_DRY_RUN=1 abx-pkg install some-package</code></pre>
                 </article>
                 <article>
                   <span>Source file</span>
-                  <code>abx_pkg/binprovider.py</code>
+                  <code>abxpkg/binprovider.py</code>
                 </article>
               </div>
 
@@ -1710,9 +1710,9 @@ env ABX_PKG_DRY_RUN=1 abx-pkg install some-package</code></pre>
                   <button type="button" class="run-tab" data-run-tab="env">CLI (env var)</button>
                   <button type="button" class="run-tab" data-run-tab="python">Python</button>
                 </div>
-                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abx-pkg --binproviders=env install curl</code></pre>
-                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABX_PKG_BINPROVIDERS=env abx-pkg install curl</code></pre>
-                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abx_pkg import Binary, env
+                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abxpkg --binproviders=env install curl</code></pre>
+                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABXPKG_BINPROVIDERS=env abxpkg install curl</code></pre>
+                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abxpkg import Binary, env
 
 bin = Binary(name=&#39;curl&#39;, binproviders=[env]).install()
 bin.exec(cmd=[&#39;--version&#39;])</code></pre>
@@ -1830,15 +1830,15 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
             class="plugin-card plugin-card--system"
             data-search="apt aptprovider installs packages via debian / ubuntu&#39;s apt-get. always runs as root and targets the host package database. tries pyinfra/ansible drivers first, then falls back to direct apt-get. system system / os linux root no-hermetic name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout"
             data-hero-plugin="apt"
-            data-hero-cli-command="abx-pkg --binproviders=apt install wget"
-            data-hero-python-command="from abx_pkg import Binary, apt&#10;bin = Binary(name=&#34;wget&#34;, binproviders=[apt]).install()"
+            data-hero-cli-command="abxpkg --binproviders=apt install wget"
+            data-hero-python-command="from abxpkg import Binary, apt&#10;bin = Binary(name=&#34;wget&#34;, binproviders=[apt]).install()"
           >
             <summary>
               <div class="plugin-main">
                 <div class="plugin-title-row">
                   <h2><span class="provider-hero-emoji">🐧</span>AptProvider</h2>
                 </div>
-                <div class="plugin-slug"><code>apt</code> &middot; <code>from abx_pkg import apt</code></div>
+                <div class="plugin-slug"><code>apt</code> &middot; <code>from abxpkg import apt</code></div>
                 <p class="plugin-summary-description">Installs packages via Debian / Ubuntu&#39;s apt-get. Always runs as root and targets the host package database. Tries pyinfra/ansible drivers first, then falls back to direct apt-get.</p>
                 <div class="plugin-subline">
                   <span class="chip">System / OS</span>
@@ -1858,8 +1858,8 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
               <p class="plugin-modal-description">Installs packages via Debian / Ubuntu&#39;s apt-get. Always runs as root and targets the host package database. Tries pyinfra/ansible drivers first, then falls back to direct apt-get.</p>
 
               <div class="actions">
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/binprovider_apt.py" target="_blank" rel="noreferrer">Source on GitHub</a>
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg#readme" target="_blank" rel="noreferrer">README</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg/blob/main/abxpkg/binprovider_apt.py" target="_blank" rel="noreferrer">Source on GitHub</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg#readme" target="_blank" rel="noreferrer">README</a>
               </div>
 
               <div class="provider-meta-grid">
@@ -1877,7 +1877,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                 </article>
                 <article>
                   <span>Source file</span>
-                  <code>abx_pkg/binprovider_apt.py</code>
+                  <code>abxpkg/binprovider_apt.py</code>
                 </article>
               </div>
 
@@ -1888,9 +1888,9 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   <button type="button" class="run-tab" data-run-tab="env">CLI (env var)</button>
                   <button type="button" class="run-tab" data-run-tab="python">Python</button>
                 </div>
-                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abx-pkg --binproviders=apt install wget</code></pre>
-                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABX_PKG_BINPROVIDERS=apt abx-pkg install wget</code></pre>
-                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abx_pkg import Binary, apt
+                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abxpkg --binproviders=apt install wget</code></pre>
+                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABXPKG_BINPROVIDERS=apt abxpkg install wget</code></pre>
+                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abxpkg import Binary, apt
 
 bin = Binary(name=&#39;wget&#39;, binproviders=[apt]).install()
 bin.exec(cmd=[&#39;--version&#39;])</code></pre>
@@ -2000,17 +2000,17 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="brew"
             class="plugin-card plugin-card--system"
-            data-search="brew brewprovider installs packages via homebrew on macos/linuxbrew. discovery-only prefix; no isolated hermetic homebrew cellar. auto-switches to pyinfra/ansible when postinstall_scripts=true. system system / os macos linuxbrew postinstall-opt-in name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout abx_pkg_brew_root"
+            data-search="brew brewprovider installs packages via homebrew on macos/linuxbrew. discovery-only prefix; no isolated hermetic homebrew cellar. auto-switches to pyinfra/ansible when postinstall_scripts=true. system system / os macos linuxbrew postinstall-opt-in name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout abxpkg_brew_root"
             data-hero-plugin="brew"
-            data-hero-cli-command="abx-pkg --binproviders=brew install yt-dlp"
-            data-hero-python-command="from abx_pkg import Binary, brew&#10;bin = Binary(name=&#34;yt-dlp&#34;, binproviders=[brew]).install()"
+            data-hero-cli-command="abxpkg --binproviders=brew install yt-dlp"
+            data-hero-python-command="from abxpkg import Binary, brew&#10;bin = Binary(name=&#34;yt-dlp&#34;, binproviders=[brew]).install()"
           >
             <summary>
               <div class="plugin-main">
                 <div class="plugin-title-row">
                   <h2><span class="provider-hero-emoji">🍺</span>BrewProvider</h2>
                 </div>
-                <div class="plugin-slug"><code>brew</code> &middot; <code>from abx_pkg import brew</code></div>
+                <div class="plugin-slug"><code>brew</code> &middot; <code>from abxpkg import brew</code></div>
                 <p class="plugin-summary-description">Installs packages via Homebrew on macOS/Linuxbrew. Discovery-only prefix; no isolated hermetic Homebrew cellar. Auto-switches to pyinfra/ansible when postinstall_scripts=True.</p>
                 <div class="plugin-subline">
                   <span class="chip">System / OS</span>
@@ -2030,8 +2030,8 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
               <p class="plugin-modal-description">Installs packages via Homebrew on macOS/Linuxbrew. Discovery-only prefix; no isolated hermetic Homebrew cellar. Auto-switches to pyinfra/ansible when postinstall_scripts=True.</p>
 
               <div class="actions">
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/binprovider_brew.py" target="_blank" rel="noreferrer">Source on GitHub</a>
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg#readme" target="_blank" rel="noreferrer">README</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg/blob/main/abxpkg/binprovider_brew.py" target="_blank" rel="noreferrer">Source on GitHub</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg#readme" target="_blank" rel="noreferrer">README</a>
               </div>
 
               <div class="provider-meta-grid">
@@ -2049,7 +2049,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                 </article>
                 <article>
                   <span>Source file</span>
-                  <code>abx_pkg/binprovider_brew.py</code>
+                  <code>abxpkg/binprovider_brew.py</code>
                 </article>
               </div>
 
@@ -2060,9 +2060,9 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   <button type="button" class="run-tab" data-run-tab="env">CLI (env var)</button>
                   <button type="button" class="run-tab" data-run-tab="python">Python</button>
                 </div>
-                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abx-pkg --binproviders=brew install yt-dlp</code></pre>
-                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABX_PKG_BINPROVIDERS=brew abx-pkg install yt-dlp</code></pre>
-                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abx_pkg import Binary, brew
+                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abxpkg --binproviders=brew install yt-dlp</code></pre>
+                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABXPKG_BINPROVIDERS=brew abxpkg install yt-dlp</code></pre>
+                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abxpkg import Binary, brew
 
 bin = Binary(name=&#39;yt-dlp&#39;, binproviders=[brew]).install()
 bin.exec(cmd=[&#39;--version&#39;])</code></pre>
@@ -2182,7 +2182,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   </thead>
                   <tbody>
                     <tr>
-                      <td><code>ABX_PKG_BREW_ROOT</code></td>
+                      <td><code>ABXPKG_BREW_ROOT</code></td>
                       <td><code>unset</code></td>
                       <td><small>Overrides brew_prefix (discovery only).</small></td>
                     </tr>
@@ -2194,17 +2194,17 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="docker"
             class="plugin-card plugin-card--system"
-            data-search="docker dockerprovider pulls docker images and writes a local shim wrapper that runs docker run .... binary version is parsed from the image tag, so semver-like tags work best. pass image refs as install_args. system system / os docker image shim name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout docker_run_args abx_pkg_docker_root"
+            data-search="docker dockerprovider pulls docker images and writes a local shim wrapper that runs docker run .... binary version is parsed from the image tag, so semver-like tags work best. pass image refs as install_args. system system / os docker image shim name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout docker_run_args abxpkg_docker_root"
             data-hero-plugin="docker"
-            data-hero-cli-command="abx-pkg --binproviders=docker install hello-world"
-            data-hero-python-command="from abx_pkg import Binary, docker&#10;bin = Binary(name=&#34;hello-world&#34;, binproviders=[docker]).install()"
+            data-hero-cli-command="abxpkg --binproviders=docker install hello-world"
+            data-hero-python-command="from abxpkg import Binary, docker&#10;bin = Binary(name=&#34;hello-world&#34;, binproviders=[docker]).install()"
           >
             <summary>
               <div class="plugin-main">
                 <div class="plugin-title-row">
                   <h2><span class="provider-hero-emoji">🐳</span>DockerProvider</h2>
                 </div>
-                <div class="plugin-slug"><code>docker</code> &middot; <code>from abx_pkg import docker</code></div>
+                <div class="plugin-slug"><code>docker</code> &middot; <code>from abxpkg import docker</code></div>
                 <p class="plugin-summary-description">Pulls Docker images and writes a local shim wrapper that runs docker run .... Binary version is parsed from the image tag, so semver-like tags work best. Pass image refs as install_args.</p>
                 <div class="plugin-subline">
                   <span class="chip">System / OS</span>
@@ -2224,8 +2224,8 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
               <p class="plugin-modal-description">Pulls Docker images and writes a local shim wrapper that runs docker run .... Binary version is parsed from the image tag, so semver-like tags work best. Pass image refs as install_args.</p>
 
               <div class="actions">
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/binprovider_docker.py" target="_blank" rel="noreferrer">Source on GitHub</a>
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg#readme" target="_blank" rel="noreferrer">README</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg/blob/main/abxpkg/binprovider_docker.py" target="_blank" rel="noreferrer">Source on GitHub</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg#readme" target="_blank" rel="noreferrer">README</a>
               </div>
 
               <div class="provider-meta-grid">
@@ -2243,7 +2243,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                 </article>
                 <article>
                   <span>Source file</span>
-                  <code>abx_pkg/binprovider_docker.py</code>
+                  <code>abxpkg/binprovider_docker.py</code>
                 </article>
               </div>
 
@@ -2254,9 +2254,9 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   <button type="button" class="run-tab" data-run-tab="env">CLI (env var)</button>
                   <button type="button" class="run-tab" data-run-tab="python">Python</button>
                 </div>
-                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abx-pkg --binproviders=docker install hello-world</code></pre>
-                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABX_PKG_BINPROVIDERS=docker abx-pkg install hello-world</code></pre>
-                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abx_pkg import Binary, docker
+                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abxpkg --binproviders=docker install hello-world</code></pre>
+                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABXPKG_BINPROVIDERS=docker abxpkg install hello-world</code></pre>
+                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abxpkg import Binary, docker
 
 bin = Binary(name=&#39;hello-world&#39;, binproviders=[docker]).install()
 bin.exec(cmd=[&#39;--version&#39;])</code></pre>
@@ -2383,7 +2383,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   </thead>
                   <tbody>
                     <tr>
-                      <td><code>ABX_PKG_DOCKER_ROOT</code></td>
+                      <td><code>ABXPKG_DOCKER_ROOT</code></td>
                       <td><code>unset</code></td>
                       <td><small>Overrides docker_root / install_root.</small></td>
                     </tr>
@@ -2395,17 +2395,17 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="nix"
             class="plugin-card plugin-card--system"
-            data-search="nix nixprovider installs packages via nix profile install using flakes. set nix_profile for a custom profile, nix_state_dir for isolated state/cache. default install arg is nixpkgs#&lt;bin_name&gt;. system system / os nix flakes hermetic-support name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout nix_state_dir nix_install_args abx_pkg_nix_root abx_pkg_nix_profile"
+            data-search="nix nixprovider installs packages via nix profile install using flakes. set nix_profile for a custom profile, nix_state_dir for isolated state/cache. default install arg is nixpkgs#&lt;bin_name&gt;. system system / os nix flakes hermetic-support name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout nix_state_dir nix_install_args abxpkg_nix_root abxpkg_nix_profile"
             data-hero-plugin="nix"
-            data-hero-cli-command="abx-pkg --binproviders=nix install ffmpeg"
-            data-hero-python-command="from abx_pkg import Binary, nix&#10;bin = Binary(name=&#34;ffmpeg&#34;, binproviders=[nix]).install()"
+            data-hero-cli-command="abxpkg --binproviders=nix install ffmpeg"
+            data-hero-python-command="from abxpkg import Binary, nix&#10;bin = Binary(name=&#34;ffmpeg&#34;, binproviders=[nix]).install()"
           >
             <summary>
               <div class="plugin-main">
                 <div class="plugin-title-row">
                   <h2><span class="provider-hero-emoji">❄️</span>NixProvider</h2>
                 </div>
-                <div class="plugin-slug"><code>nix</code> &middot; <code>from abx_pkg import nix</code></div>
+                <div class="plugin-slug"><code>nix</code> &middot; <code>from abxpkg import nix</code></div>
                 <p class="plugin-summary-description">Installs packages via nix profile install using flakes. Set nix_profile for a custom profile, nix_state_dir for isolated state/cache. Default install arg is nixpkgs#&lt;bin_name&gt;.</p>
                 <div class="plugin-subline">
                   <span class="chip">System / OS</span>
@@ -2425,8 +2425,8 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
               <p class="plugin-modal-description">Installs packages via nix profile install using flakes. Set nix_profile for a custom profile, nix_state_dir for isolated state/cache. Default install arg is nixpkgs#&lt;bin_name&gt;.</p>
 
               <div class="actions">
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/binprovider_nix.py" target="_blank" rel="noreferrer">Source on GitHub</a>
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg#readme" target="_blank" rel="noreferrer">README</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg/blob/main/abxpkg/binprovider_nix.py" target="_blank" rel="noreferrer">Source on GitHub</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg#readme" target="_blank" rel="noreferrer">README</a>
               </div>
 
               <div class="provider-meta-grid">
@@ -2444,7 +2444,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                 </article>
                 <article>
                   <span>Source file</span>
-                  <code>abx_pkg/binprovider_nix.py</code>
+                  <code>abxpkg/binprovider_nix.py</code>
                 </article>
               </div>
 
@@ -2455,9 +2455,9 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   <button type="button" class="run-tab" data-run-tab="env">CLI (env var)</button>
                   <button type="button" class="run-tab" data-run-tab="python">Python</button>
                 </div>
-                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abx-pkg --binproviders=nix install ffmpeg</code></pre>
-                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABX_PKG_BINPROVIDERS=nix abx-pkg install ffmpeg</code></pre>
-                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abx_pkg import Binary, nix
+                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abxpkg --binproviders=nix install ffmpeg</code></pre>
+                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABXPKG_BINPROVIDERS=nix abxpkg install ffmpeg</code></pre>
+                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abxpkg import Binary, nix
 
 bin = Binary(name=&#39;ffmpeg&#39;, binproviders=[nix]).install()
 bin.exec(cmd=[&#39;--version&#39;])</code></pre>
@@ -2591,12 +2591,12 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   </thead>
                   <tbody>
                     <tr>
-                      <td><code>ABX_PKG_NIX_ROOT</code></td>
+                      <td><code>ABXPKG_NIX_ROOT</code></td>
                       <td><code>unset</code></td>
                       <td><small>Overrides nix_profile path.</small></td>
                     </tr>
                     <tr>
-                      <td><code>ABX_PKG_NIX_PROFILE</code></td>
+                      <td><code>ABXPKG_NIX_PROFILE</code></td>
                       <td><code>unset</code></td>
                       <td><small>Legacy alias for nix_profile.</small></td>
                     </tr>
@@ -2614,17 +2614,17 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="bun"
             class="plugin-card plugin-card--language"
-            data-search="bun bunprovider installs javascript packages via bun. set bun_prefix to mirror $bun_install. supports both min_release_age (bun 1.3+) and postinstall_scripts=false via --ignore-scripts. language language ecosystem javascript prefix-support security-controls name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout cache_dir cache_arg bun_install_args abx_pkg_bun_root bun_binary"
+            data-search="bun bunprovider installs javascript packages via bun. set bun_prefix to mirror $bun_install. supports both min_release_age (bun 1.3+) and postinstall_scripts=false via --ignore-scripts. language language ecosystem javascript prefix-support security-controls name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout cache_dir cache_arg bun_install_args abxpkg_bun_root bun_binary"
             data-hero-plugin="bun"
-            data-hero-cli-command="abx-pkg --binproviders=bun install prettier"
-            data-hero-python-command="from abx_pkg import Binary, bun&#10;bin = Binary(name=&#34;prettier&#34;, binproviders=[bun]).install()"
+            data-hero-cli-command="abxpkg --binproviders=bun install prettier"
+            data-hero-python-command="from abxpkg import Binary, bun&#10;bin = Binary(name=&#34;prettier&#34;, binproviders=[bun]).install()"
           >
             <summary>
               <div class="plugin-main">
                 <div class="plugin-title-row">
                   <h2><span class="provider-hero-emoji">🥖</span>BunProvider</h2>
                 </div>
-                <div class="plugin-slug"><code>bun</code> &middot; <code>from abx_pkg import bun</code></div>
+                <div class="plugin-slug"><code>bun</code> &middot; <code>from abxpkg import bun</code></div>
                 <p class="plugin-summary-description">Installs JavaScript packages via Bun. Set bun_prefix to mirror $BUN_INSTALL. Supports both min_release_age (Bun 1.3+) and postinstall_scripts=False via --ignore-scripts.</p>
                 <div class="plugin-subline">
                   <span class="chip">Language Ecosystem</span>
@@ -2644,8 +2644,8 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
               <p class="plugin-modal-description">Installs JavaScript packages via Bun. Set bun_prefix to mirror $BUN_INSTALL. Supports both min_release_age (Bun 1.3+) and postinstall_scripts=False via --ignore-scripts.</p>
 
               <div class="actions">
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/binprovider_bun.py" target="_blank" rel="noreferrer">Source on GitHub</a>
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg#readme" target="_blank" rel="noreferrer">README</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg/blob/main/abxpkg/binprovider_bun.py" target="_blank" rel="noreferrer">Source on GitHub</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg#readme" target="_blank" rel="noreferrer">README</a>
               </div>
 
               <div class="provider-meta-grid">
@@ -2663,7 +2663,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                 </article>
                 <article>
                   <span>Source file</span>
-                  <code>abx_pkg/binprovider_bun.py</code>
+                  <code>abxpkg/binprovider_bun.py</code>
                 </article>
               </div>
 
@@ -2674,9 +2674,9 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   <button type="button" class="run-tab" data-run-tab="env">CLI (env var)</button>
                   <button type="button" class="run-tab" data-run-tab="python">Python</button>
                 </div>
-                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abx-pkg --binproviders=bun install prettier</code></pre>
-                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABX_PKG_BINPROVIDERS=bun abx-pkg install prettier</code></pre>
-                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abx_pkg import Binary, bun
+                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abxpkg --binproviders=bun install prettier</code></pre>
+                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABXPKG_BINPROVIDERS=bun abxpkg install prettier</code></pre>
+                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abxpkg import Binary, bun
 
 bin = Binary(name=&#39;prettier&#39;, binproviders=[bun]).install()
 bin.exec(cmd=[&#39;--version&#39;])</code></pre>
@@ -2817,7 +2817,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   </thead>
                   <tbody>
                     <tr>
-                      <td><code>ABX_PKG_BUN_ROOT</code></td>
+                      <td><code>ABXPKG_BUN_ROOT</code></td>
                       <td><code>unset</code></td>
                       <td><small>Overrides bun_prefix path.</small></td>
                     </tr>
@@ -2834,17 +2834,17 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="cargo"
             class="plugin-card plugin-card--language"
-            data-search="cargo cargoprovider installs rust crates via cargo install. set cargo_root or use cargo_home (default $cargo_home or ~/.cargo). passes --locked by default; min_version becomes cargo install --version &gt;=... language language ecosystem rust hermetic-support name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout cargo_home cargo_install_args abx_pkg_cargo_root cargo_home"
+            data-search="cargo cargoprovider installs rust crates via cargo install. set cargo_root or use cargo_home (default $cargo_home or ~/.cargo). passes --locked by default; min_version becomes cargo install --version &gt;=... language language ecosystem rust hermetic-support name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout cargo_home cargo_install_args abxpkg_cargo_root cargo_home"
             data-hero-plugin="cargo"
-            data-hero-cli-command="abx-pkg --binproviders=cargo install ripgrep"
-            data-hero-python-command="from abx_pkg import Binary, cargo&#10;bin = Binary(name=&#34;ripgrep&#34;, binproviders=[cargo]).install()"
+            data-hero-cli-command="abxpkg --binproviders=cargo install ripgrep"
+            data-hero-python-command="from abxpkg import Binary, cargo&#10;bin = Binary(name=&#34;ripgrep&#34;, binproviders=[cargo]).install()"
           >
             <summary>
               <div class="plugin-main">
                 <div class="plugin-title-row">
                   <h2><span class="provider-hero-emoji">🦀</span>CargoProvider</h2>
                 </div>
-                <div class="plugin-slug"><code>cargo</code> &middot; <code>from abx_pkg import cargo</code></div>
+                <div class="plugin-slug"><code>cargo</code> &middot; <code>from abxpkg import cargo</code></div>
                 <p class="plugin-summary-description">Installs Rust crates via cargo install. Set cargo_root or use cargo_home (default $CARGO_HOME or ~/.cargo). Passes --locked by default; min_version becomes cargo install --version &gt;=...</p>
                 <div class="plugin-subline">
                   <span class="chip">Language Ecosystem</span>
@@ -2863,8 +2863,8 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
               <p class="plugin-modal-description">Installs Rust crates via cargo install. Set cargo_root or use cargo_home (default $CARGO_HOME or ~/.cargo). Passes --locked by default; min_version becomes cargo install --version &gt;=...</p>
 
               <div class="actions">
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/binprovider_cargo.py" target="_blank" rel="noreferrer">Source on GitHub</a>
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg#readme" target="_blank" rel="noreferrer">README</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg/blob/main/abxpkg/binprovider_cargo.py" target="_blank" rel="noreferrer">Source on GitHub</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg#readme" target="_blank" rel="noreferrer">README</a>
               </div>
 
               <div class="provider-meta-grid">
@@ -2882,7 +2882,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                 </article>
                 <article>
                   <span>Source file</span>
-                  <code>abx_pkg/binprovider_cargo.py</code>
+                  <code>abxpkg/binprovider_cargo.py</code>
                 </article>
               </div>
 
@@ -2893,9 +2893,9 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   <button type="button" class="run-tab" data-run-tab="env">CLI (env var)</button>
                   <button type="button" class="run-tab" data-run-tab="python">Python</button>
                 </div>
-                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abx-pkg --binproviders=cargo install ripgrep</code></pre>
-                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABX_PKG_BINPROVIDERS=cargo abx-pkg install ripgrep</code></pre>
-                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abx_pkg import Binary, cargo
+                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abxpkg --binproviders=cargo install ripgrep</code></pre>
+                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABXPKG_BINPROVIDERS=cargo abxpkg install ripgrep</code></pre>
+                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abxpkg import Binary, cargo
 
 bin = Binary(name=&#39;ripgrep&#39;, binproviders=[cargo]).install()
 bin.exec(cmd=[&#39;--version&#39;])</code></pre>
@@ -3029,7 +3029,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   </thead>
                   <tbody>
                     <tr>
-                      <td><code>ABX_PKG_CARGO_ROOT</code></td>
+                      <td><code>ABXPKG_CARGO_ROOT</code></td>
                       <td><code>unset</code></td>
                       <td><small>Overrides cargo_root path.</small></td>
                     </tr>
@@ -3046,17 +3046,17 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="deno"
             class="plugin-card plugin-card--language"
-            data-search="deno denoprovider installs javascript/typescript packages via deno. mirrors $deno_install_root. deno&#39;s npm lifecycle scripts are opt-in (reverse of npm). supports min_release_age on deno 2.5+. language language ecosystem javascript typescript security-controls name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout deno_dir cache_dir deno_install_args deno_default_scheme abx_pkg_deno_root deno_binary"
+            data-search="deno denoprovider installs javascript/typescript packages via deno. mirrors $deno_install_root. deno&#39;s npm lifecycle scripts are opt-in (reverse of npm). supports min_release_age on deno 2.5+. language language ecosystem javascript typescript security-controls name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout deno_dir cache_dir deno_install_args deno_default_scheme abxpkg_deno_root deno_binary"
             data-hero-plugin="deno"
-            data-hero-cli-command="abx-pkg --binproviders=deno install prettier"
-            data-hero-python-command="from abx_pkg import Binary, deno&#10;bin = Binary(name=&#34;prettier&#34;, binproviders=[deno]).install()"
+            data-hero-cli-command="abxpkg --binproviders=deno install prettier"
+            data-hero-python-command="from abxpkg import Binary, deno&#10;bin = Binary(name=&#34;prettier&#34;, binproviders=[deno]).install()"
           >
             <summary>
               <div class="plugin-main">
                 <div class="plugin-title-row">
                   <h2><span class="provider-hero-emoji">🦕</span>DenoProvider</h2>
                 </div>
-                <div class="plugin-slug"><code>deno</code> &middot; <code>from abx_pkg import deno</code></div>
+                <div class="plugin-slug"><code>deno</code> &middot; <code>from abxpkg import deno</code></div>
                 <p class="plugin-summary-description">Installs JavaScript/TypeScript packages via Deno. Mirrors $DENO_INSTALL_ROOT. Deno&#39;s npm lifecycle scripts are opt-in (reverse of npm). Supports min_release_age on Deno 2.5+.</p>
                 <div class="plugin-subline">
                   <span class="chip">Language Ecosystem</span>
@@ -3076,8 +3076,8 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
               <p class="plugin-modal-description">Installs JavaScript/TypeScript packages via Deno. Mirrors $DENO_INSTALL_ROOT. Deno&#39;s npm lifecycle scripts are opt-in (reverse of npm). Supports min_release_age on Deno 2.5+.</p>
 
               <div class="actions">
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/binprovider_deno.py" target="_blank" rel="noreferrer">Source on GitHub</a>
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg#readme" target="_blank" rel="noreferrer">README</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg/blob/main/abxpkg/binprovider_deno.py" target="_blank" rel="noreferrer">Source on GitHub</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg#readme" target="_blank" rel="noreferrer">README</a>
               </div>
 
               <div class="provider-meta-grid">
@@ -3095,7 +3095,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                 </article>
                 <article>
                   <span>Source file</span>
-                  <code>abx_pkg/binprovider_deno.py</code>
+                  <code>abxpkg/binprovider_deno.py</code>
                 </article>
               </div>
 
@@ -3106,9 +3106,9 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   <button type="button" class="run-tab" data-run-tab="env">CLI (env var)</button>
                   <button type="button" class="run-tab" data-run-tab="python">Python</button>
                 </div>
-                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abx-pkg --binproviders=deno install prettier</code></pre>
-                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABX_PKG_BINPROVIDERS=deno abx-pkg install prettier</code></pre>
-                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abx_pkg import Binary, deno
+                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abxpkg --binproviders=deno install prettier</code></pre>
+                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABXPKG_BINPROVIDERS=deno abxpkg install prettier</code></pre>
+                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abxpkg import Binary, deno
 
 bin = Binary(name=&#39;prettier&#39;, binproviders=[deno]).install()
 bin.exec(cmd=[&#39;--version&#39;])</code></pre>
@@ -3256,7 +3256,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   </thead>
                   <tbody>
                     <tr>
-                      <td><code>ABX_PKG_DENO_ROOT</code></td>
+                      <td><code>ABXPKG_DENO_ROOT</code></td>
                       <td><code>unset</code></td>
                       <td><small>Overrides deno_root path.</small></td>
                     </tr>
@@ -3273,17 +3273,17 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="gem"
             class="plugin-card plugin-card--language"
-            data-search="gem gemprovider installs ruby gems via gem install. set gem_home / gem_bindir for hermetic installs. generated wrapper scripts are patched to activate the configured gem_home instead of the host default. language language ecosystem ruby hermetic-support name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout gem_install_args abx_pkg_gem_root gem_home"
+            data-search="gem gemprovider installs ruby gems via gem install. set gem_home / gem_bindir for hermetic installs. generated wrapper scripts are patched to activate the configured gem_home instead of the host default. language language ecosystem ruby hermetic-support name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout gem_install_args abxpkg_gem_root gem_home"
             data-hero-plugin="gem"
-            data-hero-cli-command="abx-pkg --binproviders=gem install jekyll"
-            data-hero-python-command="from abx_pkg import Binary, gem&#10;bin = Binary(name=&#34;jekyll&#34;, binproviders=[gem]).install()"
+            data-hero-cli-command="abxpkg --binproviders=gem install jekyll"
+            data-hero-python-command="from abxpkg import Binary, gem&#10;bin = Binary(name=&#34;jekyll&#34;, binproviders=[gem]).install()"
           >
             <summary>
               <div class="plugin-main">
                 <div class="plugin-title-row">
                   <h2><span class="provider-hero-emoji">💎</span>GemProvider</h2>
                 </div>
-                <div class="plugin-slug"><code>gem</code> &middot; <code>from abx_pkg import gem</code></div>
+                <div class="plugin-slug"><code>gem</code> &middot; <code>from abxpkg import gem</code></div>
                 <p class="plugin-summary-description">Installs Ruby gems via gem install. Set gem_home / gem_bindir for hermetic installs. Generated wrapper scripts are patched to activate the configured GEM_HOME instead of the host default.</p>
                 <div class="plugin-subline">
                   <span class="chip">Language Ecosystem</span>
@@ -3302,8 +3302,8 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
               <p class="plugin-modal-description">Installs Ruby gems via gem install. Set gem_home / gem_bindir for hermetic installs. Generated wrapper scripts are patched to activate the configured GEM_HOME instead of the host default.</p>
 
               <div class="actions">
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/binprovider_gem.py" target="_blank" rel="noreferrer">Source on GitHub</a>
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg#readme" target="_blank" rel="noreferrer">README</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg/blob/main/abxpkg/binprovider_gem.py" target="_blank" rel="noreferrer">Source on GitHub</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg#readme" target="_blank" rel="noreferrer">README</a>
               </div>
 
               <div class="provider-meta-grid">
@@ -3321,7 +3321,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                 </article>
                 <article>
                   <span>Source file</span>
-                  <code>abx_pkg/binprovider_gem.py</code>
+                  <code>abxpkg/binprovider_gem.py</code>
                 </article>
               </div>
 
@@ -3332,9 +3332,9 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   <button type="button" class="run-tab" data-run-tab="env">CLI (env var)</button>
                   <button type="button" class="run-tab" data-run-tab="python">Python</button>
                 </div>
-                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abx-pkg --binproviders=gem install jekyll</code></pre>
-                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABX_PKG_BINPROVIDERS=gem abx-pkg install jekyll</code></pre>
-                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abx_pkg import Binary, gem
+                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abxpkg --binproviders=gem install jekyll</code></pre>
+                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABXPKG_BINPROVIDERS=gem abxpkg install jekyll</code></pre>
+                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abxpkg import Binary, gem
 
 bin = Binary(name=&#39;jekyll&#39;, binproviders=[gem]).install()
 bin.exec(cmd=[&#39;--version&#39;])</code></pre>
@@ -3461,7 +3461,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   </thead>
                   <tbody>
                     <tr>
-                      <td><code>ABX_PKG_GEM_ROOT</code></td>
+                      <td><code>ABXPKG_GEM_ROOT</code></td>
                       <td><code>unset</code></td>
                       <td><small>Overrides gem_home path.</small></td>
                     </tr>
@@ -3478,17 +3478,17 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="goget"
             class="plugin-card plugin-card--language"
-            data-search="goget gogetprovider installs go binaries via go install. set gopath or gobin for a hermetic workspace. default install arg is &lt;bin_name&gt;@latest. note: the provider name is goget, not go_get. language language ecosystem go hermetic-support name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout go_install_args abx_pkg_goget_root gopath"
+            data-search="goget gogetprovider installs go binaries via go install. set gopath or gobin for a hermetic workspace. default install arg is &lt;bin_name&gt;@latest. note: the provider name is goget, not go_get. language language ecosystem go hermetic-support name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout go_install_args abxpkg_goget_root gopath"
             data-hero-plugin="goget"
-            data-hero-cli-command="abx-pkg --binproviders=goget install golangci-lint"
-            data-hero-python-command="from abx_pkg import Binary, goget&#10;bin = Binary(name=&#34;golangci-lint&#34;, binproviders=[goget]).install()"
+            data-hero-cli-command="abxpkg --binproviders=goget install golangci-lint"
+            data-hero-python-command="from abxpkg import Binary, goget&#10;bin = Binary(name=&#34;golangci-lint&#34;, binproviders=[goget]).install()"
           >
             <summary>
               <div class="plugin-main">
                 <div class="plugin-title-row">
                   <h2><span class="provider-hero-emoji">🐹</span>GoGetProvider</h2>
                 </div>
-                <div class="plugin-slug"><code>goget</code> &middot; <code>from abx_pkg import goget</code></div>
+                <div class="plugin-slug"><code>goget</code> &middot; <code>from abxpkg import goget</code></div>
                 <p class="plugin-summary-description">Installs Go binaries via go install. Set gopath or gobin for a hermetic workspace. Default install arg is &lt;bin_name&gt;@latest. Note: the provider name is goget, not go_get.</p>
                 <div class="plugin-subline">
                   <span class="chip">Language Ecosystem</span>
@@ -3507,8 +3507,8 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
               <p class="plugin-modal-description">Installs Go binaries via go install. Set gopath or gobin for a hermetic workspace. Default install arg is &lt;bin_name&gt;@latest. Note: the provider name is goget, not go_get.</p>
 
               <div class="actions">
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/binprovider_goget.py" target="_blank" rel="noreferrer">Source on GitHub</a>
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg#readme" target="_blank" rel="noreferrer">README</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg/blob/main/abxpkg/binprovider_goget.py" target="_blank" rel="noreferrer">Source on GitHub</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg#readme" target="_blank" rel="noreferrer">README</a>
               </div>
 
               <div class="provider-meta-grid">
@@ -3526,7 +3526,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                 </article>
                 <article>
                   <span>Source file</span>
-                  <code>abx_pkg/binprovider_goget.py</code>
+                  <code>abxpkg/binprovider_goget.py</code>
                 </article>
               </div>
 
@@ -3537,9 +3537,9 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   <button type="button" class="run-tab" data-run-tab="env">CLI (env var)</button>
                   <button type="button" class="run-tab" data-run-tab="python">Python</button>
                 </div>
-                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abx-pkg --binproviders=goget install golangci-lint</code></pre>
-                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABX_PKG_BINPROVIDERS=goget abx-pkg install golangci-lint</code></pre>
-                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abx_pkg import Binary, goget
+                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abxpkg --binproviders=goget install golangci-lint</code></pre>
+                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABXPKG_BINPROVIDERS=goget abxpkg install golangci-lint</code></pre>
+                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abxpkg import Binary, goget
 
 bin = Binary(name=&#39;golangci-lint&#39;, binproviders=[goget]).install()
 bin.exec(cmd=[&#39;--version&#39;])</code></pre>
@@ -3666,7 +3666,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   </thead>
                   <tbody>
                     <tr>
-                      <td><code>ABX_PKG_GOGET_ROOT</code></td>
+                      <td><code>ABXPKG_GOGET_ROOT</code></td>
                       <td><code>unset</code></td>
                       <td><small>Overrides gopath.</small></td>
                     </tr>
@@ -3683,17 +3683,17 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="npm"
             class="plugin-card plugin-card--language"
-            data-search="npm npmprovider installs javascript packages via npm. set npm_prefix for a hermetic prefix under &lt;prefix&gt;/node_modules/.bin. supports both postinstall_scripts=false and min_release_age (on npm builds that ship --min-release-age). language language ecosystem javascript prefix-support security-controls name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout cache_dir cache_arg npm_install_args abx_pkg_npm_root npm_binary"
+            data-search="npm npmprovider installs javascript packages via npm. set npm_prefix for a hermetic prefix under &lt;prefix&gt;/node_modules/.bin. supports both postinstall_scripts=false and min_release_age (on npm builds that ship --min-release-age). language language ecosystem javascript prefix-support security-controls name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout cache_dir cache_arg npm_install_args abxpkg_npm_root npm_binary"
             data-hero-plugin="npm"
-            data-hero-cli-command="abx-pkg --binproviders=npm install prettier"
-            data-hero-python-command="from abx_pkg import Binary, npm&#10;bin = Binary(name=&#34;prettier&#34;, binproviders=[npm]).install()"
+            data-hero-cli-command="abxpkg --binproviders=npm install prettier"
+            data-hero-python-command="from abxpkg import Binary, npm&#10;bin = Binary(name=&#34;prettier&#34;, binproviders=[npm]).install()"
           >
             <summary>
               <div class="plugin-main">
                 <div class="plugin-title-row">
                   <h2><span class="provider-hero-emoji">📦</span>NpmProvider</h2>
                 </div>
-                <div class="plugin-slug"><code>npm</code> &middot; <code>from abx_pkg import npm</code></div>
+                <div class="plugin-slug"><code>npm</code> &middot; <code>from abxpkg import npm</code></div>
                 <p class="plugin-summary-description">Installs JavaScript packages via npm. Set npm_prefix for a hermetic prefix under &lt;prefix&gt;/node_modules/.bin. Supports both postinstall_scripts=False and min_release_age (on npm builds that ship --min-release-age).</p>
                 <div class="plugin-subline">
                   <span class="chip">Language Ecosystem</span>
@@ -3713,8 +3713,8 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
               <p class="plugin-modal-description">Installs JavaScript packages via npm. Set npm_prefix for a hermetic prefix under &lt;prefix&gt;/node_modules/.bin. Supports both postinstall_scripts=False and min_release_age (on npm builds that ship --min-release-age).</p>
 
               <div class="actions">
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/binprovider_npm.py" target="_blank" rel="noreferrer">Source on GitHub</a>
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg#readme" target="_blank" rel="noreferrer">README</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg/blob/main/abxpkg/binprovider_npm.py" target="_blank" rel="noreferrer">Source on GitHub</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg#readme" target="_blank" rel="noreferrer">README</a>
               </div>
 
               <div class="provider-meta-grid">
@@ -3732,7 +3732,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                 </article>
                 <article>
                   <span>Source file</span>
-                  <code>abx_pkg/binprovider_npm.py</code>
+                  <code>abxpkg/binprovider_npm.py</code>
                 </article>
               </div>
 
@@ -3743,9 +3743,9 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   <button type="button" class="run-tab" data-run-tab="env">CLI (env var)</button>
                   <button type="button" class="run-tab" data-run-tab="python">Python</button>
                 </div>
-                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abx-pkg --binproviders=npm install prettier</code></pre>
-                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABX_PKG_BINPROVIDERS=npm abx-pkg install prettier</code></pre>
-                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abx_pkg import Binary, npm
+                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abxpkg --binproviders=npm install prettier</code></pre>
+                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABXPKG_BINPROVIDERS=npm abxpkg install prettier</code></pre>
+                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abxpkg import Binary, npm
 
 bin = Binary(name=&#39;prettier&#39;, binproviders=[npm]).install()
 bin.exec(cmd=[&#39;--version&#39;])</code></pre>
@@ -3886,7 +3886,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   </thead>
                   <tbody>
                     <tr>
-                      <td><code>ABX_PKG_NPM_ROOT</code></td>
+                      <td><code>ABXPKG_NPM_ROOT</code></td>
                       <td><code>unset</code></td>
                       <td><small>Overrides npm_prefix path.</small></td>
                     </tr>
@@ -3903,17 +3903,17 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="pip"
             class="plugin-card plugin-card--language"
-            data-search="pip pipprovider installs python wheels via pip. set pip_venv for a hermetic venv (auto-created on first use). honors pip_binary. supports wheels-only installs via postinstall_scripts=false. language language ecosystem python venv-support security-controls name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout cache_dir cache_arg pip_install_args pip_bootstrap_packages abx_pkg_pip_root pip_binary"
+            data-search="pip pipprovider installs python wheels via pip. set pip_venv for a hermetic venv (auto-created on first use). honors pip_binary. supports wheels-only installs via postinstall_scripts=false. language language ecosystem python venv-support security-controls name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout cache_dir cache_arg pip_install_args pip_bootstrap_packages abxpkg_pip_root pip_binary"
             data-hero-plugin="pip"
-            data-hero-cli-command="abx-pkg --binproviders=pip install yt-dlp"
-            data-hero-python-command="from abx_pkg import Binary, pip&#10;bin = Binary(name=&#34;yt-dlp&#34;, binproviders=[pip]).install()"
+            data-hero-cli-command="abxpkg --binproviders=pip install yt-dlp"
+            data-hero-python-command="from abxpkg import Binary, pip&#10;bin = Binary(name=&#34;yt-dlp&#34;, binproviders=[pip]).install()"
           >
             <summary>
               <div class="plugin-main">
                 <div class="plugin-title-row">
                   <h2><span class="provider-hero-emoji">🐍</span>PipProvider</h2>
                 </div>
-                <div class="plugin-slug"><code>pip</code> &middot; <code>from abx_pkg import pip</code></div>
+                <div class="plugin-slug"><code>pip</code> &middot; <code>from abxpkg import pip</code></div>
                 <p class="plugin-summary-description">Installs Python wheels via pip. Set pip_venv for a hermetic venv (auto-created on first use). Honors PIP_BINARY. Supports wheels-only installs via postinstall_scripts=False.</p>
                 <div class="plugin-subline">
                   <span class="chip">Language Ecosystem</span>
@@ -3933,8 +3933,8 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
               <p class="plugin-modal-description">Installs Python wheels via pip. Set pip_venv for a hermetic venv (auto-created on first use). Honors PIP_BINARY. Supports wheels-only installs via postinstall_scripts=False.</p>
 
               <div class="actions">
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/binprovider_pip.py" target="_blank" rel="noreferrer">Source on GitHub</a>
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg#readme" target="_blank" rel="noreferrer">README</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg/blob/main/abxpkg/binprovider_pip.py" target="_blank" rel="noreferrer">Source on GitHub</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg#readme" target="_blank" rel="noreferrer">README</a>
               </div>
 
               <div class="provider-meta-grid">
@@ -3952,7 +3952,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                 </article>
                 <article>
                   <span>Source file</span>
-                  <code>abx_pkg/binprovider_pip.py</code>
+                  <code>abxpkg/binprovider_pip.py</code>
                 </article>
               </div>
 
@@ -3963,9 +3963,9 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   <button type="button" class="run-tab" data-run-tab="env">CLI (env var)</button>
                   <button type="button" class="run-tab" data-run-tab="python">Python</button>
                 </div>
-                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abx-pkg --binproviders=pip install yt-dlp</code></pre>
-                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABX_PKG_BINPROVIDERS=pip abx-pkg install yt-dlp</code></pre>
-                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abx_pkg import Binary, pip
+                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abxpkg --binproviders=pip install yt-dlp</code></pre>
+                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABXPKG_BINPROVIDERS=pip abxpkg install yt-dlp</code></pre>
+                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abxpkg import Binary, pip
 
 bin = Binary(name=&#39;yt-dlp&#39;, binproviders=[pip]).install()
 bin.exec(cmd=[&#39;--version&#39;])</code></pre>
@@ -4113,7 +4113,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   </thead>
                   <tbody>
                     <tr>
-                      <td><code>ABX_PKG_PIP_ROOT</code></td>
+                      <td><code>ABXPKG_PIP_ROOT</code></td>
                       <td><code>unset</code></td>
                       <td><small>Overrides pip_venv path.</small></td>
                     </tr>
@@ -4130,17 +4130,17 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="pnpm"
             class="plugin-card plugin-card--language"
-            data-search="pnpm pnpmprovider installs javascript packages via pnpm. set pnpm_prefix for a hermetic prefix. pnpm_home is auto-populated so pnpm add -g works without polluting the user&#39;s shell config. requires pnpm 10.16+ for min_release_age. language language ecosystem javascript prefix-support security-controls name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout cache_dir cache_arg pnpm_install_args abx_pkg_pnpm_root pnpm_binary"
+            data-search="pnpm pnpmprovider installs javascript packages via pnpm. set pnpm_prefix for a hermetic prefix. pnpm_home is auto-populated so pnpm add -g works without polluting the user&#39;s shell config. requires pnpm 10.16+ for min_release_age. language language ecosystem javascript prefix-support security-controls name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout cache_dir cache_arg pnpm_install_args abxpkg_pnpm_root pnpm_binary"
             data-hero-plugin="pnpm"
-            data-hero-cli-command="abx-pkg --binproviders=pnpm install prettier"
-            data-hero-python-command="from abx_pkg import Binary, pnpm&#10;bin = Binary(name=&#34;prettier&#34;, binproviders=[pnpm]).install()"
+            data-hero-cli-command="abxpkg --binproviders=pnpm install prettier"
+            data-hero-python-command="from abxpkg import Binary, pnpm&#10;bin = Binary(name=&#34;prettier&#34;, binproviders=[pnpm]).install()"
           >
             <summary>
               <div class="plugin-main">
                 <div class="plugin-title-row">
                   <h2><span class="provider-hero-emoji">📦</span>PnpmProvider</h2>
                 </div>
-                <div class="plugin-slug"><code>pnpm</code> &middot; <code>from abx_pkg import pnpm</code></div>
+                <div class="plugin-slug"><code>pnpm</code> &middot; <code>from abxpkg import pnpm</code></div>
                 <p class="plugin-summary-description">Installs JavaScript packages via pnpm. Set pnpm_prefix for a hermetic prefix. PNPM_HOME is auto-populated so pnpm add -g works without polluting the user&#39;s shell config. Requires pnpm 10.16+ for min_release_age.</p>
                 <div class="plugin-subline">
                   <span class="chip">Language Ecosystem</span>
@@ -4160,8 +4160,8 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
               <p class="plugin-modal-description">Installs JavaScript packages via pnpm. Set pnpm_prefix for a hermetic prefix. PNPM_HOME is auto-populated so pnpm add -g works without polluting the user&#39;s shell config. Requires pnpm 10.16+ for min_release_age.</p>
 
               <div class="actions">
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/binprovider_pnpm.py" target="_blank" rel="noreferrer">Source on GitHub</a>
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg#readme" target="_blank" rel="noreferrer">README</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg/blob/main/abxpkg/binprovider_pnpm.py" target="_blank" rel="noreferrer">Source on GitHub</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg#readme" target="_blank" rel="noreferrer">README</a>
               </div>
 
               <div class="provider-meta-grid">
@@ -4179,7 +4179,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                 </article>
                 <article>
                   <span>Source file</span>
-                  <code>abx_pkg/binprovider_pnpm.py</code>
+                  <code>abxpkg/binprovider_pnpm.py</code>
                 </article>
               </div>
 
@@ -4190,9 +4190,9 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   <button type="button" class="run-tab" data-run-tab="env">CLI (env var)</button>
                   <button type="button" class="run-tab" data-run-tab="python">Python</button>
                 </div>
-                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abx-pkg --binproviders=pnpm install prettier</code></pre>
-                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABX_PKG_BINPROVIDERS=pnpm abx-pkg install prettier</code></pre>
-                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abx_pkg import Binary, pnpm
+                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abxpkg --binproviders=pnpm install prettier</code></pre>
+                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABXPKG_BINPROVIDERS=pnpm abxpkg install prettier</code></pre>
+                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abxpkg import Binary, pnpm
 
 bin = Binary(name=&#39;prettier&#39;, binproviders=[pnpm]).install()
 bin.exec(cmd=[&#39;--version&#39;])</code></pre>
@@ -4333,7 +4333,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   </thead>
                   <tbody>
                     <tr>
-                      <td><code>ABX_PKG_PNPM_ROOT</code></td>
+                      <td><code>ABXPKG_PNPM_ROOT</code></td>
                       <td><code>unset</code></td>
                       <td><small>Overrides pnpm_prefix path.</small></td>
                     </tr>
@@ -4350,17 +4350,17 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="uv"
             class="plugin-card plugin-card--language"
-            data-search="uv uvprovider installs python packages via uv. two modes: hermetic venv mode (install_root=path(...)) or global tool mode (uv tool install). full support for postinstall_scripts=false and min_release_age. language language ecosystem python venv-support tool-mode security-controls name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout uv_tool_dir cache_dir cache_arg uv_install_args abx_pkg_uv_root uv_binary"
+            data-search="uv uvprovider installs python packages via uv. two modes: hermetic venv mode (install_root=path(...)) or global tool mode (uv tool install). full support for postinstall_scripts=false and min_release_age. language language ecosystem python venv-support tool-mode security-controls name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout uv_tool_dir cache_dir cache_arg uv_install_args abxpkg_uv_root uv_binary"
             data-hero-plugin="uv"
-            data-hero-cli-command="abx-pkg --binproviders=uv install ruff"
-            data-hero-python-command="from abx_pkg import Binary, uv&#10;bin = Binary(name=&#34;ruff&#34;, binproviders=[uv]).install()"
+            data-hero-cli-command="abxpkg --binproviders=uv install ruff"
+            data-hero-python-command="from abxpkg import Binary, uv&#10;bin = Binary(name=&#34;ruff&#34;, binproviders=[uv]).install()"
           >
             <summary>
               <div class="plugin-main">
                 <div class="plugin-title-row">
                   <h2><span class="provider-hero-emoji">🚀</span>UvProvider</h2>
                 </div>
-                <div class="plugin-slug"><code>uv</code> &middot; <code>from abx_pkg import uv</code></div>
+                <div class="plugin-slug"><code>uv</code> &middot; <code>from abxpkg import uv</code></div>
                 <p class="plugin-summary-description">Installs Python packages via uv. Two modes: hermetic venv mode (install_root=Path(...)) or global tool mode (uv tool install). Full support for postinstall_scripts=False and min_release_age.</p>
                 <div class="plugin-subline">
                   <span class="chip">Language Ecosystem</span>
@@ -4381,8 +4381,8 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
               <p class="plugin-modal-description">Installs Python packages via uv. Two modes: hermetic venv mode (install_root=Path(...)) or global tool mode (uv tool install). Full support for postinstall_scripts=False and min_release_age.</p>
 
               <div class="actions">
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/binprovider_uv.py" target="_blank" rel="noreferrer">Source on GitHub</a>
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg#readme" target="_blank" rel="noreferrer">README</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg/blob/main/abxpkg/binprovider_uv.py" target="_blank" rel="noreferrer">Source on GitHub</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg#readme" target="_blank" rel="noreferrer">README</a>
               </div>
 
               <div class="provider-meta-grid">
@@ -4400,7 +4400,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                 </article>
                 <article>
                   <span>Source file</span>
-                  <code>abx_pkg/binprovider_uv.py</code>
+                  <code>abxpkg/binprovider_uv.py</code>
                 </article>
               </div>
 
@@ -4411,9 +4411,9 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   <button type="button" class="run-tab" data-run-tab="env">CLI (env var)</button>
                   <button type="button" class="run-tab" data-run-tab="python">Python</button>
                 </div>
-                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abx-pkg --binproviders=uv install ruff</code></pre>
-                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABX_PKG_BINPROVIDERS=uv abx-pkg install ruff</code></pre>
-                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abx_pkg import Binary, uv
+                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abxpkg --binproviders=uv install ruff</code></pre>
+                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABXPKG_BINPROVIDERS=uv abxpkg install ruff</code></pre>
+                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abxpkg import Binary, uv
 
 bin = Binary(name=&#39;ruff&#39;, binproviders=[uv]).install()
 bin.exec(cmd=[&#39;--version&#39;])</code></pre>
@@ -4561,7 +4561,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   </thead>
                   <tbody>
                     <tr>
-                      <td><code>ABX_PKG_UV_ROOT</code></td>
+                      <td><code>ABXPKG_UV_ROOT</code></td>
                       <td><code>unset</code></td>
                       <td><small>Overrides uv_venv path.</small></td>
                     </tr>
@@ -4578,17 +4578,17 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="yarn"
             class="plugin-card plugin-card--language"
-            data-search="yarn yarnprovider installs javascript packages via yarn 4 / yarn berry. always operates inside a workspace dir (auto-initialized with a stub package.json and .yarnrc.yml using nodelinker: node-modules). yarn 4.10+ required for security flags. language language ecosystem javascript workspace security-controls name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout cache_dir yarn_install_args abx_pkg_yarn_root yarn_binary"
+            data-search="yarn yarnprovider installs javascript packages via yarn 4 / yarn berry. always operates inside a workspace dir (auto-initialized with a stub package.json and .yarnrc.yml using nodelinker: node-modules). yarn 4.10+ required for security flags. language language ecosystem javascript workspace security-controls name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout cache_dir yarn_install_args abxpkg_yarn_root yarn_binary"
             data-hero-plugin="yarn"
-            data-hero-cli-command="abx-pkg --binproviders=yarn install prettier"
-            data-hero-python-command="from abx_pkg import Binary, yarn&#10;bin = Binary(name=&#34;prettier&#34;, binproviders=[yarn]).install()"
+            data-hero-cli-command="abxpkg --binproviders=yarn install prettier"
+            data-hero-python-command="from abxpkg import Binary, yarn&#10;bin = Binary(name=&#34;prettier&#34;, binproviders=[yarn]).install()"
           >
             <summary>
               <div class="plugin-main">
                 <div class="plugin-title-row">
                   <h2><span class="provider-hero-emoji">🧶</span>YarnProvider</h2>
                 </div>
-                <div class="plugin-slug"><code>yarn</code> &middot; <code>from abx_pkg import yarn</code></div>
+                <div class="plugin-slug"><code>yarn</code> &middot; <code>from abxpkg import yarn</code></div>
                 <p class="plugin-summary-description">Installs JavaScript packages via Yarn 4 / Yarn Berry. Always operates inside a workspace dir (auto-initialized with a stub package.json and .yarnrc.yml using nodeLinker: node-modules). Yarn 4.10+ required for security flags.</p>
                 <div class="plugin-subline">
                   <span class="chip">Language Ecosystem</span>
@@ -4608,8 +4608,8 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
               <p class="plugin-modal-description">Installs JavaScript packages via Yarn 4 / Yarn Berry. Always operates inside a workspace dir (auto-initialized with a stub package.json and .yarnrc.yml using nodeLinker: node-modules). Yarn 4.10+ required for security flags.</p>
 
               <div class="actions">
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/binprovider_yarn.py" target="_blank" rel="noreferrer">Source on GitHub</a>
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg#readme" target="_blank" rel="noreferrer">README</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg/blob/main/abxpkg/binprovider_yarn.py" target="_blank" rel="noreferrer">Source on GitHub</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg#readme" target="_blank" rel="noreferrer">README</a>
               </div>
 
               <div class="provider-meta-grid">
@@ -4627,7 +4627,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                 </article>
                 <article>
                   <span>Source file</span>
-                  <code>abx_pkg/binprovider_yarn.py</code>
+                  <code>abxpkg/binprovider_yarn.py</code>
                 </article>
               </div>
 
@@ -4638,9 +4638,9 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   <button type="button" class="run-tab" data-run-tab="env">CLI (env var)</button>
                   <button type="button" class="run-tab" data-run-tab="python">Python</button>
                 </div>
-                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abx-pkg --binproviders=yarn install prettier</code></pre>
-                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABX_PKG_BINPROVIDERS=yarn abx-pkg install prettier</code></pre>
-                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abx_pkg import Binary, yarn
+                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abxpkg --binproviders=yarn install prettier</code></pre>
+                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABXPKG_BINPROVIDERS=yarn abxpkg install prettier</code></pre>
+                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abxpkg import Binary, yarn
 
 bin = Binary(name=&#39;prettier&#39;, binproviders=[yarn]).install()
 bin.exec(cmd=[&#39;--version&#39;])</code></pre>
@@ -4774,7 +4774,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   </thead>
                   <tbody>
                     <tr>
-                      <td><code>ABX_PKG_YARN_ROOT</code></td>
+                      <td><code>ABXPKG_YARN_ROOT</code></td>
                       <td><code>unset</code></td>
                       <td><small>Overrides yarn_prefix path.</small></td>
                     </tr>
@@ -4797,18 +4797,18 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="chromewebstore"
             class="plugin-card plugin-card--browser"
-            data-search="chromewebstore chromewebstoreprovider downloads, unpacks, and caches chrome web store extensions using the packaged js runtime under abx_pkg/js/chrome/. the resolved binary path is the unpacked manifest.json. browser browser runtime chrome extensions name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout abx_pkg_chromewebstore_root"
+            data-search="chromewebstore chromewebstoreprovider downloads, unpacks, and caches chrome web store extensions using the packaged js runtime under abxpkg/js/chrome/. the resolved binary path is the unpacked manifest.json. browser browser runtime chrome extensions name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout abxpkg_chromewebstore_root"
             data-hero-plugin="chromewebstore"
-            data-hero-cli-command="abx-pkg --binproviders=chromewebstore install ublock-origin"
-            data-hero-python-command="from abx_pkg import Binary, chromewebstore&#10;bin = Binary(name=&#34;ublock-origin&#34;, binproviders=[chromewebstore]).install()"
+            data-hero-cli-command="abxpkg --binproviders=chromewebstore install ublock-origin"
+            data-hero-python-command="from abxpkg import Binary, chromewebstore&#10;bin = Binary(name=&#34;ublock-origin&#34;, binproviders=[chromewebstore]).install()"
           >
             <summary>
               <div class="plugin-main">
                 <div class="plugin-title-row">
                   <h2><span class="provider-hero-emoji">🧩</span>ChromeWebstoreProvider</h2>
                 </div>
-                <div class="plugin-slug"><code>chromewebstore</code> &middot; <code>from abx_pkg import chromewebstore</code></div>
-                <p class="plugin-summary-description">Downloads, unpacks, and caches Chrome Web Store extensions using the packaged JS runtime under abx_pkg/js/chrome/. The resolved binary path is the unpacked manifest.json.</p>
+                <div class="plugin-slug"><code>chromewebstore</code> &middot; <code>from abxpkg import chromewebstore</code></div>
+                <p class="plugin-summary-description">Downloads, unpacks, and caches Chrome Web Store extensions using the packaged JS runtime under abxpkg/js/chrome/. The resolved binary path is the unpacked manifest.json.</p>
                 <div class="plugin-subline">
                   <span class="chip">Browser Runtime</span>
                   <span class="chip">chrome</span>
@@ -4823,11 +4823,11 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
             </summary>
 
             <div class="plugin-body">
-              <p class="plugin-modal-description">Downloads, unpacks, and caches Chrome Web Store extensions using the packaged JS runtime under abx_pkg/js/chrome/. The resolved binary path is the unpacked manifest.json.</p>
+              <p class="plugin-modal-description">Downloads, unpacks, and caches Chrome Web Store extensions using the packaged JS runtime under abxpkg/js/chrome/. The resolved binary path is the unpacked manifest.json.</p>
 
               <div class="actions">
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/binprovider_chromewebstore.py" target="_blank" rel="noreferrer">Source on GitHub</a>
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg#readme" target="_blank" rel="noreferrer">README</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg/blob/main/abxpkg/binprovider_chromewebstore.py" target="_blank" rel="noreferrer">Source on GitHub</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg#readme" target="_blank" rel="noreferrer">README</a>
               </div>
 
               <div class="provider-meta-grid">
@@ -4845,7 +4845,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                 </article>
                 <article>
                   <span>Source file</span>
-                  <code>abx_pkg/binprovider_chromewebstore.py</code>
+                  <code>abxpkg/binprovider_chromewebstore.py</code>
                 </article>
               </div>
 
@@ -4856,9 +4856,9 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   <button type="button" class="run-tab" data-run-tab="env">CLI (env var)</button>
                   <button type="button" class="run-tab" data-run-tab="python">Python</button>
                 </div>
-                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abx-pkg --binproviders=chromewebstore install ublock-origin</code></pre>
-                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABX_PKG_BINPROVIDERS=chromewebstore abx-pkg install ublock-origin</code></pre>
-                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abx_pkg import Binary, chromewebstore
+                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abxpkg --binproviders=chromewebstore install ublock-origin</code></pre>
+                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABXPKG_BINPROVIDERS=chromewebstore abxpkg install ublock-origin</code></pre>
+                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abxpkg import Binary, chromewebstore
 
 bin = Binary(name=&#39;ublock-origin&#39;, binproviders=[chromewebstore]).install()
 bin.exec(cmd=[&#39;--version&#39;])</code></pre>
@@ -4978,7 +4978,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   </thead>
                   <tbody>
                     <tr>
-                      <td><code>ABX_PKG_CHROMEWEBSTORE_ROOT</code></td>
+                      <td><code>ABXPKG_CHROMEWEBSTORE_ROOT</code></td>
                       <td><code>unset</code></td>
                       <td><small>Overrides extensions_root cache dir.</small></td>
                     </tr>
@@ -4990,17 +4990,17 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="playwright"
             class="plugin-card plugin-card--browser"
-            data-search="playwright playwrightprovider bootstraps playwright via npm, runs playwright install --with-deps, then symlinks resolved browser executables into bin_dir. pinning playwright_root also pins playwright_browsers_path. defaults euid=0 so --with-deps can install system packages. browser browser runtime browsers npm-bootstrap sudo name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout abx_pkg_playwright_root"
+            data-search="playwright playwrightprovider bootstraps playwright via npm, runs playwright install --with-deps, then symlinks resolved browser executables into bin_dir. pinning playwright_root also pins playwright_browsers_path. defaults euid=0 so --with-deps can install system packages. browser browser runtime browsers npm-bootstrap sudo name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout abxpkg_playwright_root"
             data-hero-plugin="playwright"
-            data-hero-cli-command="abx-pkg --binproviders=playwright install chromium"
-            data-hero-python-command="from abx_pkg import Binary, playwright&#10;bin = Binary(name=&#34;chromium&#34;, binproviders=[playwright]).install()"
+            data-hero-cli-command="abxpkg --binproviders=playwright install chromium"
+            data-hero-python-command="from abxpkg import Binary, playwright&#10;bin = Binary(name=&#34;chromium&#34;, binproviders=[playwright]).install()"
           >
             <summary>
               <div class="plugin-main">
                 <div class="plugin-title-row">
                   <h2><span class="provider-hero-emoji">🎬</span>PlaywrightProvider</h2>
                 </div>
-                <div class="plugin-slug"><code>playwright</code> &middot; <code>from abx_pkg import playwright</code></div>
+                <div class="plugin-slug"><code>playwright</code> &middot; <code>from abxpkg import playwright</code></div>
                 <p class="plugin-summary-description">Bootstraps playwright via npm, runs playwright install --with-deps, then symlinks resolved browser executables into bin_dir. Pinning playwright_root also pins PLAYWRIGHT_BROWSERS_PATH. Defaults euid=0 so --with-deps can install system packages.</p>
                 <div class="plugin-subline">
                   <span class="chip">Browser Runtime</span>
@@ -5020,8 +5020,8 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
               <p class="plugin-modal-description">Bootstraps playwright via npm, runs playwright install --with-deps, then symlinks resolved browser executables into bin_dir. Pinning playwright_root also pins PLAYWRIGHT_BROWSERS_PATH. Defaults euid=0 so --with-deps can install system packages.</p>
 
               <div class="actions">
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/binprovider_playwright.py" target="_blank" rel="noreferrer">Source on GitHub</a>
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg#readme" target="_blank" rel="noreferrer">README</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg/blob/main/abxpkg/binprovider_playwright.py" target="_blank" rel="noreferrer">Source on GitHub</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg#readme" target="_blank" rel="noreferrer">README</a>
               </div>
 
               <div class="provider-meta-grid">
@@ -5039,7 +5039,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                 </article>
                 <article>
                   <span>Source file</span>
-                  <code>abx_pkg/binprovider_playwright.py</code>
+                  <code>abxpkg/binprovider_playwright.py</code>
                 </article>
               </div>
 
@@ -5050,9 +5050,9 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   <button type="button" class="run-tab" data-run-tab="env">CLI (env var)</button>
                   <button type="button" class="run-tab" data-run-tab="python">Python</button>
                 </div>
-                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abx-pkg --binproviders=playwright install chromium</code></pre>
-                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABX_PKG_BINPROVIDERS=playwright abx-pkg install chromium</code></pre>
-                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abx_pkg import Binary, playwright
+                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abxpkg --binproviders=playwright install chromium</code></pre>
+                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABXPKG_BINPROVIDERS=playwright abxpkg install chromium</code></pre>
+                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abxpkg import Binary, playwright
 
 bin = Binary(name=&#39;chromium&#39;, binproviders=[playwright]).install()
 bin.exec(cmd=[&#39;--version&#39;])</code></pre>
@@ -5172,7 +5172,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   </thead>
                   <tbody>
                     <tr>
-                      <td><code>ABX_PKG_PLAYWRIGHT_ROOT</code></td>
+                      <td><code>ABXPKG_PLAYWRIGHT_ROOT</code></td>
                       <td><code>unset</code></td>
                       <td><small>Overrides playwright_root AND pins PLAYWRIGHT_BROWSERS_PATH to it.</small></td>
                     </tr>
@@ -5184,17 +5184,17 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="puppeteer"
             class="plugin-card plugin-card--browser"
-            data-search="puppeteer puppeteerprovider bootstraps @puppeteer/browsers through npmprovider, then uses its cli to install managed browsers. resolution uses semantic version ordering, not lexicographic string sorting. browser browser runtime browsers npm-bootstrap name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout browser_cache_dir abx_pkg_puppeteer_root"
+            data-search="puppeteer puppeteerprovider bootstraps @puppeteer/browsers through npmprovider, then uses its cli to install managed browsers. resolution uses semantic version ordering, not lexicographic string sorting. browser browser runtime browsers npm-bootstrap name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout browser_cache_dir abxpkg_puppeteer_root"
             data-hero-plugin="puppeteer"
-            data-hero-cli-command="abx-pkg --binproviders=puppeteer install chrome"
-            data-hero-python-command="from abx_pkg import Binary, puppeteer&#10;bin = Binary(name=&#34;chrome&#34;, binproviders=[puppeteer]).install()"
+            data-hero-cli-command="abxpkg --binproviders=puppeteer install chrome"
+            data-hero-python-command="from abxpkg import Binary, puppeteer&#10;bin = Binary(name=&#34;chrome&#34;, binproviders=[puppeteer]).install()"
           >
             <summary>
               <div class="plugin-main">
                 <div class="plugin-title-row">
                   <h2><span class="provider-hero-emoji">🎭</span>PuppeteerProvider</h2>
                 </div>
-                <div class="plugin-slug"><code>puppeteer</code> &middot; <code>from abx_pkg import puppeteer</code></div>
+                <div class="plugin-slug"><code>puppeteer</code> &middot; <code>from abxpkg import puppeteer</code></div>
                 <p class="plugin-summary-description">Bootstraps @puppeteer/browsers through NpmProvider, then uses its CLI to install managed browsers. Resolution uses semantic version ordering, not lexicographic string sorting.</p>
                 <div class="plugin-subline">
                   <span class="chip">Browser Runtime</span>
@@ -5213,8 +5213,8 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
               <p class="plugin-modal-description">Bootstraps @puppeteer/browsers through NpmProvider, then uses its CLI to install managed browsers. Resolution uses semantic version ordering, not lexicographic string sorting.</p>
 
               <div class="actions">
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/binprovider_puppeteer.py" target="_blank" rel="noreferrer">Source on GitHub</a>
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg#readme" target="_blank" rel="noreferrer">README</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg/blob/main/abxpkg/binprovider_puppeteer.py" target="_blank" rel="noreferrer">Source on GitHub</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg#readme" target="_blank" rel="noreferrer">README</a>
               </div>
 
               <div class="provider-meta-grid">
@@ -5232,7 +5232,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                 </article>
                 <article>
                   <span>Source file</span>
-                  <code>abx_pkg/binprovider_puppeteer.py</code>
+                  <code>abxpkg/binprovider_puppeteer.py</code>
                 </article>
               </div>
 
@@ -5243,9 +5243,9 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   <button type="button" class="run-tab" data-run-tab="env">CLI (env var)</button>
                   <button type="button" class="run-tab" data-run-tab="python">Python</button>
                 </div>
-                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abx-pkg --binproviders=puppeteer install chrome</code></pre>
-                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABX_PKG_BINPROVIDERS=puppeteer abx-pkg install chrome</code></pre>
-                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abx_pkg import Binary, puppeteer
+                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abxpkg --binproviders=puppeteer install chrome</code></pre>
+                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABXPKG_BINPROVIDERS=puppeteer abxpkg install chrome</code></pre>
+                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abxpkg import Binary, puppeteer
 
 bin = Binary(name=&#39;chrome&#39;, binproviders=[puppeteer]).install()
 bin.exec(cmd=[&#39;--version&#39;])</code></pre>
@@ -5372,7 +5372,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   </thead>
                   <tbody>
                     <tr>
-                      <td><code>ABX_PKG_PUPPETEER_ROOT</code></td>
+                      <td><code>ABXPKG_PUPPETEER_ROOT</code></td>
                       <td><code>unset</code></td>
                       <td><small>Overrides puppeteer_root path.</small></td>
                     </tr>
@@ -5390,17 +5390,17 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
           <details
             id="bash"
             class="plugin-card plugin-card--script"
-            data-search="bash bashprovider runs literal shell-script overrides for install/update/uninstall. exports install_root, bin_dir, bash_install_root, and bash_bin_dir into the shell environment for those commands. script shell scripts shell literal-overrides name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout abx_pkg_bash_root"
+            data-search="bash bashprovider runs literal shell-script overrides for install/update/uninstall. exports install_root, bin_dir, bash_install_root, and bash_bin_dir into the shell environment for those commands. script shell scripts shell literal-overrides name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout abxpkg_bash_root"
             data-hero-plugin="bash"
-            data-hero-cli-command="abx-pkg --binproviders=bash install custom-script"
-            data-hero-python-command="from abx_pkg import Binary, bash&#10;bin = Binary(name=&#34;custom-script&#34;, binproviders=[bash]).install()"
+            data-hero-cli-command="abxpkg --binproviders=bash install custom-script"
+            data-hero-python-command="from abxpkg import Binary, bash&#10;bin = Binary(name=&#34;custom-script&#34;, binproviders=[bash]).install()"
           >
             <summary>
               <div class="plugin-main">
                 <div class="plugin-title-row">
                   <h2><span class="provider-hero-emoji">🧪</span>BashProvider</h2>
                 </div>
-                <div class="plugin-slug"><code>bash</code> &middot; <code>from abx_pkg import bash</code></div>
+                <div class="plugin-slug"><code>bash</code> &middot; <code>from abxpkg import bash</code></div>
                 <p class="plugin-summary-description">Runs literal shell-script overrides for install/update/uninstall. Exports INSTALL_ROOT, BIN_DIR, BASH_INSTALL_ROOT, and BASH_BIN_DIR into the shell environment for those commands.</p>
                 <div class="plugin-subline">
                   <span class="chip">Shell Scripts</span>
@@ -5419,8 +5419,8 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
               <p class="plugin-modal-description">Runs literal shell-script overrides for install/update/uninstall. Exports INSTALL_ROOT, BIN_DIR, BASH_INSTALL_ROOT, and BASH_BIN_DIR into the shell environment for those commands.</p>
 
               <div class="actions">
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/binprovider_bash.py" target="_blank" rel="noreferrer">Source on GitHub</a>
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg#readme" target="_blank" rel="noreferrer">README</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg/blob/main/abxpkg/binprovider_bash.py" target="_blank" rel="noreferrer">Source on GitHub</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg#readme" target="_blank" rel="noreferrer">README</a>
               </div>
 
               <div class="provider-meta-grid">
@@ -5438,7 +5438,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                 </article>
                 <article>
                   <span>Source file</span>
-                  <code>abx_pkg/binprovider_bash.py</code>
+                  <code>abxpkg/binprovider_bash.py</code>
                 </article>
               </div>
 
@@ -5449,9 +5449,9 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   <button type="button" class="run-tab" data-run-tab="env">CLI (env var)</button>
                   <button type="button" class="run-tab" data-run-tab="python">Python</button>
                 </div>
-                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abx-pkg --binproviders=bash install custom-script</code></pre>
-                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABX_PKG_BINPROVIDERS=bash abx-pkg install custom-script</code></pre>
-                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abx_pkg import Binary, bash
+                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abxpkg --binproviders=bash install custom-script</code></pre>
+                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABXPKG_BINPROVIDERS=bash abxpkg install custom-script</code></pre>
+                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abxpkg import Binary, bash
 
 bin = Binary(name=&#39;custom-script&#39;, binproviders=[bash]).install()
 bin.exec(cmd=[&#39;--version&#39;])</code></pre>
@@ -5571,7 +5571,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   </thead>
                   <tbody>
                     <tr>
-                      <td><code>ABX_PKG_BASH_ROOT</code></td>
+                      <td><code>ABXPKG_BASH_ROOT</code></td>
                       <td><code>unset</code></td>
                       <td><small>Overrides bash_root state dir.</small></td>
                     </tr>
@@ -5591,15 +5591,15 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
             class="plugin-card plugin-card--driver"
             data-search="ansible ansibleprovider delegates installs via ansible-runner. installer_module=&#39;auto&#39; resolves to community.general.homebrew on macos and ansible.builtin.package on linux. no hermetic prefix support. driver orchestrator driver infra name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout ansible_installer_module ansible_playbook_template"
             data-hero-plugin="ansible"
-            data-hero-cli-command="abx-pkg --binproviders=ansible install wget"
-            data-hero-python-command="from abx_pkg import Binary, ansible&#10;bin = Binary(name=&#34;wget&#34;, binproviders=[ansible]).install()"
+            data-hero-cli-command="abxpkg --binproviders=ansible install wget"
+            data-hero-python-command="from abxpkg import Binary, ansible&#10;bin = Binary(name=&#34;wget&#34;, binproviders=[ansible]).install()"
           >
             <summary>
               <div class="plugin-main">
                 <div class="plugin-title-row">
                   <h2><span class="provider-hero-emoji">📘</span>AnsibleProvider</h2>
                 </div>
-                <div class="plugin-slug"><code>ansible</code> &middot; <code>from abx_pkg import ansible</code></div>
+                <div class="plugin-slug"><code>ansible</code> &middot; <code>from abxpkg import ansible</code></div>
                 <p class="plugin-summary-description">Delegates installs via ansible-runner. installer_module=&#39;auto&#39; resolves to community.general.homebrew on macOS and ansible.builtin.package on Linux. No hermetic prefix support.</p>
                 <div class="plugin-subline">
                   <span class="chip">Orchestrator</span>
@@ -5618,8 +5618,8 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
               <p class="plugin-modal-description">Delegates installs via ansible-runner. installer_module=&#39;auto&#39; resolves to community.general.homebrew on macOS and ansible.builtin.package on Linux. No hermetic prefix support.</p>
 
               <div class="actions">
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/binprovider_ansible.py" target="_blank" rel="noreferrer">Source on GitHub</a>
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg#readme" target="_blank" rel="noreferrer">README</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg/blob/main/abxpkg/binprovider_ansible.py" target="_blank" rel="noreferrer">Source on GitHub</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg#readme" target="_blank" rel="noreferrer">README</a>
               </div>
 
               <div class="provider-meta-grid">
@@ -5637,7 +5637,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                 </article>
                 <article>
                   <span>Source file</span>
-                  <code>abx_pkg/binprovider_ansible.py</code>
+                  <code>abxpkg/binprovider_ansible.py</code>
                 </article>
               </div>
 
@@ -5648,9 +5648,9 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   <button type="button" class="run-tab" data-run-tab="env">CLI (env var)</button>
                   <button type="button" class="run-tab" data-run-tab="python">Python</button>
                 </div>
-                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abx-pkg --binproviders=ansible install wget</code></pre>
-                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABX_PKG_BINPROVIDERS=ansible abx-pkg install wget</code></pre>
-                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abx_pkg import Binary, ansible
+                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abxpkg --binproviders=ansible install wget</code></pre>
+                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABXPKG_BINPROVIDERS=ansible abxpkg install wget</code></pre>
+                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abxpkg import Binary, ansible
 
 bin = Binary(name=&#39;wget&#39;, binproviders=[ansible]).install()
 bin.exec(cmd=[&#39;--version&#39;])</code></pre>
@@ -5788,15 +5788,15 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
             class="plugin-card plugin-card--driver"
             data-search="pyinfra pyinfraprovider delegates installs to pyinfra operations. installer_module=&#39;auto&#39; resolves to operations.brew.packages on macos and operations.server.packages on linux. no hermetic prefix support. driver orchestrator driver infra name path installer_bin euid install_root bin_dir dry_run postinstall_scripts min_release_age install_timeout version_timeout pyinfra_installer_module pyinfra_installer_kwargs"
             data-hero-plugin="pyinfra"
-            data-hero-cli-command="abx-pkg --binproviders=pyinfra install wget"
-            data-hero-python-command="from abx_pkg import Binary, pyinfra&#10;bin = Binary(name=&#34;wget&#34;, binproviders=[pyinfra]).install()"
+            data-hero-cli-command="abxpkg --binproviders=pyinfra install wget"
+            data-hero-python-command="from abxpkg import Binary, pyinfra&#10;bin = Binary(name=&#34;wget&#34;, binproviders=[pyinfra]).install()"
           >
             <summary>
               <div class="plugin-main">
                 <div class="plugin-title-row">
                   <h2><span class="provider-hero-emoji">🛠️</span>PyinfraProvider</h2>
                 </div>
-                <div class="plugin-slug"><code>pyinfra</code> &middot; <code>from abx_pkg import pyinfra</code></div>
+                <div class="plugin-slug"><code>pyinfra</code> &middot; <code>from abxpkg import pyinfra</code></div>
                 <p class="plugin-summary-description">Delegates installs to pyinfra operations. installer_module=&#39;auto&#39; resolves to operations.brew.packages on macOS and operations.server.packages on Linux. No hermetic prefix support.</p>
                 <div class="plugin-subline">
                   <span class="chip">Orchestrator</span>
@@ -5815,8 +5815,8 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
               <p class="plugin-modal-description">Delegates installs to pyinfra operations. installer_module=&#39;auto&#39; resolves to operations.brew.packages on macOS and operations.server.packages on Linux. No hermetic prefix support.</p>
 
               <div class="actions">
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg/blob/main/abx_pkg/binprovider_pyinfra.py" target="_blank" rel="noreferrer">Source on GitHub</a>
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg#readme" target="_blank" rel="noreferrer">README</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg/blob/main/abxpkg/binprovider_pyinfra.py" target="_blank" rel="noreferrer">Source on GitHub</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg#readme" target="_blank" rel="noreferrer">README</a>
               </div>
 
               <div class="provider-meta-grid">
@@ -5834,7 +5834,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                 </article>
                 <article>
                   <span>Source file</span>
-                  <code>abx_pkg/binprovider_pyinfra.py</code>
+                  <code>abxpkg/binprovider_pyinfra.py</code>
                 </article>
               </div>
 
@@ -5845,9 +5845,9 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                   <button type="button" class="run-tab" data-run-tab="env">CLI (env var)</button>
                   <button type="button" class="run-tab" data-run-tab="python">Python</button>
                 </div>
-                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abx-pkg --binproviders=pyinfra install wget</code></pre>
-                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABX_PKG_BINPROVIDERS=pyinfra abx-pkg install wget</code></pre>
-                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abx_pkg import Binary, pyinfra
+                <pre class="run-tab-panel active" data-run-panel="cli"><code data-highlight-shell>abxpkg --binproviders=pyinfra install wget</code></pre>
+                <pre class="run-tab-panel" data-run-panel="env"><code data-highlight-shell>env ABXPKG_BINPROVIDERS=pyinfra abxpkg install wget</code></pre>
+                <pre class="run-tab-panel" data-run-panel="python"><code data-highlight-shell>from abxpkg import Binary, pyinfra
 
 bin = Binary(name=&#39;wget&#39;, binproviders=[pyinfra]).install()
 bin.exec(cmd=[&#39;--version&#39;])</code></pre>
@@ -5977,7 +5977,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
         <h2>Global Environment Variables</h2>
         <p>
           These env vars are read once at import time and apply across every provider
-          (or to the <code>abx-pkg</code> CLI itself). Explicit constructor kwargs
+          (or to the <code>abxpkg</code> CLI itself). Explicit constructor kwargs
           always override these defaults.
         </p>
         <div class="config-table-wrap">
@@ -5996,49 +5996,49 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
             </thead>
             <tbody>
               <tr>
-                <td><code>ABX_PKG_DRY_RUN</code></td>
+                <td><code>ABXPKG_DRY_RUN</code></td>
                 <td><code>0</code></td>
                 <td><small>Flips the shared dry_run default. Provider subprocesses are logged and skipped, install()/update() return a placeholder, uninstall() returns True. Beats DRY_RUN if both are set.</small></td>
               </tr>
               <tr>
                 <td><code>DRY_RUN</code></td>
                 <td><code>0</code></td>
-                <td><small>Alternative dry-run toggle. ABX_PKG_DRY_RUN wins if both are set.</small></td>
+                <td><small>Alternative dry-run toggle. ABXPKG_DRY_RUN wins if both are set.</small></td>
               </tr>
               <tr>
-                <td><code>ABX_PKG_NO_CACHE</code></td>
+                <td><code>ABXPKG_NO_CACHE</code></td>
                 <td><code>0</code></td>
                 <td><small>Flips the shared no_cache default. install() skips the initial load() check and forces a fresh install path; load()/update()/uninstall() bypass cached probe results.</small></td>
               </tr>
               <tr>
-                <td><code>ABX_PKG_INSTALL_TIMEOUT</code></td>
+                <td><code>ABXPKG_INSTALL_TIMEOUT</code></td>
                 <td><code>120</code></td>
                 <td><small>Seconds to wait for install()/update()/uninstall() handler subprocesses.</small></td>
               </tr>
               <tr>
-                <td><code>ABX_PKG_VERSION_TIMEOUT</code></td>
+                <td><code>ABXPKG_VERSION_TIMEOUT</code></td>
                 <td><code>10</code></td>
                 <td><small>Seconds to wait for version / metadata probes (--version, npm show, pip show, etc.).</small></td>
               </tr>
               <tr>
-                <td><code>ABX_PKG_POSTINSTALL_SCRIPTS</code></td>
+                <td><code>ABXPKG_POSTINSTALL_SCRIPTS</code></td>
                 <td><code>unset</code></td>
                 <td><small>Hydrates the provider-level default for postinstall_scripts on supporting providers (pip, uv, npm, pnpm, yarn, bun, deno, brew, chromewebstore, puppeteer).</small></td>
               </tr>
               <tr>
-                <td><code>ABX_PKG_MIN_RELEASE_AGE</code></td>
+                <td><code>ABXPKG_MIN_RELEASE_AGE</code></td>
                 <td><code>7</code></td>
                 <td><small>Days of release age to require on supporting providers (pip, uv, npm, pnpm, yarn, bun, deno).</small></td>
               </tr>
               <tr>
-                <td><code>ABX_PKG_BINPROVIDERS</code></td>
+                <td><code>ABXPKG_BINPROVIDERS</code></td>
                 <td><code>all</code></td>
-                <td><small>Comma-separated provider names to enable (and their order) for the abx-pkg CLI. Example: env,uv,pip,apt,brew</small></td>
+                <td><small>Comma-separated provider names to enable (and their order) for the abxpkg CLI. Example: env,uv,pip,apt,brew</small></td>
               </tr>
               <tr>
-                <td><code>ABX_PKG_LIB_DIR</code></td>
+                <td><code>ABXPKG_LIB_DIR</code></td>
                 <td><code>~/.config/abx/lib</code></td>
-                <td><small>Centralized install root. When set, each provider defaults its install root to $ABX_PKG_LIB_DIR/&lt;provider name&gt;. Accepts relative, tilde, and absolute paths.</small></td>
+                <td><small>Centralized install root. When set, each provider defaults its install root to $ABXPKG_LIB_DIR/&lt;provider name&gt;. Accepts relative, tilde, and absolute paths.</small></td>
               </tr>
             </tbody>
           </table>
@@ -6049,7 +6049,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
         <div class="footer-intro">
           <h2>An ORM for your package managers</h2>
           <p>
-            <code>abx-pkg</code> provides consistent interfaces for runtime
+            <code>abxpkg</code> provides consistent interfaces for runtime
             dependency resolution &amp; installation across many package managers
             and OSs, built with <a href="https://pydantic-docs.helpmanual.io/" target="_blank" rel="noreferrer">pydantic</a>
             v2 for strong static typing and easy conversion to/from JSON. It's
@@ -6058,7 +6058,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
             and OpenAPI tools, and its driver layer can be
             <a href="https://github.com/pyinfra-dev/pyinfra" target="_blank" rel="noreferrer">pyinfra</a>,
             <a href="https://github.com/ansible/ansible" target="_blank" rel="noreferrer">ansible</a>,
-            or the built-in <code>abx-pkg</code> engine.
+            or the built-in <code>abxpkg</code> engine.
           </p>
           <p>
             Originally built by <a href="https://github.com/ArchiveBox" target="_blank" rel="noreferrer">ArchiveBox</a>
@@ -6072,28 +6072,28 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
             <h3>Install &amp; Use</h3>
             <p class="footer-card-subtitle">Get started</p>
             <div class="footer-link-list">
-              <a class="footer-link-item" href="https://pypi.org/project/abx-pkg/" target="_blank" rel="noreferrer">
+              <a class="footer-link-item" href="https://pypi.org/project/abxpkg/" target="_blank" rel="noreferrer">
                 <span class="footer-link-icon">📦</span>
                 <span class="footer-link-copy">
-                  <strong>abx-pkg on PyPI</strong>
-                  <span>Install the package: <code>pip install abx-pkg</code> or <code>uv tool add abx-pkg</code>.</span>
+                  <strong>abxpkg on PyPI</strong>
+                  <span>Install the package: <code>pip install abxpkg</code> or <code>uv tool add abxpkg</code>.</span>
                 </span>
               </a>
-              <a class="footer-link-item" href="https://github.com/ArchiveBox/abx-pkg#readme" target="_blank" rel="noreferrer">
+              <a class="footer-link-item" href="https://github.com/ArchiveBox/abxpkg#readme" target="_blank" rel="noreferrer">
                 <span class="footer-link-icon">📘</span>
                 <span class="footer-link-copy">
                   <strong>README</strong>
                   <span>Full documentation, advanced usage, overrides, and Django integration.</span>
                 </span>
               </a>
-              <a class="footer-link-item" href="https://github.com/ArchiveBox/abx-pkg/tree/main/django_example_project" target="_blank" rel="noreferrer">
+              <a class="footer-link-item" href="https://github.com/ArchiveBox/abxpkg/tree/main/django_example_project" target="_blank" rel="noreferrer">
                 <span class="footer-link-icon">🧪</span>
                 <span class="footer-link-copy">
                   <strong>Django example project</strong>
                   <span>Minimal project showing model fields, admin views, and JSON forms.</span>
                 </span>
               </a>
-              <a class="footer-link-item" href="https://github.com/ArchiveBox/abx-pkg/tree/main/tests" target="_blank" rel="noreferrer">
+              <a class="footer-link-item" href="https://github.com/ArchiveBox/abxpkg/tree/main/tests" target="_blank" rel="noreferrer">
                 <span class="footer-link-icon">✅</span>
                 <span class="footer-link-copy">
                   <strong>Tests</strong>
@@ -6107,28 +6107,28 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
             <h3>Source &amp; issues</h3>
             <p class="footer-card-subtitle">Contribute</p>
             <div class="footer-link-list">
-              <a class="footer-link-item" href="https://github.com/ArchiveBox/abx-pkg" target="_blank" rel="noreferrer">
+              <a class="footer-link-item" href="https://github.com/ArchiveBox/abxpkg" target="_blank" rel="noreferrer">
                 <span class="footer-link-icon">🐙</span>
                 <span class="footer-link-copy">
                   <strong>GitHub repository</strong>
-                  <span>Main source tree for <code>abx-pkg</code>.</span>
+                  <span>Main source tree for <code>abxpkg</code>.</span>
                 </span>
               </a>
-              <a class="footer-link-item" href="https://github.com/ArchiveBox/abx-pkg/issues" target="_blank" rel="noreferrer">
+              <a class="footer-link-item" href="https://github.com/ArchiveBox/abxpkg/issues" target="_blank" rel="noreferrer">
                 <span class="footer-link-icon">🐛</span>
                 <span class="footer-link-copy">
                   <strong>Issues</strong>
                   <span>Report bugs, request new providers, or propose improvements.</span>
                 </span>
               </a>
-              <a class="footer-link-item" href="https://github.com/ArchiveBox/abx-pkg/pulls" target="_blank" rel="noreferrer">
+              <a class="footer-link-item" href="https://github.com/ArchiveBox/abxpkg/pulls" target="_blank" rel="noreferrer">
                 <span class="footer-link-icon">🔀</span>
                 <span class="footer-link-copy">
                   <strong>Pull requests</strong>
                   <span>Open or review PRs adding new providers or features.</span>
                 </span>
               </a>
-              <a class="footer-link-item" href="https://github.com/ArchiveBox/abx-pkg/releases" target="_blank" rel="noreferrer">
+              <a class="footer-link-item" href="https://github.com/ArchiveBox/abxpkg/releases" target="_blank" rel="noreferrer">
                 <span class="footer-link-icon">🏷️</span>
                 <span class="footer-link-copy">
                   <strong>Releases</strong>
@@ -6146,7 +6146,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
                 <span class="footer-link-icon">🗄️</span>
                 <span class="footer-link-copy">
                   <strong>ArchiveBox</strong>
-                  <span>Self-hosted web archiving — the original consumer of <code>abx-pkg</code>.</span>
+                  <span>Self-hosted web archiving — the original consumer of <code>abxpkg</code>.</span>
                 </span>
               </a>
               <a class="footer-link-item" href="https://github.com/ArchiveBox/abx-plugins" target="_blank" rel="noreferrer">
@@ -6175,7 +6175,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
         </div>
 
         <div class="footer-meta">
-          <span>Generated from <a href="https://github.com/ArchiveBox/abx-pkg" target="_blank" rel="noreferrer">ArchiveBox/abx-pkg</a> at ref <code>main</code>.</span>
+          <span>Generated from <a href="https://github.com/ArchiveBox/abxpkg" target="_blank" rel="noreferrer">ArchiveBox/abxpkg</a> at ref <code>main</code>.</span>
           <span>Updated 2026-04-10 11:38 UTC</span>
         </div>
       </footer>
@@ -6207,7 +6207,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
         value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
       const highlightShell = (line) => {
-        const tokenPattern = /('[^']*'|"[^"]*"|--[\w-]+(?:=[^\s'"]+)?|\b(?:uvx|abx-pkg|env|pip|uv|python3?|from|import)\b|\b[A-Z][A-Z0-9_]+(?==)|\b(?:True|False|None|true|false)\b)/g;
+        const tokenPattern = /('[^']*'|"[^"]*"|--[\w-]+(?:=[^\s'"]+)?|\b(?:uvx|abxpkg|env|pip|uv|python3?|from|import)\b|\b[A-Z][A-Z0-9_]+(?==)|\b(?:True|False|None|true|false)\b)/g;
         let html = "";
         let lastIndex = 0;
 
@@ -6221,7 +6221,7 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
             className = "code-string";
           } else if (token.startsWith("--")) {
             className = "code-option";
-          } else if (token === "abx-pkg" || token === "uvx" || token === "pip" || token === "uv" || token === "env" || token === "python" || token === "python3") {
+          } else if (token === "abxpkg" || token === "uvx" || token === "pip" || token === "uv" || token === "env" || token === "python" || token === "python3") {
             className = "code-command";
           } else if (token === "from" || token === "import") {
             className = "code-command";
@@ -6240,15 +6240,15 @@ bin.exec(cmd=[&#39;--version&#39;])</code></pre>
       };
 
       const defaultHeroExample = {
-        plugin: "abx-pkg",
-        cli: "abx-pkg install yt-dlp",
-        env: "env ABX_PKG_BINPROVIDERS=env,uv,pip,apt,brew abx-pkg install yt-dlp",
+        plugin: "abxpkg",
+        cli: "abxpkg install yt-dlp",
+        env: "env ABXPKG_BINPROVIDERS=env,uv,pip,apt,brew abxpkg install yt-dlp",
       };
 
       const getHeroExample = (card) => {
         if (!card) return defaultHeroExample;
         return {
-          plugin: card.dataset.heroPlugin || card.id || "abx-pkg",
+          plugin: card.dataset.heroPlugin || card.id || "abxpkg",
           cli: card.dataset.heroCliCommand || defaultHeroExample.cli,
           env: (card.dataset.heroPythonCommand || "").replace(/&#10;/g, "\n"),
         };

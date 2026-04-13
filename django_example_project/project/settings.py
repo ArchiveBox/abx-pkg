@@ -39,7 +39,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "admin_data_views",
     "django_jsonform",
-    "abx_pkg",
+    "abxpkg",
     "project",
 ]
 
@@ -127,8 +127,8 @@ STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 
-ABX_PKG_GET_ALL_BINARIES = "project.views.get_all_binaries"
-ABX_PKG_GET_BINARY = "project.views.get_binary"
+ABXPKG_GET_ALL_BINARIES = "project.views.get_all_binaries"
+ABXPKG_GET_BINARY = "project.views.get_binary"
 
 
 ADMIN_DATA_VIEWS = {
@@ -136,11 +136,11 @@ ADMIN_DATA_VIEWS = {
     "URLS": [
         {
             "route": "binaries/",
-            "view": "abx_pkg.views.binaries_list_view",
+            "view": "abxpkg.views.binaries_list_view",
             "name": "binaries",
             "items": {
                 "route": "<str:key>/",
-                "view": "abx_pkg.views.binary_detail_view",
+                "view": "abxpkg.views.binary_detail_view",
                 "name": "binary",
             },
         },

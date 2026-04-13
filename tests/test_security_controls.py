@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from abx_pkg import (
+from abxpkg import (
     Binary,
     BashProvider,
     EnvProvider,
@@ -12,13 +12,13 @@ from abx_pkg import (
     PipProvider,
     SemVer,
 )
-from abx_pkg.exceptions import BinaryInstallError, BinaryLoadError
+from abxpkg.exceptions import BinaryInstallError, BinaryLoadError
 
 
 class TestSecurityControls:
     def test_env_defaults_only_apply_to_supported_providers(self, monkeypatch):
-        monkeypatch.setenv("ABX_PKG_MIN_RELEASE_AGE", "13")
-        monkeypatch.setenv("ABX_PKG_POSTINSTALL_SCRIPTS", "true")
+        monkeypatch.setenv("ABXPKG_MIN_RELEASE_AGE", "13")
+        monkeypatch.setenv("ABXPKG_POSTINSTALL_SCRIPTS", "true")
 
         assert PipProvider().min_release_age == 13
         assert PipProvider().postinstall_scripts is True
@@ -38,7 +38,7 @@ class TestSecurityControls:
         caplog,
         test_machine,
     ):
-        with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+        with caplog.at_level(logging.WARNING, logger="abxpkg.binprovider"):
             installed = EnvProvider().install(
                 "python",
                 postinstall_scripts=False,

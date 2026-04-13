@@ -3,7 +3,7 @@ import logging
 
 import pytest
 
-from abx_pkg import AptProvider, Binary
+from abxpkg import AptProvider, Binary
 
 
 @pytest.mark.skipif("darwin" in sys.platform, reason="apt is not available on macOS")
@@ -26,7 +26,7 @@ class TestAptProvider:
         test_machine.require_tool("apt-get")
         package = test_machine.pick_missing_apt_package()
 
-        with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+        with caplog.at_level(logging.WARNING, logger="abxpkg.binprovider"):
             installed = AptProvider().install(
                 package,
                 postinstall_scripts=False,
@@ -43,7 +43,7 @@ class TestAptProvider:
             postinstall_scripts=False,
             min_release_age=1,
         )
-        with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+        with caplog.at_level(logging.WARNING, logger="abxpkg.binprovider"):
             installed = binary.install()
         test_machine.assert_shallow_binary_loaded(installed)
         assert "ignoring unsupported min_release_age=1" in caplog.text

@@ -4,9 +4,9 @@ import logging
 
 import pytest
 
-from abx_pkg import Binary, SemVer
-from abx_pkg.binprovider_pyinfra import PyinfraProvider
-from abx_pkg.exceptions import BinaryInstallError
+from abxpkg import Binary, SemVer
+from abxpkg.binprovider_pyinfra import PyinfraProvider
+from abxpkg.exceptions import BinaryInstallError
 
 
 def _pyinfra_provider_for_host(test_machine):
@@ -83,7 +83,7 @@ class TestPyinfraProvider:
             min_release_age=0,
         )
         try:
-            with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+            with caplog.at_level(logging.WARNING, logger="abxpkg.binprovider"):
                 installed = PyinfraProvider(
                     pyinfra_installer_module=provider.pyinfra_installer_module,
                 ).install(
@@ -106,7 +106,7 @@ class TestPyinfraProvider:
                 postinstall_scripts=False,
                 min_release_age=1,
             )
-            with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+            with caplog.at_level(logging.WARNING, logger="abxpkg.binprovider"):
                 installed = binary.install()
             test_machine.assert_shallow_binary_loaded(installed)
             assert "ignoring unsupported min_release_age=1" in caplog.text

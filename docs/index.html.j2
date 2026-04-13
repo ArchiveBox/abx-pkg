@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>abx-pkg — Python interfaces for package managers &amp; installed binaries</title>
+    <title>abxpkg — Python interfaces for package managers &amp; installed binaries</title>
     <meta
       name="description"
-      content="abx-pkg is a Python library that provides typed interfaces to apt, brew, pip, uv, npm, pnpm, yarn, bun, deno, cargo, gem, go, nix, docker, bash, puppeteer, playwright, and more — for resolving and installing dependencies at runtime."
+      content="abxpkg is a Python library that provides typed interfaces to apt, brew, pip, uv, npm, pnpm, yarn, bun, deno, cargo, gem, go, nix, docker, bash, puppeteer, playwright, and more — for resolving and installing dependencies at runtime."
     >
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1362,7 +1362,7 @@
           display: none;
         }
       }
-      /* abx-pkg additions */
+      /* abxpkg additions */
       .plugin-card--fallback  { --card-tint: rgba(161, 161, 170, 0.08); --card-border: rgba(161, 161, 170, 0.35); --card-accent: #a1a1aa; }
       .plugin-card--system    { --card-tint: rgba(73, 154, 84, 0.08);  --card-border: rgba(73, 154, 84, 0.35);  --card-accent: #4ade80; }
       .plugin-card--language  { --card-tint: rgba(96, 165, 250, 0.08); --card-border: rgba(96, 165, 250, 0.35); --card-accent: #60a5fa; }
@@ -1526,7 +1526,7 @@
         <div class="hero-top">
           <div>
             <div class="eyebrow">An ORM for your package managers.</div>
-            <h1><code>abx-pkg</code></h1>
+            <h1><code>abxpkg</code></h1>
             <p class="hero-copy">
               A Python library for installing &amp; managing packages locally with a variety of
               package managers. Great for when <code>requirements.txt</code> isn't enough and
@@ -1544,12 +1544,12 @@
           <div class="hero-actions">
             <a
               class="stat stat-link stat-link--cta button-link--hero"
-              href="https://pypi.org/project/abx-pkg/"
+              href="https://pypi.org/project/abxpkg/"
               target="_blank"
               rel="noreferrer"
             >
               <strong><span class="cta-plus">↓</span> Install</strong>
-              <center><span>pip install abx-pkg</span></center>
+              <center><span>pip install abxpkg</span></center>
             </a>
           </div>
           <div class="hero-meta">
@@ -1574,14 +1574,14 @@
               <h2 class="hero-example-title" id="quickstart-heading">Quick Start</h2>
               <p class="hero-example-copy">
                 Pick a provider below to auto-fill an example command, or use
-                <code>abx-pkg</code> directly from the CLI.
+                <code>abxpkg</code> directly from the CLI.
               </p>
             </div>
             <div class="hero-runner-links">
               <span>Docs:</span>
-              <a class="runner-link" href="https://github.com/ArchiveBox/abx-pkg#readme" target="_blank" rel="noreferrer">README</a>
-              <a class="runner-link" href="https://pypi.org/project/abx-pkg/" target="_blank" rel="noreferrer">PyPI</a>
-              <a class="runner-link" href="https://github.com/ArchiveBox/abx-pkg" target="_blank" rel="noreferrer">GitHub</a>
+              <a class="runner-link" href="https://github.com/ArchiveBox/abxpkg#readme" target="_blank" rel="noreferrer">README</a>
+              <a class="runner-link" href="https://pypi.org/project/abxpkg/" target="_blank" rel="noreferrer">PyPI</a>
+              <a class="runner-link" href="https://github.com/ArchiveBox/abxpkg" target="_blank" rel="noreferrer">GitHub</a>
             </div>
           </div>
 
@@ -1589,7 +1589,7 @@
             <div class="hero-code-toolbar">
               <div class="hero-code-meta">
                 <span class="hero-code-kicker">Selected provider</span>
-                <code id="selected-plugin-name">abx-pkg</code>
+                <code id="selected-plugin-name">abxpkg</code>
               </div>
               <button type="button" class="copy-button" id="copy-example-button">Copy</button>
             </div>
@@ -1598,28 +1598,28 @@
 
           <details class="install-details">
             <summary>Expand to see install + library usage</summary>
-            <pre><code data-highlight-shell>pip install abx-pkg
+            <pre><code data-highlight-shell>pip install abxpkg
 # or
-uv tool add abx-pkg
+uv tool add abxpkg
 
 # CLI
-abx-pkg --version
-abx-pkg install yt-dlp
-abx-pkg update yt-dlp
-abx-pkg uninstall yt-dlp
-abx-pkg load yt-dlp
+abxpkg --version
+abxpkg install yt-dlp
+abxpkg update yt-dlp
+abxpkg uninstall yt-dlp
+abxpkg load yt-dlp
 
 # Select specific providers / re-order provider precedence
-abx-pkg install --binproviders=env,uv,pip,apt,brew prettier
-env ABX_PKG_BINPROVIDERS=env,uv,pip,apt,brew abx-pkg install yt-dlp
+abxpkg install --binproviders=env,uv,pip,apt,brew prettier
+env ABXPKG_BINPROVIDERS=env,uv,pip,apt,brew abxpkg install yt-dlp
 
 # Customize install location
-abx-pkg --lib=~/.config/abx/lib install yt-dlp
-env ABX_PKG_LIB_DIR=/tmp/abxlib abx-pkg install yt-dlp
+abxpkg --lib=~/.config/abx/lib install yt-dlp
+env ABXPKG_LIB_DIR=/tmp/abxlib abxpkg install yt-dlp
 
 # Dry-run mode
-abx-pkg install --dry-run some-package
-env ABX_PKG_DRY_RUN=1 abx-pkg install some-package</code></pre>
+abxpkg install --dry-run some-package
+env ABXPKG_DRY_RUN=1 abxpkg install some-package</code></pre>
           </details>
         </section>
       </section>
@@ -1654,15 +1654,15 @@ env ABX_PKG_DRY_RUN=1 abx-pkg install some-package</code></pre>
             class="plugin-card plugin-card--{{ provider.category }}"
             data-search="{{ provider.search_text }}"
             data-hero-plugin="{{ provider.short_name }}"
-            data-hero-cli-command="abx-pkg --binproviders={{ provider.short_name }} install {{ provider.example_binary }}"
-            data-hero-python-command="from abx_pkg import Binary, {{ provider.short_name }}&#10;bin = Binary(name={{ provider.example_binary|tojson|forceescape }}, binproviders=[{{ provider.short_name }}]).install()"
+            data-hero-cli-command="abxpkg --binproviders={{ provider.short_name }} install {{ provider.example_binary }}"
+            data-hero-python-command="from abxpkg import Binary, {{ provider.short_name }}&#10;bin = Binary(name={{ provider.example_binary|tojson|forceescape }}, binproviders=[{{ provider.short_name }}]).install()"
           >
             <summary>
               <div class="plugin-main">
                 <div class="plugin-title-row">
                   <h2><span class="provider-hero-emoji">{{ provider.emoji }}</span>{{ provider.display_title }}</h2>
                 </div>
-                <div class="plugin-slug"><code>{{ provider.short_name }}</code> &middot; <code>from abx_pkg import {{ provider.short_name }}</code></div>
+                <div class="plugin-slug"><code>{{ provider.short_name }}</code> &middot; <code>from abxpkg import {{ provider.short_name }}</code></div>
                 {% if provider.summary %}
                 <p class="plugin-summary-description">{{ provider.summary }}</p>
                 {% endif %}
@@ -1687,7 +1687,7 @@ env ABX_PKG_DRY_RUN=1 abx-pkg install some-package</code></pre>
 
               <div class="actions">
                 <a class="button-link" href="{{ provider.source_url }}" target="_blank" rel="noreferrer">Source on GitHub</a>
-                <a class="button-link" href="https://github.com/ArchiveBox/abx-pkg#readme" target="_blank" rel="noreferrer">README</a>
+                <a class="button-link" href="https://github.com/ArchiveBox/abxpkg#readme" target="_blank" rel="noreferrer">README</a>
               </div>
 
               <div class="provider-meta-grid">
@@ -1798,7 +1798,7 @@ env ABX_PKG_DRY_RUN=1 abx-pkg install some-package</code></pre>
         <h2>Global Environment Variables</h2>
         <p>
           These env vars are read once at import time and apply across every provider
-          (or to the <code>abx-pkg</code> CLI itself). Explicit constructor kwargs
+          (or to the <code>abxpkg</code> CLI itself). Explicit constructor kwargs
           always override these defaults.
         </p>
         <div class="config-table-wrap">
@@ -1832,7 +1832,7 @@ env ABX_PKG_DRY_RUN=1 abx-pkg install some-package</code></pre>
         <div class="footer-intro">
           <h2>An ORM for your package managers</h2>
           <p>
-            <code>abx-pkg</code> provides consistent interfaces for runtime
+            <code>abxpkg</code> provides consistent interfaces for runtime
             dependency resolution &amp; installation across many package managers
             and OSs, built with <a href="https://pydantic-docs.helpmanual.io/" target="_blank" rel="noreferrer">pydantic</a>
             v2 for strong static typing and easy conversion to/from JSON. It's
@@ -1841,7 +1841,7 @@ env ABX_PKG_DRY_RUN=1 abx-pkg install some-package</code></pre>
             and OpenAPI tools, and its driver layer can be
             <a href="https://github.com/pyinfra-dev/pyinfra" target="_blank" rel="noreferrer">pyinfra</a>,
             <a href="https://github.com/ansible/ansible" target="_blank" rel="noreferrer">ansible</a>,
-            or the built-in <code>abx-pkg</code> engine.
+            or the built-in <code>abxpkg</code> engine.
           </p>
           <p>
             Originally built by <a href="https://github.com/ArchiveBox" target="_blank" rel="noreferrer">ArchiveBox</a>
@@ -1855,28 +1855,28 @@ env ABX_PKG_DRY_RUN=1 abx-pkg install some-package</code></pre>
             <h3>Install &amp; Use</h3>
             <p class="footer-card-subtitle">Get started</p>
             <div class="footer-link-list">
-              <a class="footer-link-item" href="https://pypi.org/project/abx-pkg/" target="_blank" rel="noreferrer">
+              <a class="footer-link-item" href="https://pypi.org/project/abxpkg/" target="_blank" rel="noreferrer">
                 <span class="footer-link-icon">📦</span>
                 <span class="footer-link-copy">
-                  <strong>abx-pkg on PyPI</strong>
-                  <span>Install the package: <code>pip install abx-pkg</code> or <code>uv tool add abx-pkg</code>.</span>
+                  <strong>abxpkg on PyPI</strong>
+                  <span>Install the package: <code>pip install abxpkg</code> or <code>uv tool add abxpkg</code>.</span>
                 </span>
               </a>
-              <a class="footer-link-item" href="https://github.com/ArchiveBox/abx-pkg#readme" target="_blank" rel="noreferrer">
+              <a class="footer-link-item" href="https://github.com/ArchiveBox/abxpkg#readme" target="_blank" rel="noreferrer">
                 <span class="footer-link-icon">📘</span>
                 <span class="footer-link-copy">
                   <strong>README</strong>
                   <span>Full documentation, advanced usage, overrides, and Django integration.</span>
                 </span>
               </a>
-              <a class="footer-link-item" href="https://github.com/ArchiveBox/abx-pkg/tree/main/django_example_project" target="_blank" rel="noreferrer">
+              <a class="footer-link-item" href="https://github.com/ArchiveBox/abxpkg/tree/main/django_example_project" target="_blank" rel="noreferrer">
                 <span class="footer-link-icon">🧪</span>
                 <span class="footer-link-copy">
                   <strong>Django example project</strong>
                   <span>Minimal project showing model fields, admin views, and JSON forms.</span>
                 </span>
               </a>
-              <a class="footer-link-item" href="https://github.com/ArchiveBox/abx-pkg/tree/main/tests" target="_blank" rel="noreferrer">
+              <a class="footer-link-item" href="https://github.com/ArchiveBox/abxpkg/tree/main/tests" target="_blank" rel="noreferrer">
                 <span class="footer-link-icon">✅</span>
                 <span class="footer-link-copy">
                   <strong>Tests</strong>
@@ -1890,28 +1890,28 @@ env ABX_PKG_DRY_RUN=1 abx-pkg install some-package</code></pre>
             <h3>Source &amp; issues</h3>
             <p class="footer-card-subtitle">Contribute</p>
             <div class="footer-link-list">
-              <a class="footer-link-item" href="https://github.com/ArchiveBox/abx-pkg" target="_blank" rel="noreferrer">
+              <a class="footer-link-item" href="https://github.com/ArchiveBox/abxpkg" target="_blank" rel="noreferrer">
                 <span class="footer-link-icon">🐙</span>
                 <span class="footer-link-copy">
                   <strong>GitHub repository</strong>
-                  <span>Main source tree for <code>abx-pkg</code>.</span>
+                  <span>Main source tree for <code>abxpkg</code>.</span>
                 </span>
               </a>
-              <a class="footer-link-item" href="https://github.com/ArchiveBox/abx-pkg/issues" target="_blank" rel="noreferrer">
+              <a class="footer-link-item" href="https://github.com/ArchiveBox/abxpkg/issues" target="_blank" rel="noreferrer">
                 <span class="footer-link-icon">🐛</span>
                 <span class="footer-link-copy">
                   <strong>Issues</strong>
                   <span>Report bugs, request new providers, or propose improvements.</span>
                 </span>
               </a>
-              <a class="footer-link-item" href="https://github.com/ArchiveBox/abx-pkg/pulls" target="_blank" rel="noreferrer">
+              <a class="footer-link-item" href="https://github.com/ArchiveBox/abxpkg/pulls" target="_blank" rel="noreferrer">
                 <span class="footer-link-icon">🔀</span>
                 <span class="footer-link-copy">
                   <strong>Pull requests</strong>
                   <span>Open or review PRs adding new providers or features.</span>
                 </span>
               </a>
-              <a class="footer-link-item" href="https://github.com/ArchiveBox/abx-pkg/releases" target="_blank" rel="noreferrer">
+              <a class="footer-link-item" href="https://github.com/ArchiveBox/abxpkg/releases" target="_blank" rel="noreferrer">
                 <span class="footer-link-icon">🏷️</span>
                 <span class="footer-link-copy">
                   <strong>Releases</strong>
@@ -1929,7 +1929,7 @@ env ABX_PKG_DRY_RUN=1 abx-pkg install some-package</code></pre>
                 <span class="footer-link-icon">🗄️</span>
                 <span class="footer-link-copy">
                   <strong>ArchiveBox</strong>
-                  <span>Self-hosted web archiving — the original consumer of <code>abx-pkg</code>.</span>
+                  <span>Self-hosted web archiving — the original consumer of <code>abxpkg</code>.</span>
                 </span>
               </a>
               <a class="footer-link-item" href="https://github.com/ArchiveBox/abx-plugins" target="_blank" rel="noreferrer">
@@ -1958,7 +1958,7 @@ env ABX_PKG_DRY_RUN=1 abx-pkg install some-package</code></pre>
         </div>
 
         <div class="footer-meta">
-          <span>Generated from <a href="{{ site.github_repo }}" target="_blank" rel="noreferrer">ArchiveBox/abx-pkg</a> at ref <code>{{ site.github_ref }}</code>{% if site.package_version %} · v{{ site.package_version }}{% endif %}.</span>
+          <span>Generated from <a href="{{ site.github_repo }}" target="_blank" rel="noreferrer">ArchiveBox/abxpkg</a> at ref <code>{{ site.github_ref }}</code>{% if site.package_version %} · v{{ site.package_version }}{% endif %}.</span>
           <span>Updated {{ site.generated_at }}</span>
         </div>
       </footer>
@@ -1990,7 +1990,7 @@ env ABX_PKG_DRY_RUN=1 abx-pkg install some-package</code></pre>
         value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
       const highlightShell = (line) => {
-        const tokenPattern = /('[^']*'|"[^"]*"|--[\w-]+(?:=[^\s'"]+)?|\b(?:uvx|abx-pkg|env|pip|uv|python3?|from|import)\b|\b[A-Z][A-Z0-9_]+(?==)|\b(?:True|False|None|true|false)\b)/g;
+        const tokenPattern = /('[^']*'|"[^"]*"|--[\w-]+(?:=[^\s'"]+)?|\b(?:uvx|abxpkg|env|pip|uv|python3?|from|import)\b|\b[A-Z][A-Z0-9_]+(?==)|\b(?:True|False|None|true|false)\b)/g;
         let html = "";
         let lastIndex = 0;
 
@@ -2004,7 +2004,7 @@ env ABX_PKG_DRY_RUN=1 abx-pkg install some-package</code></pre>
             className = "code-string";
           } else if (token.startsWith("--")) {
             className = "code-option";
-          } else if (token === "abx-pkg" || token === "uvx" || token === "pip" || token === "uv" || token === "env" || token === "python" || token === "python3") {
+          } else if (token === "abxpkg" || token === "uvx" || token === "pip" || token === "uv" || token === "env" || token === "python" || token === "python3") {
             className = "code-command";
           } else if (token === "from" || token === "import") {
             className = "code-command";
@@ -2023,15 +2023,15 @@ env ABX_PKG_DRY_RUN=1 abx-pkg install some-package</code></pre>
       };
 
       const defaultHeroExample = {
-        plugin: "abx-pkg",
-        cli: "abx-pkg install yt-dlp",
-        env: "env ABX_PKG_BINPROVIDERS=env,uv,pip,apt,brew abx-pkg install yt-dlp",
+        plugin: "abxpkg",
+        cli: "abxpkg install yt-dlp",
+        env: "env ABXPKG_BINPROVIDERS=env,uv,pip,apt,brew abxpkg install yt-dlp",
       };
 
       const getHeroExample = (card) => {
         if (!card) return defaultHeroExample;
         return {
-          plugin: card.dataset.heroPlugin || card.id || "abx-pkg",
+          plugin: card.dataset.heroPlugin || card.id || "abxpkg",
           cli: card.dataset.heroCliCommand || defaultHeroExample.cli,
           env: (card.dataset.heroPythonCommand || "").replace(/&#10;/g, "\n"),
         };

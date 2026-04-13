@@ -2,10 +2,10 @@
 
 
 ```bash
-git clone 'https://github.com/ArchiveBox/abx-pkg'
-cd abx-pkg
+git clone 'https://github.com/ArchiveBox/abxpkg'
+cd abxpkg
 
-pip install -e .             # install abx_pkg from source
+pip install -e .             # install abxpkg from source
 
 cd django_example_project/   # then go into the demo project dir
 

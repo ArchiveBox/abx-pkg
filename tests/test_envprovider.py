@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from abx_pkg import Binary, EnvProvider, SemVer
-from abx_pkg.exceptions import BinaryUninstallError
+from abxpkg import Binary, EnvProvider, SemVer
+from abxpkg.exceptions import BinaryUninstallError
 
 
 class TestEnvProvider:

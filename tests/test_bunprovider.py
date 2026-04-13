@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from abx_pkg import Binary, BunProvider, SemVer
-from abx_pkg.exceptions import BinaryInstallError, BinProviderInstallError
+from abxpkg import Binary, BunProvider, SemVer
+from abxpkg.exceptions import BinaryInstallError, BinProviderInstallError
 
 
 class TestBunProvider:
@@ -259,7 +259,7 @@ class TestBunProvider:
                 overrides={"optipng": {"install_args": ["optipng-bin"]}},
             )
             caplog.clear()
-            with caplog.at_level(logging.INFO, logger="abx_pkg.binprovider"):
+            with caplog.at_level(logging.INFO, logger="abxpkg.binprovider"):
                 dry_run_override = override_provider.install(
                     "optipng",
                     postinstall_scripts=True,
@@ -334,7 +334,7 @@ class TestBunProvider:
 
     def test_supports_methods_do_not_emit_unsupported_warnings(self, caplog):
         with tempfile.TemporaryDirectory() as tmpdir:
-            with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+            with caplog.at_level(logging.WARNING, logger="abxpkg.binprovider"):
                 provider = BunProvider(
                     install_root=Path(tmpdir) / "bun",
                     postinstall_scripts=False,

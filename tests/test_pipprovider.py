@@ -1,14 +1,113 @@
+import os
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import cast
 
 import pytest
 
-from abx_pkg import Binary, PipProvider, SemVer
-from abx_pkg.exceptions import BinaryInstallError
+from abxpkg import Binary, PipProvider, SemVer
+from abxpkg.config import load_derived_cache
+from abxpkg.exceptions import BinaryInstallError
 
 
 class TestPipProvider:
+    def test_managed_venv_load_refreshes_provider_local_derived_cache(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            provider = PipProvider(
+                install_root=Path(tmpdir) / "venv",
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+            installed = provider.install("black")
+
+            assert installed is not None
+            assert installed.loaded_abspath is not None
+            assert installed.loaded_version is not None
+            assert provider.install_root is not None
+            derived_env_path = provider.install_root / "derived.env"
+            cache = load_derived_cache(derived_env_path)
+            assert cache
+
+            cached_record = next(
+                record
+                for cache_key, record in cache.items()
+                if f'"{provider.name}","black"' in cache_key
+            )
+            assert isinstance(cached_record, dict)
+            cached_fingerprints = cached_record.get("fingerprint")
+            assert isinstance(cached_fingerprints, list)
+            cached_fingerprint = None
+            for fingerprint in cached_fingerprints:
+                assert isinstance(fingerprint, dict)
+                typed_fingerprint = cast(dict[str, object], fingerprint)
+                if typed_fingerprint.get("path") == str(
+                    installed.loaded_abspath.resolve(),
+                ):
+                    cached_fingerprint = typed_fingerprint
+                    break
+            assert cached_fingerprint is not None
+
+            current_stat = installed.loaded_abspath.stat()
+            refreshed_ns = current_stat.st_mtime_ns + 5_000_000
+            os.utime(
+                installed.loaded_abspath,
+                ns=(current_stat.st_atime_ns, refreshed_ns),
+            )
+
+            reloaded = provider.load("black")
+            assert reloaded is not None
+            assert reloaded.loaded_version == installed.loaded_version
+
+            refreshed_cache = load_derived_cache(derived_env_path)
+            refreshed_record = next(
+                record
+                for cache_key, record in refreshed_cache.items()
+                if f'"{provider.name}","black"' in cache_key
+            )
+            assert isinstance(refreshed_record, dict)
+            refreshed_fingerprints = refreshed_record.get("fingerprint")
+            assert isinstance(refreshed_fingerprints, list)
+            refreshed_fingerprint = None
+            for fingerprint in refreshed_fingerprints:
+                assert isinstance(fingerprint, dict)
+                typed_fingerprint = cast(dict[str, object], fingerprint)
+                if typed_fingerprint.get("path") == str(
+                    installed.loaded_abspath.resolve(),
+                ):
+                    refreshed_fingerprint = typed_fingerprint
+                    break
+            assert refreshed_fingerprint is not None
+            refreshed_mtime_ns = cast(int, refreshed_fingerprint["mtime_ns"])
+            cached_mtime_ns = cast(int, cached_fingerprint["mtime_ns"])
+            assert refreshed_mtime_ns == refreshed_ns
+            assert refreshed_mtime_ns != cached_mtime_ns
+            assert cast(str, refreshed_record["loaded_version"]) == str(
+                installed.loaded_version,
+            )
+
+    def test_uninstall_removes_provider_local_derived_cache_entries(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            provider = PipProvider(
+                install_root=Path(tmpdir) / "venv",
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+            installed = provider.install("black")
+
+            assert installed is not None
+            assert provider.install_root is not None
+            derived_env_path = provider.install_root / "derived.env"
+            cache = load_derived_cache(derived_env_path)
+            assert any(f'"{provider.name}","black"' in cache_key for cache_key in cache)
+
+            assert provider.uninstall("black")
+
+            cleared_cache = load_derived_cache(derived_env_path)
+            assert not any(
+                f'"{provider.name}","black"' in cache_key for cache_key in cleared_cache
+            )
+
     def test_version_falls_back_to_pip_metadata_when_console_script_rejects_flags(
         self,
     ):

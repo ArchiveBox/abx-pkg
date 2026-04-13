@@ -1,5 +1,5 @@
-from abx_pkg import EnvProvider
-from abx_pkg.__init__ import _provider_class
+from abxpkg import EnvProvider
+from abxpkg.__init__ import _provider_class
 
 
 class TestModuleApi:

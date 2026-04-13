@@ -1,5 +1,5 @@
 [project]
-name = "abx-pkg"
+name = "abxpkg"
 version = "1.9.29"
 description = "System package manager interfaces with Python type hints"
 authors = [{name = "Nick Sweeting"}, {name = "ArchiveBox"}]
@@ -48,8 +48,8 @@ dependencies = [
 ]
 
 [project.scripts]
-abx-pkg = "abx_pkg.cli:main"
-abx = "abx_pkg.cli:abx_main"
+abxpkg = "abxpkg.cli:main"
+abx = "abxpkg.cli:abx_main"
 
 [project.optional-dependencies]
 rich = [
@@ -64,7 +64,7 @@ ansible = [
     'ansible-runner>=2.4.2',
 ]
 all = [
-    "abx-pkg[rich,pyinfra,ansible]",
+    "abxpkg[rich,pyinfra,ansible]",
 ]
 
 [build-system]
@@ -72,15 +72,15 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["abx_pkg"]
+packages = ["abxpkg"]
 
 [tool.hatch.build.targets.sdist]
 include = [
-    "abx_pkg/**",
-    "abx_pkg/js/base/config.json",
-    "abx_pkg/js/base/utils.js",
-    "abx_pkg/js/chrome/config.json",
-    "abx_pkg/js/chrome/chrome_utils.js",
+    "abxpkg/**",
+    "abxpkg/js/base/config.json",
+    "abxpkg/js/base/utils.js",
+    "abxpkg/js/chrome/config.json",
+    "abxpkg/js/chrome/chrome_utils.js",
     "README.md",
     "LICENSE",
     "pyproject.toml",
@@ -111,7 +111,7 @@ dev = [
 exclude-newer = "2026-04-04T00:00:00Z"
 
 [tool.mypy]
-mypy_path = "abx_pkg"
+mypy_path = "abxpkg"
 python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
@@ -120,7 +120,7 @@ plugins = [
 ]
 
 [tool.pyright]
-include = ["abx_pkg", "tests", "django_example_project/project"]
+include = ["abxpkg", "tests", "django_example_project/project"]
 exclude = [
     "**/node_modules",
     "**/__pycache__",
@@ -146,9 +146,9 @@ exclude = [
 
 
 [project.urls]
-Homepage = "https://github.com/ArchiveBox/abx-pkg"
-Source = "https://github.com/ArchiveBox/abx-pkg"
-Documentation = "https://github.com/ArchiveBox/abx-pkg"
-"Bug Tracker" = "https://github.com/ArchiveBox/abx-pkg/issues"
-Changelog = "https://github.com/ArchiveBox/abx-pkg/releases"
+Homepage = "https://github.com/ArchiveBox/abxpkg"
+Source = "https://github.com/ArchiveBox/abxpkg"
+Documentation = "https://github.com/ArchiveBox/abxpkg"
+"Bug Tracker" = "https://github.com/ArchiveBox/abxpkg/issues"
+Changelog = "https://github.com/ArchiveBox/abxpkg/releases"
 Donate = "https://github.com/ArchiveBox/ArchiveBox/wiki/Donations"

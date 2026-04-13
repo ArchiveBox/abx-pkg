@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from abx_pkg import Binary, PnpmProvider, SemVer
-from abx_pkg.exceptions import BinaryInstallError, BinProviderInstallError
+from abxpkg import Binary, PnpmProvider, SemVer
+from abxpkg.exceptions import BinaryInstallError, BinProviderInstallError
 
 
 class TestPnpmProvider:
@@ -442,7 +442,7 @@ class TestPnpmProvider:
         # it always is for pnpm 10+), no "ignoring unsupported" warnings
         # should be emitted at install/update/uninstall time.
         with tempfile.TemporaryDirectory() as tmpdir:
-            with caplog.at_level(logging.WARNING, logger="abx_pkg.binprovider"):
+            with caplog.at_level(logging.WARNING, logger="abxpkg.binprovider"):
                 provider = PnpmProvider(
                     install_root=Path(tmpdir) / "pnpm",
                     postinstall_scripts=False,

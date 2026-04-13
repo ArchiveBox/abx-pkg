@@ -5,7 +5,9 @@ import sys
 
 import pytest
 
-from abx_pkg import (
+from abxpkg import (
+    BunProvider,
+    DenoProvider,
     EnvProvider,
     NpmProvider,
     PipProvider,
@@ -27,7 +29,7 @@ class TestBinProvider:
             (YarnProvider, "yarn"),
         ),
     )
-    def test_provider_init_with_euid_none_does_not_recurse_through_installer_lookup(
+    def test_provider_init_is_lazy_until_setup(
         self,
         test_machine,
         provider_cls,
@@ -42,6 +44,11 @@ class TestBinProvider:
                 postinstall_scripts=True,
                 min_release_age=0,
             )
+
+            assert provider.euid is None
+            assert not (Path(tmpdir) / "install-root").exists()
+
+            provider.setup(no_cache=True)
 
         assert provider.euid is not None
 
@@ -69,7 +76,7 @@ class TestBinProvider:
 
         assert abspath is not None
         assert installer.loaded_abspath is not None
-        assert abspath == installer.loaded_abspath
+        assert installer.loaded_abspath.name == installer_bin
 
     def test_base_public_getters_resolve_real_host_python(self, test_machine):
         provider = EnvProvider(postinstall_scripts=True, min_release_age=0)
@@ -89,6 +96,69 @@ class TestBinProvider:
             min_version=SemVer("3.0.0"),
         )
         test_machine.assert_shallow_binary_loaded(loaded_or_installed)
+
+    def test_provider_ENV_includes_runtime_and_installer_context(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir_path = Path(tmpdir)
+
+            pip_provider = PipProvider(
+                install_root=tmpdir_path / "pip",
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+            uv_provider = UvProvider(
+                install_root=tmpdir_path / "uv",
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+            uv_tool_provider = UvProvider(
+                install_root=None,
+                uv_tool_dir=tmpdir_path / "uv-tools",
+                bin_dir=tmpdir_path / "uv-bin",
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+            pnpm_provider = PnpmProvider(
+                install_root=tmpdir_path / "pnpm",
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+            yarn_provider = YarnProvider(
+                install_root=tmpdir_path / "yarn",
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+            bun_provider = BunProvider(
+                install_root=tmpdir_path / "bun",
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+            deno_provider = DenoProvider(
+                install_root=tmpdir_path / "deno",
+                deno_dir=tmpdir_path / "deno-cache",
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+
+            assert {"VIRTUAL_ENV"} <= set(pip_provider.ENV)
+            assert {"VIRTUAL_ENV", "UV_CACHE_DIR"} <= set(uv_provider.ENV)
+            assert {"UV_TOOL_DIR", "UV_TOOL_BIN_DIR", "UV_CACHE_DIR"} <= set(
+                uv_tool_provider.ENV,
+            )
+            assert {"PNPM_HOME", "NODE_MODULES_DIR", "NODE_PATH"} <= set(
+                pnpm_provider.ENV,
+            )
+            assert {
+                "YARN_GLOBAL_FOLDER",
+                "YARN_CACHE_FOLDER",
+                "NODE_MODULES_DIR",
+            } <= set(yarn_provider.ENV)
+            assert {"BUN_INSTALL", "NODE_MODULES_DIR", "NODE_PATH"} <= set(
+                bun_provider.ENV,
+            )
+            assert {"DENO_INSTALL_ROOT", "DENO_DIR", "DENO_TLS_CA_STORE"} <= set(
+                deno_provider.ENV,
+            )
 
     def test_get_provider_with_overrides_changes_real_install_behavior(
         self,
@@ -123,6 +193,29 @@ class TestBinProvider:
             assert installed is not None
 
             proc = provider.exec(
+                sys.executable,
+                cmd=[
+                    "-c",
+                    "import subprocess, sys; proc = subprocess.run(['black', '--version'], capture_output=True, text=True); sys.stdout.write((proc.stdout or proc.stderr).strip()); sys.exit(proc.returncode)",
+                ],
+                quiet=True,
+            )
+
+            assert proc.returncode == 0, proc.stderr or proc.stdout
+            assert installed.loaded_version is not None
+            assert str(installed.loaded_version) in proc.stdout
+
+    def test_shallow_binary_exec_uses_loaded_provider_runtime_env(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            provider = PipProvider(
+                install_root=Path(tmpdir) / "venv",
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+            installed = provider.install("black")
+            assert installed is not None
+
+            proc = installed.exec(
                 sys.executable,
                 cmd=[
                     "-c",
