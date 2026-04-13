@@ -1297,7 +1297,7 @@ class BinProvider(BaseModel):
         cache = load_derived_cache(derived_env_path)
         cache_changed = False
         has_valid_cache = False
-        for cache_key, cache_value in cache.items():
+        for cache_key, cache_value in list(cache.items()):
             if not isinstance(cache_value, dict):
                 continue
             cached_provider_name = cache_value.get("provider_name")
