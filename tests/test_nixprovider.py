@@ -1,10 +1,12 @@
 import tempfile
 from pathlib import Path
 import logging
+from typing import cast
 
 import pytest
 
 from abxpkg import Binary, NixProvider, SemVer
+from abxpkg.binprovider import BinProvider
 
 
 class TestNixProvider:
@@ -16,7 +18,6 @@ class TestNixProvider:
             provider = NixProvider.model_validate(
                 {
                     "install_root": install_root,
-                    "nix_state_dir": Path(temp_dir) / "nix-state",
                     "postinstall_scripts": True,
                     "min_release_age": 0,
                     "install_timeout": 300,
@@ -38,7 +39,6 @@ class TestNixProvider:
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = NixProvider(
                 install_root=Path(temp_dir) / "nix-profile",
-                nix_state_dir=Path(temp_dir) / "nix-state",
                 postinstall_scripts=True,
                 min_release_age=0,
             )
@@ -53,7 +53,6 @@ class TestNixProvider:
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = NixProvider(
                 install_root=Path(temp_dir) / "nix-profile",
-                nix_state_dir=Path(temp_dir) / "nix-state",
                 postinstall_scripts=True,
                 min_release_age=0,
             )
@@ -78,7 +77,6 @@ class TestNixProvider:
             temp_dir_path = Path(temp_dir)
             ambient_provider = NixProvider(
                 install_root=temp_dir_path / "ambient-profile",
-                nix_state_dir=temp_dir_path / "ambient-state",
                 postinstall_scripts=True,
                 min_release_age=0,
             )
@@ -89,7 +87,6 @@ class TestNixProvider:
             provider = NixProvider(
                 PATH=f"{ambient_provider.bin_dir}:{NixProvider().PATH}",
                 install_root=nix_profile,
-                nix_state_dir=temp_dir_path / "nix-state",
                 postinstall_scripts=True,
                 min_release_age=0,
             )
@@ -111,7 +108,6 @@ class TestNixProvider:
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = NixProvider(
                 install_root=Path(temp_dir) / "nix-profile",
-                nix_state_dir=Path(temp_dir) / "nix-state",
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -139,7 +135,6 @@ class TestNixProvider:
             with caplog.at_level(logging.WARNING, logger="abxpkg.binprovider"):
                 installed = NixProvider(
                     install_root=Path(temp_dir) / "bad-profile",
-                    nix_state_dir=Path(temp_dir) / "bad-state",
                     postinstall_scripts=False,
                     min_release_age=1,
                 ).install("hello")
@@ -150,14 +145,16 @@ class TestNixProvider:
             caplog.clear()
             binary = Binary(
                 name="hello",
-                binproviders=[
-                    NixProvider(
-                        install_root=Path(temp_dir) / "ok-profile",
-                        nix_state_dir=Path(temp_dir) / "ok-state",
-                        postinstall_scripts=False,
-                        min_release_age=1,
-                    ),
-                ],
+                binproviders=cast(
+                    list[BinProvider],
+                    [
+                        NixProvider(
+                            install_root=Path(temp_dir) / "ok-profile",
+                            postinstall_scripts=False,
+                            min_release_age=1,
+                        ),
+                    ],
+                ),
                 postinstall_scripts=False,
                 min_release_age=1,
             )
@@ -173,14 +170,16 @@ class TestNixProvider:
         with tempfile.TemporaryDirectory() as temp_dir:
             binary = Binary(
                 name="hello",
-                binproviders=[
-                    NixProvider(
-                        install_root=Path(temp_dir) / "nix-profile",
-                        nix_state_dir=Path(temp_dir) / "nix-state",
-                        postinstall_scripts=True,
-                        min_release_age=0,
-                    ),
-                ],
+                binproviders=cast(
+                    list[BinProvider],
+                    [
+                        NixProvider(
+                            install_root=Path(temp_dir) / "nix-profile",
+                            postinstall_scripts=True,
+                            min_release_age=0,
+                        ),
+                    ],
+                ),
                 postinstall_scripts=True,
                 min_release_age=0,
             )
@@ -192,7 +191,6 @@ class TestNixProvider:
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = NixProvider(
                 install_root=Path(temp_dir) / "nix-profile",
-                nix_state_dir=Path(temp_dir) / "nix-state",
                 postinstall_scripts=True,
                 min_release_age=0,
             )

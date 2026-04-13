@@ -3,7 +3,15 @@ from pathlib import Path
 
 import pytest
 
-from abxpkg import Binary, BinProvider, EnvProvider, PipProvider, SemVer
+from abxpkg import (
+    Binary,
+    BinProvider,
+    EnvProvider,
+    NpmProvider,
+    PipProvider,
+    SemVer,
+    UvProvider,
+)
 from abxpkg.exceptions import (
     BinaryLoadError,
     BinaryInstallError,
@@ -27,6 +35,8 @@ class TestBinary:
         assert binary.abspaths == binary.loaded_abspaths
         assert binary.version == binary.loaded_version
         assert binary.sha256 == binary.loaded_sha256
+        assert binary.mtime == binary.loaded_mtime
+        assert binary.euid == binary.loaded_euid
 
     def test_get_binprovider_applies_overrides_and_provider_filtering(
         self,
@@ -71,6 +81,35 @@ class TestBinary:
                 no_cache=True,
             )
             test_machine.assert_shallow_binary_loaded(loaded)
+
+    def test_get_binprovider_applies_provider_field_patches_from_binary_overrides(
+        self,
+    ):
+        binary = Binary(
+            name="forum-dl",
+            binproviders=[
+                PipProvider(
+                    postinstall_scripts=False,
+                    min_release_age=7,
+                ),
+            ],
+            overrides={
+                "pip": {
+                    "install_args": ["forum-dl", "cchardet==2.2.0a2"],
+                    "postinstall_scripts": True,
+                    "min_release_age": 0,
+                },
+            },
+        )
+
+        provider = binary.get_binprovider("pip")
+
+        assert provider.postinstall_scripts is True
+        assert provider.min_release_age == 0
+        assert provider.get_install_args("forum-dl") == (
+            "forum-dl",
+            "cchardet==2.2.0a2",
+        )
 
     def test_min_version_rejection_paths_raise_public_errors(self):
         binary = Binary(
@@ -155,6 +194,8 @@ class TestBinary:
 
             removed = updated.uninstall()
             assert removed.loaded_abspath is None
+            assert removed.loaded_mtime is None
+            assert removed.loaded_euid is None
 
     def test_empty_binprovider_filter_returns_binary_unchanged(self):
         binary = Binary(
@@ -335,6 +376,38 @@ class TestBinary:
 
             forced = installed.install(dry_run=True, no_cache=True)
             assert forced.loaded_version == SemVer("999.999.999")
+
+    def test_binary_uninstall_prioritizes_provider_with_cached_install_record(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            npm_provider = NpmProvider(
+                install_root=tmp_path / "npm",
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+            installed = npm_provider.install("zx")
+
+            assert installed is not None
+            assert npm_provider.load("zx", no_cache=True) is not None
+
+            binary = Binary(
+                name="zx",
+                binproviders=[
+                    UvProvider(
+                        install_root=tmp_path / "uv",
+                        postinstall_scripts=True,
+                        min_release_age=0,
+                    ),
+                    npm_provider,
+                ],
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+
+            removed = binary.uninstall()
+
+            assert removed.loaded_abspath is None
+            assert npm_provider.load("zx", no_cache=True) is None
 
     def test_binary_action_args_override_binary_and_provider_defaults(
         self,

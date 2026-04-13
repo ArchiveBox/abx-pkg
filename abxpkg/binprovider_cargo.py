@@ -14,10 +14,9 @@ from .base_types import (
     BinName,
     InstallArgs,
     abxpkg_install_root_default,
-    bin_abspath,
 )
 from .semver import SemVer
-from .binprovider import BinProvider, remap_kwargs
+from .binprovider import BinProvider, log_method_call, remap_kwargs
 from .logging import format_subprocess_output
 
 
@@ -26,63 +25,56 @@ DEFAULT_CARGO_HOME = Path(os.environ.get("CARGO_HOME", "~/.cargo")).expanduser()
 
 class CargoProvider(BinProvider):
     name: BinProviderName = "cargo"
+    _log_emoji = "🦀"
     INSTALLER_BIN: BinName = "cargo"
 
     PATH: PATHStr = ""  # Starts empty; setup_PATH() fills it with cargo_home/bin plus any install_root/bin override.
 
-    cargo_home: Path = DEFAULT_CARGO_HOME
     install_root: Path | None = Field(
         default_factory=lambda: abxpkg_install_root_default("cargo"),
         validation_alias="cargo_root",
     )
     bin_dir: Path | None = None
-    cargo_install_args: list[str] = ["--locked"]
 
     @computed_field
     @property
     def ENV(self) -> "dict[str, str]":
         if not self.install_root:
             return {}
+        cargo_home = DEFAULT_CARGO_HOME
         env: dict[str, str] = {
-            "CARGO_HOME": str(self.cargo_home),
+            "CARGO_HOME": str(cargo_home),
             "CARGO_TARGET_DIR": str(self.install_root / "target"),
         }
-        if self.install_root != self.cargo_home:
+        if self.install_root != cargo_home:
             env["CARGO_INSTALL_ROOT"] = str(self.install_root)
         return env
 
     @computed_field
     @property
     def is_valid(self) -> bool:
-        if self.install_root and self.install_root != self.cargo_home:
-            cargo_bin_dir = self.install_root / "bin"
-            if not (cargo_bin_dir.is_dir() and os.access(cargo_bin_dir, os.R_OK)):
-                return False
-
-        return bool(
-            bin_abspath(self.INSTALLER_BIN, PATH=self.PATH)
-            or bin_abspath(self.INSTALLER_BIN),
-        )
+        return super().is_valid
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
         if self.install_root is None:
-            self.install_root = self.cargo_home
+            self.install_root = DEFAULT_CARGO_HOME
         if self.bin_dir is None:
             self.bin_dir = self.install_root / "bin"
 
         return self
 
-    def setup_PATH(self) -> None:
+    def setup_PATH(self, no_cache: bool = False) -> None:
         """Populate PATH on first use from cargo_home/bin and any install_root/bin override."""
-        cargo_bin_dirs = [self.cargo_home / "bin"]
+        cargo_bin_dirs = [DEFAULT_CARGO_HOME / "bin"]
         install_root = self.install_root
         assert install_root is not None
-        if install_root != self.cargo_home:
+        if install_root != DEFAULT_CARGO_HOME:
             cargo_bin_dirs.insert(0, install_root / "bin")
         self.PATH = self._merge_PATH(*cargo_bin_dirs, PATH=self.PATH, prepend=True)
-        super().setup_PATH()
+        super().setup_PATH(no_cache=no_cache)
 
+    @log_method_call()
     def setup(
         self,
         *,
@@ -95,12 +87,12 @@ class CargoProvider(BinProvider):
         assert install_root is not None
         if self.euid is None:
             self.euid = self.detect_euid(
-                owner_paths=(install_root, self.cargo_home),
+                owner_paths=(install_root, DEFAULT_CARGO_HOME),
                 preserve_root=True,
             )
-        self.cargo_home.mkdir(parents=True, exist_ok=True)
+        DEFAULT_CARGO_HOME.mkdir(parents=True, exist_ok=True)
         (install_root / "target").mkdir(parents=True, exist_ok=True)
-        if install_root != self.cargo_home:
+        if install_root != DEFAULT_CARGO_HOME:
             bin_dir = self.bin_dir
             assert bin_dir is not None
             bin_dir.mkdir(parents=True, exist_ok=True)
@@ -153,22 +145,17 @@ class CargoProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        self.setup(
-            postinstall_scripts=postinstall_scripts,
-            min_release_age=min_release_age,
-            min_version=min_version,
-        )
-
         install_args = install_args or self.get_install_args(bin_name)
         if min_version and not any(arg.startswith("--version") for arg in install_args):
             install_args = ["--version", f">={min_version}", *install_args]
-        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
 
-        cargo_install_args = [*self.cargo_install_args]
-        if self.install_root != self.cargo_home:
+        cargo_install_args = ["--locked"]
+        if self.install_root != DEFAULT_CARGO_HOME:
             cargo_install_args.extend(["--root", str(self.install_root)])
 
         proc = self.exec(
@@ -188,22 +175,17 @@ class CargoProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        self.setup(
-            postinstall_scripts=postinstall_scripts,
-            min_release_age=min_release_age,
-            min_version=min_version,
-        )
-
         install_args = install_args or self.get_install_args(bin_name)
         if min_version and not any(arg.startswith("--version") for arg in install_args):
             install_args = ["--version", f">={min_version}", *install_args]
-        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
 
-        cargo_install_args = [*self.cargo_install_args]
-        if self.install_root != self.cargo_home:
+        cargo_install_args = ["--locked"]
+        if self.install_root != DEFAULT_CARGO_HOME:
             cargo_install_args.extend(["--root", str(self.install_root)])
 
         proc = self.exec(
@@ -228,6 +210,7 @@ class CargoProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> bool:
         install_args = install_args or self.get_install_args(bin_name)
@@ -235,7 +218,7 @@ class CargoProvider(BinProvider):
             bin_name,
             install_args=install_args,
         )
-        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
 
         proc = self.exec(
@@ -245,7 +228,7 @@ class CargoProvider(BinProvider):
                 *(
                     ["--root", str(self.install_root)]
                     if self.install_root is not None
-                    and self.install_root != self.cargo_home
+                    and self.install_root != DEFAULT_CARGO_HOME
                     else []
                 ),
                 *package_specs,

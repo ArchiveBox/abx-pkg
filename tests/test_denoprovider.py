@@ -1,10 +1,12 @@
 import logging
 import tempfile
 from pathlib import Path
+from typing import cast
 
 import pytest
 
 from abxpkg import Binary, DenoProvider
+from abxpkg.binprovider import BinProvider
 from abxpkg.exceptions import BinaryInstallError, BinProviderInstallError
 
 
@@ -15,7 +17,6 @@ class TestDenoProvider:
             provider = DenoProvider.model_validate(
                 {
                     "install_root": install_root,
-                    "deno_dir": Path(temp_dir) / "deno-cache",
                     "postinstall_scripts": False,
                     "min_release_age": 0,
                 },
@@ -33,16 +34,14 @@ class TestDenoProvider:
             assert provider.bin_dir == install_root / "bin"
             assert installed.loaded_abspath.parent == provider.bin_dir
             # Real on-disk side effect: deno's shim landed in <root>/bin/cowsay
-            # and the global module cache is populated under deno_dir.
+            # and the global module cache is populated under cache_dir.
             assert (install_root / "bin" / "cowsay").exists()
-            assert provider.deno_dir is not None
-            assert provider.deno_dir.exists()
+            assert provider.cache_dir.exists()
 
     def test_provider_direct_methods_exercise_real_lifecycle(self, test_machine):
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = DenoProvider(
                 install_root=Path(temp_dir) / "deno",
-                deno_dir=Path(temp_dir) / "deno-cache",
                 postinstall_scripts=False,
                 min_release_age=0,
             )
@@ -61,7 +60,6 @@ class TestDenoProvider:
         with tempfile.TemporaryDirectory() as tmpdir:
             strict_provider = DenoProvider(
                 install_root=Path(tmpdir) / "strict-deno",
-                deno_dir=Path(tmpdir) / "strict-cache",
                 postinstall_scripts=False,
                 min_release_age=36500,
             )
@@ -89,14 +87,16 @@ class TestDenoProvider:
 
             binary = Binary(
                 name="cowsay",
-                binproviders=[
-                    DenoProvider(
-                        install_root=Path(tmpdir) / "binary-deno",
-                        deno_dir=Path(tmpdir) / "binary-cache",
-                        postinstall_scripts=False,
-                        min_release_age=36500,
-                    ),
-                ],
+                binproviders=cast(
+                    list[BinProvider],
+                    [
+                        DenoProvider(
+                            install_root=Path(tmpdir) / "binary-deno",
+                            postinstall_scripts=False,
+                            min_release_age=36500,
+                        ),
+                    ],
+                ),
                 postinstall_scripts=False,
                 min_release_age=0,
             )
@@ -110,7 +110,6 @@ class TestDenoProvider:
         with tempfile.TemporaryDirectory() as tmpdir:
             strict_provider = DenoProvider(
                 install_root=Path(tmpdir) / "deno",
-                deno_dir=Path(tmpdir) / "cache",
                 postinstall_scripts=False,
                 min_release_age=36500,  # 100 years
             )
@@ -127,7 +126,6 @@ class TestDenoProvider:
         with tempfile.TemporaryDirectory() as tmpdir:
             provider = DenoProvider(
                 install_root=Path(tmpdir) / "deno",
-                deno_dir=Path(tmpdir) / "cache",
                 postinstall_scripts=False,
                 min_release_age=0,
             )
@@ -144,7 +142,6 @@ class TestDenoProvider:
         with tempfile.TemporaryDirectory() as tmpdir:
             provider = DenoProvider(
                 install_root=Path(tmpdir) / "deno",
-                deno_dir=Path(tmpdir) / "cache",
                 postinstall_scripts=False,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -171,14 +168,16 @@ class TestDenoProvider:
         with tempfile.TemporaryDirectory() as temp_dir:
             binary = Binary(
                 name="cowsay",
-                binproviders=[
-                    DenoProvider(
-                        install_root=Path(temp_dir) / "deno",
-                        deno_dir=Path(temp_dir) / "cache",
-                        postinstall_scripts=False,
-                        min_release_age=0,
-                    ),
-                ],
+                binproviders=cast(
+                    list[BinProvider],
+                    [
+                        DenoProvider(
+                            install_root=Path(temp_dir) / "deno",
+                            postinstall_scripts=False,
+                            min_release_age=0,
+                        ),
+                    ],
+                ),
                 postinstall_scripts=False,
                 min_release_age=0,
             )
@@ -191,7 +190,6 @@ class TestDenoProvider:
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = DenoProvider(
                 install_root=Path(temp_dir) / "deno",
-                deno_dir=Path(temp_dir) / "cache",
                 postinstall_scripts=False,
                 min_release_age=0,
             )
@@ -204,7 +202,6 @@ class TestDenoProvider:
             with caplog.at_level(logging.WARNING, logger="abxpkg.binprovider"):
                 provider = DenoProvider(
                     install_root=Path(tmpdir) / "deno",
-                    deno_dir=Path(tmpdir) / "cache",
                     postinstall_scripts=False,
                     min_release_age=0,
                 )
@@ -217,14 +214,16 @@ class TestDenoProvider:
         with tempfile.TemporaryDirectory() as tmpdir:
             failing_binary = Binary(
                 name="cowsay",
-                binproviders=[
-                    DenoProvider(
-                        install_root=Path(tmpdir) / "deno",
-                        deno_dir=Path(tmpdir) / "cache",
-                        postinstall_scripts=False,
-                        min_release_age=36500,
-                    ),
-                ],
+                binproviders=cast(
+                    list[BinProvider],
+                    [
+                        DenoProvider(
+                            install_root=Path(tmpdir) / "deno",
+                            postinstall_scripts=False,
+                            min_release_age=36500,
+                        ),
+                    ],
+                ),
                 postinstall_scripts=False,
                 min_release_age=36500,
             )

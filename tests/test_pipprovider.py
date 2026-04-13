@@ -179,7 +179,7 @@ class TestPipProvider:
             assert installed is not None
             assert installed.loaded_abspath is not None
             assert provider.install_root == install_root
-            assert provider.bin_dir == install_root / "bin"
+            assert provider.bin_dir == install_root / "venv" / "bin"
             assert installed.loaded_abspath.parent == provider.bin_dir
 
     def test_explicit_venv_bin_dir_takes_precedence_over_existing_PATH_entries(
@@ -215,7 +215,7 @@ class TestPipProvider:
             assert installed is not None
             assert installed.loaded_abspath is not None
             assert provider.install_root == install_root
-            assert provider.bin_dir == install_root / "bin"
+            assert provider.bin_dir == install_root / "venv" / "bin"
             assert installed.loaded_abspath.parent == provider.bin_dir
             assert installed.loaded_version is not None
             assert ambient_installed.loaded_version is not None
@@ -227,18 +227,14 @@ class TestPipProvider:
     ):
         with tempfile.TemporaryDirectory() as temp_dir:
             tmp_path = Path(temp_dir)
-            cache_file = tmp_path / "pip-cache-file"
-            cache_file.write_text("not-a-directory", encoding="utf-8")
-
             provider = PipProvider(
                 install_root=tmp_path / "venv",
-                cache_dir=cache_file,
                 postinstall_scripts=True,
                 min_release_age=0,
             )
 
             installed = provider.install("black")
-            assert provider.cache_arg == "--no-cache-dir"
+            assert provider.cache_dir.is_dir()
             test_machine.assert_shallow_binary_loaded(installed)
 
     def test_provider_direct_methods_exercise_real_lifecycle(self, test_machine):

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Self
 
 from platformdirs import user_cache_path
-from pydantic import Field, computed_field, model_validator
+from pydantic import Field, TypeAdapter, computed_field, model_validator
 
 from .base_types import (
     BinName,
@@ -18,9 +18,8 @@ from .base_types import (
     InstallArgs,
     PATHStr,
     abxpkg_install_root_default,
-    bin_abspath,
 )
-from .binprovider import BinProvider, env_flag_is_true, remap_kwargs
+from .binprovider import BinProvider, env_flag_is_true, log_method_call, remap_kwargs
 from .logging import format_subprocess_output
 from .semver import SemVer
 
@@ -41,6 +40,7 @@ class BunProvider(BinProvider):
     """
 
     name: BinProviderName = "bun"
+    _log_emoji = "🥖"
     INSTALLER_BIN: BinName = "bun"
 
     PATH: PATHStr = ""  # Starts empty; setup_PATH() lazily uses install_root/bin_dir only, or Bun's global bin dir from BUN_INSTALL/~/.bun in ambient mode.
@@ -60,11 +60,6 @@ class BunProvider(BinProvider):
         validation_alias="bun_prefix",
     )
     bin_dir: Path | None = None
-
-    cache_dir: Path = USER_CACHE_PATH
-    cache_arg: str = ""  # re-derived per-instance from cache_dir in detect_cache_arg
-
-    bun_install_args: list[str] = []
 
     @computed_field
     @property
@@ -111,28 +106,18 @@ class BunProvider(BinProvider):
             cache_info["fingerprint_paths"].append(package_json)
         return cache_info
 
-    @model_validator(mode="after")
-    def detect_cache_arg(self) -> Self:
-        # Re-derive cache_arg from the instance's cache_dir so that passing
-        # ``cache_dir=Path(...)`` at construction time actually takes effect
-        # (instead of silently inheriting the module-level default). An
-        # explicit ``cache_arg=...`` override is respected verbatim.
-        if not self.cache_arg:
-            self.cache_arg = f"--cache-dir={self.cache_dir}"
-        return self
-
-    def supports_min_release_age(self, action) -> bool:
+    def supports_min_release_age(self, action, no_cache: bool = False) -> bool:
         if action not in ("install", "update"):
             return False
         threshold = SemVer.parse("1.3.0")
         try:
-            installer = self.INSTALLER_BINARY()
+            installer = self.INSTALLER_BINARY(no_cache=no_cache)
         except Exception:
             return False
         version = installer.loaded_version if installer else None
         return bool(version and threshold and version >= threshold)
 
-    def supports_postinstall_disable(self, action) -> bool:
+    def supports_postinstall_disable(self, action, no_cache: bool = False) -> bool:
         return action in ("install", "update")
 
     @staticmethod
@@ -141,17 +126,24 @@ class BunProvider(BinProvider):
             arg == flag or arg.startswith(f"{flag}=") for arg in args for flag in flags
         )
 
+    def default_install_args_handler(
+        self,
+        bin_name: BinName,
+        **context,
+    ) -> InstallArgs:
+        if str(bin_name) == "puppeteer":
+            return ("puppeteer", "@puppeteer/browsers")
+        if str(bin_name) == "puppeteer-browsers":
+            return ("@puppeteer/browsers",)
+        return TypeAdapter(InstallArgs).validate_python(
+            super().default_install_args_handler(bin_name, **context)
+            or [str(bin_name)],
+        )
+
     @computed_field
     @property
     def is_valid(self) -> bool:
-        if self.bin_dir and not (
-            self.bin_dir.is_dir() and os.access(self.bin_dir, os.R_OK)
-        ):
-            return False
-        return bool(
-            bin_abspath(self.INSTALLER_BIN, PATH=self.PATH)
-            or bin_abspath(self.INSTALLER_BIN),
-        )
+        return super().is_valid
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
@@ -159,7 +151,11 @@ class BunProvider(BinProvider):
             self.bin_dir = self.install_root / "bin"
         return self
 
-    def setup_PATH(self) -> None:
+    @property
+    def cache_dir(self) -> Path:
+        return Path(USER_CACHE_PATH)
+
+    def setup_PATH(self, no_cache: bool = False) -> None:
         """Populate PATH on first use from install_root/bin_dir, or Bun's ambient global bin dir."""
         if self.bin_dir:
             self.PATH = self._merge_PATH(self.bin_dir)
@@ -169,8 +165,9 @@ class BunProvider(BinProvider):
                 / "bin"
             )
             self.PATH = self._merge_PATH(default_bun, PATH=self.PATH)
-        super().setup_PATH()
+        super().setup_PATH(no_cache=no_cache)
 
+    @log_method_call(include_result=True)
     def exec(
         self,
         bin_name,
@@ -194,6 +191,7 @@ class BunProvider(BinProvider):
             **kwargs,
         )
 
+    @log_method_call()
     def setup(
         self,
         *,
@@ -207,8 +205,7 @@ class BunProvider(BinProvider):
                 owner_paths=(self.install_root,),
                 preserve_root=True,
             )
-        if not self._ensure_writable_cache_dir(self.cache_dir):
-            self.cache_arg = "--no-cache"
+        self._ensure_writable_cache_dir(self.cache_dir)
         if self.install_root:
             assert self.bin_dir is not None
             self.bin_dir.mkdir(parents=True, exist_ok=True)
@@ -225,7 +222,6 @@ class BunProvider(BinProvider):
         no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        self.setup(no_cache=no_cache)
         installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
         postinstall_scripts = bool(postinstall_scripts)
@@ -240,17 +236,19 @@ class BunProvider(BinProvider):
                 else arg
                 for arg in install_args
             ]
-        if any(
-            arg == "--ignore-scripts" for arg in (*self.bun_install_args, *install_args)
-        ):
+        if any(arg == "--ignore-scripts" for arg in install_args):
             postinstall_scripts = False
 
-        cache_arg = "--no-cache" if no_cache else self.cache_arg
-        cmd: list[str] = ["add", *self.bun_install_args, cache_arg, "-g"]
+        cache_arg = (
+            "--no-cache"
+            if no_cache or not self._ensure_writable_cache_dir(self.cache_dir)
+            else f"--cache-dir={self.cache_dir}"
+        )
+        cmd: list[str] = ["add", cache_arg, "-g"]
         if not postinstall_scripts:
             cmd.append("--ignore-scripts")
         elif not self._has_cli_flag(
-            [*self.bun_install_args, *install_args],
+            install_args,
             "--trust",
         ):
             # Bun does not run dependency lifecycle scripts by default.
@@ -261,7 +259,7 @@ class BunProvider(BinProvider):
             min_release_age is not None
             and min_release_age > 0
             and not self._has_cli_flag(
-                [*self.bun_install_args, *install_args],
+                install_args,
                 "--minimum-release-age",
             )
         ):
@@ -286,7 +284,6 @@ class BunProvider(BinProvider):
         no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        self.setup(no_cache=no_cache)
         installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
         postinstall_scripts = bool(postinstall_scripts)
@@ -301,17 +298,19 @@ class BunProvider(BinProvider):
                 else arg
                 for arg in install_args
             ]
-        if any(
-            arg == "--ignore-scripts" for arg in (*self.bun_install_args, *install_args)
-        ):
+        if any(arg == "--ignore-scripts" for arg in install_args):
             postinstall_scripts = False
 
-        cache_arg = "--no-cache" if no_cache else self.cache_arg
-        cmd: list[str] = ["update", *self.bun_install_args, cache_arg, "-g"]
+        cache_arg = (
+            "--no-cache"
+            if no_cache or not self._ensure_writable_cache_dir(self.cache_dir)
+            else f"--cache-dir={self.cache_dir}"
+        )
+        cmd: list[str] = ["update", cache_arg, "-g"]
         if not postinstall_scripts:
             cmd.append("--ignore-scripts")
         elif not self._has_cli_flag(
-            [*self.bun_install_args, *install_args],
+            install_args,
             "--trust",
         ):
             cmd.append("--trust")
@@ -319,7 +318,7 @@ class BunProvider(BinProvider):
             min_release_age is not None
             and min_release_age > 0
             and not self._has_cli_flag(
-                [*self.bun_install_args, *install_args],
+                install_args,
                 "--minimum-release-age",
             )
         ):
@@ -332,11 +331,11 @@ class BunProvider(BinProvider):
         if proc.returncode != 0:
             # `bun update -g <pkg>` is rejected by some bun versions; fall
             # back to `bun add -g --force <pkg>` to refresh the global store.
-            cmd = ["add", *self.bun_install_args, cache_arg, "-g", "--force"]
+            cmd = ["add", cache_arg, "-g", "--force"]
             if not postinstall_scripts:
                 cmd.append("--ignore-scripts")
             elif not self._has_cli_flag(
-                [*self.bun_install_args, *install_args],
+                install_args,
                 "--trust",
             ):
                 cmd.append("--trust")
@@ -344,7 +343,7 @@ class BunProvider(BinProvider):
                 min_release_age is not None
                 and min_release_age > 0
                 and not self._has_cli_flag(
-                    [*self.bun_install_args, *install_args],
+                    install_args,
                     "--minimum-release-age",
                 )
             ):
@@ -365,15 +364,21 @@ class BunProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> bool:
-        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
         install_args = install_args or self.get_install_args(bin_name)
+        if str(bin_name) == "puppeteer" and tuple(install_args) == (
+            "puppeteer",
+            "@puppeteer/browsers",
+        ):
+            install_args = ["puppeteer"]
 
         proc = self.exec(
             bin_name=installer_bin,
-            cmd=["remove", *self.bun_install_args, "-g", *install_args],
+            cmd=["remove", "-g", *install_args],
             timeout=timeout,
         )
         if proc.returncode != 0:

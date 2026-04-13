@@ -22,6 +22,7 @@ from .binprovider import (
     BinProviderOverrides,
     EnvProvider,
     HandlerType,
+    log_method_call,
     remap_kwargs,
 )
 from .logging import format_subprocess_output
@@ -34,6 +35,7 @@ DEFAULT_BASH_ROOT = DEFAULT_LIB_DIR / "bash"
 
 class BashProvider(EnvProvider):
     name: BinProviderName = "bash"
+    _log_emoji = "🧪"
     INSTALLER_BIN: BinName = "sh"
 
     PATH: PATHStr = ""  # Starts empty; setup_PATH() replaces it with bin_dir only.
@@ -65,16 +67,17 @@ class BashProvider(EnvProvider):
             self.bin_dir = self.install_root / "bin"
         return self
 
-    def setup_PATH(self) -> None:
+    def setup_PATH(self, no_cache: bool = False) -> None:
         """Populate PATH on first use with bin_dir only."""
         bin_dir = self.bin_dir
         assert bin_dir is not None
         self.PATH = self._merge_PATH(bin_dir, PATH=self.PATH, prepend=True)
-        super().setup_PATH()
+        super().setup_PATH(no_cache=no_cache)
 
-    def supports_postinstall_disable(self, action) -> bool:
+    def supports_postinstall_disable(self, action, no_cache: bool = False) -> bool:
         return False
 
+    @log_method_call()
     def setup(
         self,
         *,
@@ -130,6 +133,7 @@ class BashProvider(EnvProvider):
             return shlex.join(str(part) for part in value)
         return str(value)
 
+    @log_method_call(include_result=True)
     def _get_handler_for_action(
         self,
         bin_name: BinName,
@@ -174,6 +178,7 @@ class BashProvider(EnvProvider):
         bin_name: BinName,
         install_args: InstallArgs | None = None,
         timeout: int | None = None,
+        no_cache: bool = False,
         **context,
     ) -> str:
         command = self._get_shell_command(str(bin_name), "install")
@@ -186,7 +191,7 @@ class BashProvider(EnvProvider):
         assert install_root is not None
         assert bin_dir is not None
 
-        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
         proc = self.exec(
             bin_name=installer_bin,
@@ -211,6 +216,7 @@ class BashProvider(EnvProvider):
         bin_name: BinName,
         install_args: InstallArgs | None = None,
         timeout: int | None = None,
+        no_cache: bool = False,
         **context,
     ) -> str:
         command = self._get_shell_command(
@@ -229,7 +235,7 @@ class BashProvider(EnvProvider):
         assert install_root is not None
         assert bin_dir is not None
 
-        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
         proc = self.exec(
             bin_name=installer_bin,
@@ -254,6 +260,7 @@ class BashProvider(EnvProvider):
         bin_name: BinName,
         install_args: InstallArgs | None = None,
         timeout: int | None = None,
+        no_cache: bool = False,
         **context,
     ) -> bool:
         command = self._get_shell_command(str(bin_name), "uninstall")
@@ -262,7 +269,7 @@ class BashProvider(EnvProvider):
         assert install_root is not None
         assert bin_dir is not None
         if command:
-            installer_bin = self.INSTALLER_BINARY().loaded_abspath
+            installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
             assert installer_bin
             proc = self.exec(
                 bin_name=installer_bin,  # type: ignore[arg-type]

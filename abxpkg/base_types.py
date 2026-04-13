@@ -272,6 +272,8 @@ def bin_abspaths(
 ################## Types ##############################################
 
 UNKNOWN_SHA256 = "unknown"
+UNKNOWN_MTIME = 0
+UNKNOWN_EUID = -1
 
 
 def is_valid_sha256(sha256: str) -> str:
@@ -283,6 +285,22 @@ def is_valid_sha256(sha256: str) -> str:
 
 
 Sha256 = Annotated[str, AfterValidator(is_valid_sha256)]
+
+
+def is_valid_mtime(mtime: int) -> int:
+    assert mtime >= 0
+    return mtime
+
+
+MTimeNs = Annotated[int, AfterValidator(is_valid_mtime)]
+
+
+def is_valid_euid(euid: int) -> int:
+    assert euid >= UNKNOWN_EUID
+    return euid
+
+
+EUID = Annotated[int, AfterValidator(is_valid_euid)]
 
 
 def is_valid_install_args(

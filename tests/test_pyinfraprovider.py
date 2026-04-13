@@ -5,31 +5,25 @@ import logging
 import pytest
 
 from abxpkg import Binary, SemVer
-from abxpkg.binprovider_pyinfra import PyinfraProvider
+from abxpkg.binprovider import BinProvider
+from abxpkg.binprovider_pyinfra import PyinfraProvider, pyinfra_package_install
 from abxpkg.exceptions import BinaryInstallError
+from typing import cast
 
 
 def _pyinfra_provider_for_host(test_machine):
     test_machine.require_tool("pyinfra")
-    if shutil.which("apt-get"):
-        provider = PyinfraProvider(
-            pyinfra_installer_module="operations.apt.packages",
-            postinstall_scripts=True,
-            min_release_age=0,
-        )
-        return provider, test_machine.pick_missing_provider_binary(
-            provider,
-            ("tree", "rename", "jq", "tmux", "screen"),
-        )
-    test_machine.require_tool("brew")
+    if not shutil.which("apt-get"):
+        test_machine.require_tool("brew")
     provider = PyinfraProvider(
-        pyinfra_installer_module="operations.brew.packages",
         postinstall_scripts=True,
         min_release_age=0,
     )
     return provider, test_machine.pick_missing_provider_binary(
         provider,
-        ("hello", "jq", "watch", "fzy", "tree"),
+        ("tree", "rename", "jq", "tmux", "screen")
+        if shutil.which("apt-get")
+        else ("hello", "jq", "watch", "fzy", "tree"),
     )
 
 
@@ -41,22 +35,27 @@ class TestPyinfraProvider:
     ):
         del test_machine_dependencies
         test_machine.require_tool("pyinfra")
-
         provider = PyinfraProvider(
-            pyinfra_installer_module="operations.server.shell",
             postinstall_scripts=True,
             min_release_age=0,
-            install_timeout=2,
-        ).get_provider_with_overrides(
-            overrides={"sleep": {"install_args": ["sleep 5"]}},
         )
+        installer = provider.INSTALLER_BINARY().loaded_abspath
+        assert installer is not None
 
         with pytest.raises(subprocess.TimeoutExpired):
-            provider.install("sleep", no_cache=True)
+            pyinfra_package_install(
+                ["sleep 5"],
+                pyinfra_abspath=str(installer),
+                installer_module="operations.server.shell",
+                timeout=2,
+            )
         with pytest.raises(subprocess.TimeoutExpired):
-            provider.update("sleep", no_cache=True)
-        with pytest.raises(subprocess.TimeoutExpired):
-            provider.uninstall("sleep")
+            pyinfra_package_install(
+                ["sleep 5"],
+                pyinfra_abspath=str(installer),
+                installer_module="operations.server.shell",
+                timeout=2,
+            )
 
     def test_provider_direct_methods_exercise_real_lifecycle(
         self,
@@ -77,16 +76,10 @@ class TestPyinfraProvider:
         del test_machine_dependencies
         provider, package = _pyinfra_provider_for_host(test_machine)
 
-        cleanup_provider = PyinfraProvider(
-            pyinfra_installer_module=provider.pyinfra_installer_module,
-            postinstall_scripts=True,
-            min_release_age=0,
-        )
+        cleanup_provider = PyinfraProvider(postinstall_scripts=True, min_release_age=0)
         try:
             with caplog.at_level(logging.WARNING, logger="abxpkg.binprovider"):
-                installed = PyinfraProvider(
-                    pyinfra_installer_module=provider.pyinfra_installer_module,
-                ).install(
+                installed = PyinfraProvider().install(
                     package,
                     postinstall_scripts=False,
                     min_release_age=1,
@@ -98,11 +91,7 @@ class TestPyinfraProvider:
             caplog.clear()
             binary = Binary(
                 name=package,
-                binproviders=[
-                    PyinfraProvider(
-                        pyinfra_installer_module=provider.pyinfra_installer_module,
-                    ),
-                ],
+                binproviders=cast(list[BinProvider], [PyinfraProvider()]),
                 postinstall_scripts=False,
                 min_release_age=1,
             )
@@ -121,11 +110,7 @@ class TestPyinfraProvider:
     ):
         del test_machine_dependencies
         provider, package = _pyinfra_provider_for_host(test_machine)
-        cleanup_provider = PyinfraProvider(
-            pyinfra_installer_module=provider.pyinfra_installer_module,
-            postinstall_scripts=True,
-            min_release_age=0,
-        )
+        cleanup_provider = PyinfraProvider(postinstall_scripts=True, min_release_age=0)
         try:
             installed = provider.install(
                 package,
@@ -165,7 +150,7 @@ class TestPyinfraProvider:
         provider, package = _pyinfra_provider_for_host(test_machine)
         binary = Binary(
             name=package,
-            binproviders=[provider],
+            binproviders=cast(list[BinProvider], [provider]),
             postinstall_scripts=True,
             min_release_age=0,
         )

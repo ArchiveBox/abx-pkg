@@ -116,6 +116,8 @@ class TestMachine:
         assert loaded.loaded_abspath is not None
         assert loaded.loaded_version is not None
         assert loaded.loaded_sha256 is not None
+        assert loaded.loaded_mtime is not None
+        assert loaded.loaded_euid is not None
         assert loaded.is_executable
         assert bool(str(loaded))
 
@@ -136,6 +138,8 @@ class TestMachine:
             )
             == loaded.loaded_sha256
         )
+        assert loaded.loaded_mtime == loaded.loaded_abspath.resolve().stat().st_mtime_ns
+        assert loaded.loaded_euid == loaded.loaded_abspath.resolve().stat().st_uid
         if provider.bin_dir is not None:
             expected_abspath = provider.bin_dir / loaded.name
             assert expected_abspath.exists()
@@ -170,6 +174,8 @@ class TestMachine:
                 "loaded_abspath": None,
                 "loaded_version": None,
                 "loaded_sha256": None,
+                "loaded_mtime": None,
+                "loaded_euid": None,
             },
         )
 
@@ -283,6 +289,8 @@ class TestMachine:
         assert removed.loaded_abspath is None
         assert removed.loaded_version is None
         assert removed.loaded_sha256 is None
+        assert removed.loaded_mtime is None
+        assert removed.loaded_euid is None
         self.assert_binary_missing(binary)
 
     def exercise_provider_dry_run(
@@ -309,16 +317,22 @@ class TestMachine:
             assert dry_loaded_or_installed is not None
             assert dry_loaded_or_installed.loaded_version == SemVer("999.999.999")
             assert dry_loaded_or_installed.loaded_sha256 is not None
+            assert dry_loaded_or_installed.loaded_mtime is not None
+            assert dry_loaded_or_installed.loaded_euid is not None
 
         dry_installed = dry_run_provider.install(bin_name, no_cache=True)
         assert dry_installed is not None
         assert dry_installed.loaded_version == SemVer("999.999.999")
         assert dry_installed.loaded_sha256 is not None
+        assert dry_installed.loaded_mtime is not None
+        assert dry_installed.loaded_euid is not None
 
         dry_updated = dry_run_provider.update(bin_name, no_cache=True)
         assert dry_updated is not None
         assert dry_updated.loaded_version == SemVer("999.999.999")
         assert dry_updated.loaded_sha256 is not None
+        assert dry_updated.loaded_mtime is not None
+        assert dry_updated.loaded_euid is not None
 
         assert dry_run_provider.uninstall(bin_name, no_cache=True) is True
 

@@ -14,10 +14,9 @@ from .base_types import (
     BinName,
     InstallArgs,
     abxpkg_install_root_default,
-    bin_abspath,
 )
 from .semver import SemVer
-from .binprovider import BinProvider, DEFAULT_ENV_PATH, remap_kwargs
+from .binprovider import BinProvider, DEFAULT_ENV_PATH, log_method_call, remap_kwargs
 from .logging import format_subprocess_output
 
 
@@ -26,6 +25,7 @@ DEFAULT_GEM_HOME = Path(os.environ.get("GEM_HOME", "~/.local/share/gem")).expand
 
 class GemProvider(BinProvider):
     name: BinProviderName = "gem"
+    _log_emoji = "💎"
     INSTALLER_BIN: BinName = "gem"
 
     PATH: PATHStr = DEFAULT_ENV_PATH  # Starts with ambient system PATH; setup_PATH() prepends/appends gem bin_dir depending on whether install_root/bin_dir were overridden.
@@ -35,7 +35,6 @@ class GemProvider(BinProvider):
         validation_alias="gem_home",
     )
     bin_dir: Path | None = Field(default=None, validation_alias="gem_bindir")
-    gem_install_args: list[str] = ["--no-document"]
 
     @computed_field
     @property
@@ -51,15 +50,7 @@ class GemProvider(BinProvider):
     @computed_field
     @property
     def is_valid(self) -> bool:
-        if self.bin_dir and not (
-            self.bin_dir.is_dir() and os.access(self.bin_dir, os.R_OK)
-        ):
-            return False
-
-        return bool(
-            bin_abspath(self.INSTALLER_BIN, PATH=self.PATH)
-            or bin_abspath(self.INSTALLER_BIN),
-        )
+        return super().is_valid
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
@@ -74,7 +65,7 @@ class GemProvider(BinProvider):
 
         return self
 
-    def setup_PATH(self) -> None:
+    def setup_PATH(self, no_cache: bool = False) -> None:
         """Populate PATH on first use with gem's bin_dir plus ambient PATH when using the default global gem home."""
         bin_dir = self.bin_dir
         assert bin_dir is not None
@@ -82,8 +73,9 @@ class GemProvider(BinProvider):
             self.PATH = self._merge_PATH(bin_dir)
         else:
             self.PATH = self._merge_PATH(bin_dir, PATH=self.PATH)
-        super().setup_PATH()
+        super().setup_PATH(no_cache=no_cache)
 
+    @log_method_call()
     def setup(
         self,
         *,
@@ -147,18 +139,13 @@ class GemProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        self.setup(
-            postinstall_scripts=postinstall_scripts,
-            min_release_age=min_release_age,
-            min_version=min_version,
-        )
-
         install_args = install_args or self.get_install_args(bin_name)
         if min_version and not any(arg.startswith("--version") for arg in install_args):
             install_args = ["--version", f">={min_version}", *install_args]
-        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
 
         proc = self.exec(
@@ -169,7 +156,7 @@ class GemProvider(BinProvider):
                 str(self.install_root),
                 "--bindir",
                 str(self.bin_dir),
-                *self.gem_install_args,
+                "--no-document",
                 *install_args,
             ],
             timeout=timeout,
@@ -188,18 +175,13 @@ class GemProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        self.setup(
-            postinstall_scripts=postinstall_scripts,
-            min_release_age=min_release_age,
-            min_version=min_version,
-        )
-
         install_args = install_args or self.get_install_args(bin_name)
         if min_version and not any(arg.startswith("--version") for arg in install_args):
             install_args = ["--version", f">={min_version}", *install_args]
-        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
 
         proc = self.exec(
@@ -210,7 +192,7 @@ class GemProvider(BinProvider):
                 str(self.install_root),
                 "--bindir",
                 str(self.bin_dir),
-                *self.gem_install_args,
+                "--no-document",
                 *install_args,
             ],
             timeout=timeout,
@@ -229,10 +211,11 @@ class GemProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> bool:
         install_args = install_args or self.get_install_args(bin_name)
-        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
 
         proc = self.exec(

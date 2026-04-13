@@ -626,7 +626,8 @@ def build_provider(cls: type[BinProvider]) -> dict[str, Any]:
 
     tags = list(meta.get("tags", []))
     summary = meta.get("summary", "")
-    emoji = meta.get("emoji", "📦")
+    emoji_attr = getattr(cls, "_log_emoji", None)
+    emoji = getattr(emoji_attr, "default", emoji_attr) or "📦"
     display_title = meta.get("display_title", cls.__name__)
 
     search_parts = [

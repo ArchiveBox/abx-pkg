@@ -8,6 +8,21 @@ from abxpkg import Binary, GoGetProvider, SemVer
 
 
 class TestGoGetProvider:
+    def test_installer_binary_uses_go_version_override(self, test_machine):
+        test_machine.require_tool("go")
+
+        provider = GoGetProvider(postinstall_scripts=True, min_release_age=0)
+        installer = provider.INSTALLER_BINARY(no_cache=True)
+
+        assert installer is not None
+        assert installer.loaded_abspath is not None
+        assert installer.loaded_version is not None
+        assert installer.loaded_abspath.name == "go"
+        loaded_version = installer.loaded_version
+        expected_version = SemVer.parse("1.0.0")
+        assert expected_version is not None
+        assert loaded_version >= expected_version
+
     def test_default_install_args_fail_closed_for_bare_binary_names(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = GoGetProvider.model_validate(

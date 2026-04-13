@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Self
 
 from platformdirs import user_cache_path
-from pydantic import Field, computed_field, model_validator
+from pydantic import Field, TypeAdapter, computed_field, model_validator
 
 from .base_types import (
     BinName,
@@ -16,9 +16,8 @@ from .base_types import (
     InstallArgs,
     PATHStr,
     abxpkg_install_root_default,
-    bin_abspath,
 )
-from .binprovider import BinProvider, env_flag_is_true, remap_kwargs
+from .binprovider import BinProvider, env_flag_is_true, log_method_call, remap_kwargs
 from .logging import format_subprocess_output
 from .semver import SemVer
 
@@ -30,8 +29,8 @@ class DenoProvider(BinProvider):
     """Deno runtime + package manager provider.
 
     ``deno_root`` mirrors ``DENO_INSTALL_ROOT``: when set, ``deno install -g``
-    lays out binaries under ``<deno_root>/bin``. ``deno_dir`` mirrors
-    ``DENO_DIR`` for cache isolation.
+    lays out binaries under ``<deno_root>/bin``. ``DENO_DIR`` is always derived
+    from the provider cache path instead of being stored as separate config.
 
     Security:
     - npm lifecycle scripts are *opt-in* in Deno (the opposite of npm).
@@ -41,6 +40,7 @@ class DenoProvider(BinProvider):
     """
 
     name: BinProviderName = "deno"
+    _log_emoji = "🦕"
     INSTALLER_BIN: BinName = "deno"
 
     PATH: PATHStr = ""  # Starts empty; setup_PATH() lazily uses install_root/bin_dir only, or DENO_INSTALL_ROOT/~/.deno/bin in ambient mode.
@@ -60,13 +60,6 @@ class DenoProvider(BinProvider):
         validation_alias="deno_root",
     )
     bin_dir: Path | None = None
-    deno_dir: Path | None = None  # mirrors $DENO_DIR for cache isolation
-
-    cache_dir: Path = USER_CACHE_PATH
-
-    deno_install_args: list[str] = ["--allow-all"]
-
-    deno_default_scheme: str = "npm"  # 'npm' or 'jsr'
 
     @computed_field
     @property
@@ -74,35 +67,50 @@ class DenoProvider(BinProvider):
         env: dict[str, str] = {"DENO_TLS_CA_STORE": "system"}
         if self.install_root:
             env["DENO_INSTALL_ROOT"] = str(self.install_root)
-        if self.deno_dir:
-            env["DENO_DIR"] = str(self.deno_dir)
+        env["DENO_DIR"] = str(self.cache_dir)
         return env
 
-    def supports_min_release_age(self, action) -> bool:
+    @property
+    def cache_dir(self) -> Path:
+        # Deno's shared download/build cache is always derived from the
+        # install_root when one is pinned, otherwise from the standard
+        # platform cache dir.
+        if self.install_root is not None:
+            return self.install_root / ".cache"
+        return Path(USER_CACHE_PATH)
+
+    def supports_min_release_age(self, action, no_cache: bool = False) -> bool:
         if action not in ("install", "update"):
             return False
         threshold = SemVer.parse("2.5.0")
         try:
-            installer = self.INSTALLER_BINARY()
+            installer = self.INSTALLER_BINARY(no_cache=no_cache)
         except Exception:
             return False
         version = installer.loaded_version if installer else None
         return bool(version and threshold and version >= threshold)
 
-    def supports_postinstall_disable(self, action) -> bool:
+    def supports_postinstall_disable(self, action, no_cache: bool = False) -> bool:
         return action in ("install", "update")
+
+    def default_install_args_handler(
+        self,
+        bin_name: BinName,
+        **context,
+    ) -> InstallArgs:
+        if str(bin_name) == "puppeteer":
+            return ("puppeteer", "@puppeteer/browsers")
+        if str(bin_name) == "puppeteer-browsers":
+            return ("@puppeteer/browsers",)
+        return TypeAdapter(InstallArgs).validate_python(
+            super().default_install_args_handler(bin_name, **context)
+            or [str(bin_name)],
+        )
 
     @computed_field
     @property
     def is_valid(self) -> bool:
-        if self.bin_dir and not (
-            self.bin_dir.is_dir() and os.access(self.bin_dir, os.R_OK)
-        ):
-            return False
-        return bool(
-            bin_abspath(self.INSTALLER_BIN, PATH=self.PATH)
-            or bin_abspath(self.INSTALLER_BIN),
-        )
+        return super().is_valid
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
@@ -110,7 +118,7 @@ class DenoProvider(BinProvider):
             self.bin_dir = self.install_root / "bin"
         return self
 
-    def setup_PATH(self) -> None:
+    def setup_PATH(self, no_cache: bool = False) -> None:
         """Populate PATH on first use from install_root/bin_dir, or DENO_INSTALL_ROOT/~/.deno/bin in ambient mode."""
         if self.bin_dir:
             self.PATH = self._merge_PATH(self.bin_dir)
@@ -123,8 +131,9 @@ class DenoProvider(BinProvider):
                 / "bin"
             )
             self.PATH = self._merge_PATH(default_root, PATH=self.PATH)
-        super().setup_PATH()
+        super().setup_PATH(no_cache=no_cache)
 
+    @log_method_call(include_result=True)
     def exec(
         self,
         bin_name,
@@ -134,13 +143,13 @@ class DenoProvider(BinProvider):
         should_log_command: bool = True,
         **kwargs,
     ):
-        # Ensure install_root/deno_dir exist before deno uses them.
+        # Ensure install_root and the derived DENO_DIR cache path exist before
+        # deno uses them.
         if self.install_root:
             self.install_root.mkdir(parents=True, exist_ok=True)
             assert self.bin_dir is not None
             self.bin_dir.mkdir(parents=True, exist_ok=True)
-        if self.deno_dir:
-            self.deno_dir.mkdir(parents=True, exist_ok=True)
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
         return super().exec(
             bin_name=bin_name,
             cmd=cmd,
@@ -150,6 +159,7 @@ class DenoProvider(BinProvider):
             **kwargs,
         )
 
+    @log_method_call()
     def setup(
         self,
         *,
@@ -166,6 +176,7 @@ class DenoProvider(BinProvider):
         self._ensure_writable_cache_dir(self.cache_dir)
         if self.bin_dir:
             self.bin_dir.mkdir(parents=True, exist_ok=True)
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
 
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(
@@ -178,7 +189,6 @@ class DenoProvider(BinProvider):
         no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        self.setup(no_cache=no_cache)
         installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
         postinstall_scripts = bool(postinstall_scripts)
@@ -197,7 +207,8 @@ class DenoProvider(BinProvider):
         cmd: list[str] = ["install"]
         if no_cache:
             cmd.append("--reload")
-        cmd.extend([*self.deno_install_args, "-g"])
+        # Deno always needs the broad runtime capability set for these CLIs.
+        cmd.extend(["--allow-all", "-g"])
         if not any(arg in ("-f", "--force") for arg in install_args):
             cmd.append("--force")
         if not any(
@@ -228,7 +239,8 @@ class DenoProvider(BinProvider):
                 and not arg.startswith(("-", ".", "/"))
                 and ":" not in arg.split("/")[0]
             ):
-                cmd.append(f"{self.deno_default_scheme}:{arg}")
+                # Bare package names resolve through the npm registry by default.
+                cmd.append(f"npm:{arg}")
             else:
                 cmd.append(arg)
 
@@ -268,9 +280,10 @@ class DenoProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> bool:
-        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
         proc = self.exec(
             bin_name=installer_bin,

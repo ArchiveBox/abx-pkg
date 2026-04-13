@@ -17,7 +17,12 @@ from pydantic import (
 from .semver import SemVer
 from .shallowbinary import ShallowBinary
 from .binprovider import BinProvider, EnvProvider, BinaryOverrides
-from .logging import format_exception_with_output, get_logger, log_method_call
+from .logging import (
+    format_exception_with_output,
+    format_raised_exception,
+    get_logger,
+    log_method_call,
+)
 from .exceptions import (
     BinaryInstallError,
     BinaryLoadError,
@@ -132,11 +137,25 @@ class Binary(ShallowBinary):
     def serialize_overrides(
         self,
         overrides: BinaryOverrides,
-    ) -> dict[BinProviderName, dict[str, str]]:
+    ) -> dict[BinProviderName, dict[str, Any]]:
+        def serialize_value(value: Any) -> Any:
+            if value is None or isinstance(value, str | int | float | bool):
+                return value
+            if isinstance(value, SemVer):
+                return str(value)
+            if isinstance(value, dict):
+                return {
+                    str(key): serialize_value(nested_value)
+                    for key, nested_value in value.items()
+                }
+            if isinstance(value, list | tuple):
+                return [serialize_value(item) for item in value]
+            return str(value)
+
         return {
             binprovider_name: {
-                handler_type: str(handler_value)
-                for handler_type, handler_value in binprovider_overrides.items()
+                override_key: serialize_value(override_value)
+                for override_key, override_value in binprovider_overrides.items()
             }
             for binprovider_name, binprovider_overrides in overrides.items()
         }
@@ -189,6 +208,12 @@ class Binary(ShallowBinary):
     @computed_field
     @property
     def is_valid(self) -> bool:
+        """Pure loaded-state check used by debug logging.
+
+        Logging calls this while formatting return values, so it must stay fast
+        and side-effect free. Keep overrides as cheap predicates only; never do
+        resolution, subprocess work, cache mutation, or any other side effect.
+        """
         if not (self.name and self.loaded_abspath and self.loaded_version):
             return False
         if self.min_version and self.loaded_version < self.min_version:
@@ -222,14 +247,30 @@ class Binary(ShallowBinary):
         provider: BinProvider,
         err: Exception,
     ) -> None:
-        logger.debug(
-            "%s.%s(%r, %r) raised %r",
-            provider.__class__.__name__,
-            operation,
-            provider,
-            self.name,
-            err,
-        )
+        logger.debug("%s", format_raised_exception(err))
+
+    def _binprovider_order(
+        self,
+        binproviders: list[BinProviderName] | None = None,
+    ) -> list[BinProvider]:
+        selected_providers: list[BinProvider] = []
+        for binprovider in self.binproviders:
+            if binproviders and binprovider.name not in binproviders:
+                continue
+            selected_providers.append(binprovider)
+
+        cached_providers: list[BinProvider] = []
+        uncached_providers: list[BinProvider] = []
+        for binprovider in selected_providers:
+            try:
+                if binprovider.has_cached_binary(self.name):
+                    cached_providers.append(binprovider)
+                else:
+                    uncached_providers.append(binprovider)
+            except Exception:
+                uncached_providers.append(binprovider)
+
+        return cached_providers or selected_providers
 
     def _validated_loaded_copy(
         self,
@@ -238,6 +279,8 @@ class Binary(ShallowBinary):
         abspath: HostBinPath | None,
         version: SemVer | None,
         sha256: str | None,
+        mtime: int | None,
+        euid: int | None,
     ) -> Self:
         """Return a loaded copy and enforce the Binary-level min_version gate.
 
@@ -252,6 +295,8 @@ class Binary(ShallowBinary):
                 "loaded_abspath": abspath,
                 "loaded_version": version,
                 "loaded_sha256": sha256,
+                "loaded_mtime": mtime,
+                "loaded_euid": euid,
             },
         )
         if not result.is_valid:
@@ -290,12 +335,12 @@ class Binary(ShallowBinary):
         # logger.info("Installing %s binary", self.name)
         inner_exc: Exception | None = None
         errors = {}
-        postinstall_scripts = (
+        binary_postinstall_scripts = (
             self.postinstall_scripts
             if postinstall_scripts is None
             else postinstall_scripts
         )
-        min_release_age = (
+        binary_min_release_age = (
             self.min_release_age if min_release_age is None else min_release_age
         )
         for binprovider in self.binproviders:
@@ -309,12 +354,22 @@ class Binary(ShallowBinary):
                     dry_run=dry_run,
                     **extra_overrides,
                 )
+                resolved_postinstall_scripts = (
+                    provider.postinstall_scripts
+                    if binary_postinstall_scripts is None
+                    else binary_postinstall_scripts
+                )
+                resolved_min_release_age = (
+                    provider.min_release_age
+                    if binary_min_release_age is None
+                    else binary_min_release_age
+                )
                 installed_bin = provider.install(
                     self.name,
                     no_cache=no_cache,
                     dry_run=dry_run,
-                    postinstall_scripts=postinstall_scripts,
-                    min_release_age=min_release_age,
+                    postinstall_scripts=resolved_postinstall_scripts,
+                    min_release_age=resolved_min_release_age,
                     min_version=self.min_version,
                 )
                 if installed_bin is not None and installed_bin.loaded_abspath:
@@ -324,6 +379,8 @@ class Binary(ShallowBinary):
                         abspath=installed_bin.loaded_abspath,
                         version=installed_bin.loaded_version,
                         sha256=installed_bin.loaded_sha256,
+                        mtime=installed_bin.loaded_mtime,
+                        euid=installed_bin.loaded_euid,
                     )
             except Exception as err:
                 inner_exc = err
@@ -379,6 +436,8 @@ class Binary(ShallowBinary):
                         abspath=installed_bin.loaded_abspath,
                         version=installed_bin.loaded_version,
                         sha256=installed_bin.loaded_sha256,
+                        mtime=installed_bin.loaded_mtime,
+                        euid=installed_bin.loaded_euid,
                     )
                 else:
                     continue
@@ -415,18 +474,15 @@ class Binary(ShallowBinary):
         # logger.info("Updating %s binary", self.name)
         inner_exc: Exception | None = None
         errors = {}
-        postinstall_scripts = (
+        binary_postinstall_scripts = (
             self.postinstall_scripts
             if postinstall_scripts is None
             else postinstall_scripts
         )
-        min_release_age = (
+        binary_min_release_age = (
             self.min_release_age if min_release_age is None else min_release_age
         )
-        for binprovider in self.binproviders:
-            if binproviders and binprovider.name not in binproviders:
-                continue
-
+        for binprovider in self._binprovider_order(binproviders):
             provider = binprovider
             try:
                 provider = self.get_binprovider(
@@ -434,12 +490,22 @@ class Binary(ShallowBinary):
                     dry_run=dry_run,
                     **extra_overrides,
                 )
+                resolved_postinstall_scripts = (
+                    provider.postinstall_scripts
+                    if binary_postinstall_scripts is None
+                    else binary_postinstall_scripts
+                )
+                resolved_min_release_age = (
+                    provider.min_release_age
+                    if binary_min_release_age is None
+                    else binary_min_release_age
+                )
                 updated_bin = provider.update(
                     self.name,
                     no_cache=no_cache,
                     dry_run=dry_run,
-                    postinstall_scripts=postinstall_scripts,
-                    min_release_age=min_release_age,
+                    postinstall_scripts=resolved_postinstall_scripts,
+                    min_release_age=resolved_min_release_age,
                     min_version=self.min_version,
                 )
                 if updated_bin is not None and updated_bin.loaded_abspath:
@@ -448,6 +514,8 @@ class Binary(ShallowBinary):
                         abspath=updated_bin.loaded_abspath,
                         version=updated_bin.loaded_version,
                         sha256=updated_bin.loaded_sha256,
+                        mtime=updated_bin.loaded_mtime,
+                        euid=updated_bin.loaded_euid,
                     )
             except Exception as err:
                 inner_exc = err
@@ -482,18 +550,30 @@ class Binary(ShallowBinary):
         # logger.info("Uninstalling %s binary", self.name)
         inner_exc: Exception | None = None
         errors = {}
-        postinstall_scripts = (
+        binary_postinstall_scripts = (
             self.postinstall_scripts
             if postinstall_scripts is None
             else postinstall_scripts
         )
-        min_release_age = (
+        binary_min_release_age = (
             self.min_release_age if min_release_age is None else min_release_age
         )
-        for binprovider in self.binproviders:
-            if binproviders and binprovider.name not in binproviders:
+        uninstall_candidates: list[BinProvider] = []
+        for binprovider in self._binprovider_order(binproviders):
+            if isinstance(binprovider, EnvProvider):
+                binprovider.invalidate_cache(self.name)
                 continue
+            uninstall_candidates.append(binprovider)
+        if not uninstall_candidates:
+            for binprovider in self.binproviders:
+                if binproviders and binprovider.name not in binproviders:
+                    continue
+                if isinstance(binprovider, EnvProvider):
+                    binprovider.invalidate_cache(self.name)
+                    continue
+                uninstall_candidates.append(binprovider)
 
+        for binprovider in uninstall_candidates:
             provider = binprovider
             try:
                 provider = self.get_binprovider(
@@ -501,12 +581,22 @@ class Binary(ShallowBinary):
                     dry_run=dry_run,
                     **extra_overrides,
                 )
+                resolved_postinstall_scripts = (
+                    provider.postinstall_scripts
+                    if binary_postinstall_scripts is None
+                    else binary_postinstall_scripts
+                )
+                resolved_min_release_age = (
+                    provider.min_release_age
+                    if binary_min_release_age is None
+                    else binary_min_release_age
+                )
                 uninstalled = provider.uninstall(
                     self.name,
                     no_cache=no_cache,
                     dry_run=dry_run,
-                    postinstall_scripts=postinstall_scripts,
-                    min_release_age=min_release_age,
+                    postinstall_scripts=resolved_postinstall_scripts,
+                    min_release_age=resolved_min_release_age,
                     min_version=self.min_version,
                 )
                 if uninstalled:
@@ -517,6 +607,8 @@ class Binary(ShallowBinary):
                             "loaded_abspath": None,
                             "loaded_version": None,
                             "loaded_sha256": None,
+                            "loaded_mtime": None,
+                            "loaded_euid": None,
                         },
                     )
             except Exception as err:

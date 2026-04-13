@@ -15,7 +15,12 @@ from .base_types import BinProviderName, PATHStr, BinName, InstallArgs
 from .semver import SemVer
 from .shallowbinary import ShallowBinary
 from .binprovider import BinProvider, OPERATING_SYSTEM, DEFAULT_PATH, remap_kwargs
-from .logging import format_subprocess_output, get_logger, log_subprocess_output
+from .logging import (
+    format_command,
+    format_subprocess_output,
+    get_logger,
+    log_subprocess_output,
+)
 
 logger = get_logger(__name__)
 
@@ -269,21 +274,19 @@ def ansible_package_install(
                     chown_proc.stderr,
                     level=py_logging.DEBUG,
                 )
+        if temp_dir.exists():
+            logger.info("$ %s", format_command(["rm", "-rf", str(temp_dir)]))
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 class AnsibleProvider(BinProvider):
     name: BinProviderName = "ansible"
+    _log_emoji = "📘"
     INSTALLER_BIN: BinName = "ansible"
     PATH: PATHStr = os.environ.get(
         "PATH",
         DEFAULT_PATH,
     )  # Always ambient system PATH. Ansible has no bin_dir field of its own and never mutates PATH in setup().
-
-    ansible_installer_module: str = (
-        "auto"  # e.g. community.general.homebrew, ansible.builtin.apt, etc.
-    )
-    ansible_playbook_template: str = ANSIBLE_INSTALL_PLAYBOOK_TEMPLATE
 
     def INSTALLER_BINARY(self, no_cache: bool = False) -> ShallowBinary:
         if not no_cache and self._INSTALLER_BINARY and self._INSTALLER_BINARY.is_valid:
@@ -299,10 +302,6 @@ class AnsibleProvider(BinProvider):
         )
 
     def get_ansible_module_extra_kwargs(self) -> dict[str, Any]:
-        if self.ansible_installer_module == "community.general.homebrew":
-            homebrew_path = get_homebrew_search_path()
-            if homebrew_path:
-                return {"path": homebrew_path}
         return {}
 
     @remap_kwargs({"packages": "install_args"})
@@ -313,11 +312,12 @@ class AnsibleProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
         install_args = install_args or self.get_install_args(bin_name)
 
-        ansible_playbook = self.INSTALLER_BINARY().loaded_abspath
+        ansible_playbook = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert ansible_playbook
 
         module_extra_kwargs = self.get_ansible_module_extra_kwargs()
@@ -326,8 +326,8 @@ class AnsibleProvider(BinProvider):
             pkg_names=install_args,
             ansible_playbook_abspath=str(ansible_playbook),
             quiet=True,
-            playbook_template=self.ansible_playbook_template,
-            installer_module=self.ansible_installer_module,
+            playbook_template=ANSIBLE_INSTALL_PLAYBOOK_TEMPLATE,
+            installer_module="auto",
             module_extra_kwargs=module_extra_kwargs or None,
             timeout=timeout,
         )
@@ -340,11 +340,12 @@ class AnsibleProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
         install_args = install_args or self.get_install_args(bin_name)
 
-        ansible_playbook = self.INSTALLER_BINARY().loaded_abspath
+        ansible_playbook = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert ansible_playbook
 
         module_extra_kwargs = self.get_ansible_module_extra_kwargs()
@@ -353,8 +354,8 @@ class AnsibleProvider(BinProvider):
                 pkg_names=install_args,
                 ansible_playbook_abspath=str(ansible_playbook),
                 quiet=True,
-                playbook_template=self.ansible_playbook_template,
-                installer_module=self.ansible_installer_module,
+                playbook_template=ANSIBLE_INSTALL_PLAYBOOK_TEMPLATE,
+                installer_module="auto",
                 state="latest",
                 module_extra_kwargs=module_extra_kwargs,
                 timeout=timeout,
@@ -363,8 +364,8 @@ class AnsibleProvider(BinProvider):
             pkg_names=install_args,
             ansible_playbook_abspath=str(ansible_playbook),
             quiet=True,
-            playbook_template=self.ansible_playbook_template,
-            installer_module=self.ansible_installer_module,
+            playbook_template=ANSIBLE_INSTALL_PLAYBOOK_TEMPLATE,
+            installer_module="auto",
             state="latest",
             timeout=timeout,
         )
@@ -377,11 +378,12 @@ class AnsibleProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> bool:
         install_args = install_args or self.get_install_args(bin_name)
 
-        ansible_playbook = self.INSTALLER_BINARY().loaded_abspath
+        ansible_playbook = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert ansible_playbook
 
         module_extra_kwargs = self.get_ansible_module_extra_kwargs()
@@ -390,8 +392,8 @@ class AnsibleProvider(BinProvider):
                 pkg_names=install_args,
                 ansible_playbook_abspath=str(ansible_playbook),
                 quiet=True,
-                playbook_template=self.ansible_playbook_template,
-                installer_module=self.ansible_installer_module,
+                playbook_template=ANSIBLE_INSTALL_PLAYBOOK_TEMPLATE,
+                installer_module="auto",
                 state="absent",
                 module_extra_kwargs=module_extra_kwargs,
                 timeout=timeout,
@@ -401,8 +403,8 @@ class AnsibleProvider(BinProvider):
                 pkg_names=install_args,
                 ansible_playbook_abspath=str(ansible_playbook),
                 quiet=True,
-                playbook_template=self.ansible_playbook_template,
-                installer_module=self.ansible_installer_module,
+                playbook_template=ANSIBLE_INSTALL_PLAYBOOK_TEMPLATE,
+                installer_module="auto",
                 state="absent",
                 timeout=timeout,
             )

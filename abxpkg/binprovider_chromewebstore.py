@@ -22,9 +22,10 @@ from .binprovider import (
     BinProvider,
     BinProviderOverrides,
     env_flag_is_true,
+    log_method_call,
     remap_kwargs,
 )
-from .logging import format_subprocess_output, get_logger
+from .logging import format_command, format_subprocess_output, get_logger
 
 logger = get_logger(__name__)
 
@@ -37,6 +38,7 @@ CHROME_UTILS_PATH = Path(__file__).with_name("js") / "chrome" / "chrome_utils.js
 
 class ChromeWebstoreProvider(BinProvider):
     name: BinProviderName = "chromewebstore"
+    _log_emoji = "🧩"
     INSTALLER_BIN: BinName = "node"
 
     PATH: PATHStr = ""  # Intentionally unused for resolution; extension wrappers resolve from bin_dir directly and installers resolve from ambient env.
@@ -82,9 +84,10 @@ class ChromeWebstoreProvider(BinProvider):
             self.bin_dir = self.install_root / "extensions"
         return self
 
-    def supports_postinstall_disable(self, action) -> bool:
+    def supports_postinstall_disable(self, action, no_cache: bool = False) -> bool:
         return True
 
+    @log_method_call()
     def setup(
         self,
         *,
@@ -251,5 +254,6 @@ class ChromeWebstoreProvider(BinProvider):
         if crx_path.exists():
             crx_path.unlink(missing_ok=True)
         if unpacked_path.exists():
+            logger.info("$ %s", format_command(["rm", "-rf", str(unpacked_path)]))
             shutil.rmtree(unpacked_path, ignore_errors=True)
         return True

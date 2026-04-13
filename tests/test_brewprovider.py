@@ -143,6 +143,14 @@ class TestBrewProvider:
         )
         test_machine.assert_shallow_binary_loaded(installed)
 
+        updated = provider.update(
+            formula,
+            postinstall_scripts=False,
+            min_release_age=0,
+            no_cache=True,
+        )
+        test_machine.assert_shallow_binary_loaded(updated)
+
         with pytest.raises(ValueError):
             provider.update(
                 formula,
@@ -164,7 +172,7 @@ class TestBrewProvider:
         with pytest.raises(BinaryInstallError):
             too_new.install(no_cache=True)
 
-    def test_helper_install_args_used_by_pyinfra_ansible_backends(self, test_machine):
+    def test_helper_install_args_used_by_native_brew_backend(self, test_machine):
         test_machine.require_tool("brew")
         primary = _pick_formula_for_live_cycle()
         extra = "fzy" if primary != "fzy" else "watch"

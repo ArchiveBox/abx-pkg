@@ -17,7 +17,12 @@ from typing import Any
 from .base_types import BinProviderName, PATHStr, BinName, InstallArgs
 from .semver import SemVer
 from .binprovider import BinProvider, OPERATING_SYSTEM, DEFAULT_PATH, remap_kwargs
-from .logging import format_subprocess_output, get_logger, log_subprocess_output
+from .logging import (
+    format_command,
+    format_subprocess_output,
+    get_logger,
+    log_subprocess_output,
+)
 
 logger = get_logger(__name__)
 
@@ -188,6 +193,8 @@ def pyinfra_package_install(
                     chown_proc.stderr,
                     level=py_logging.DEBUG,
                 )
+        if temp_dir.exists():
+            logger.info("$ %s", format_command(["rm", "-rf", str(temp_dir)]))
         shutil.rmtree(temp_dir, ignore_errors=True)
 
     succeeded = proc.returncode == 0
@@ -211,16 +218,12 @@ def pyinfra_package_install(
 
 class PyinfraProvider(BinProvider):
     name: BinProviderName = "pyinfra"
+    _log_emoji = "🛠️"
     INSTALLER_BIN: BinName = "pyinfra"
     PATH: PATHStr = os.environ.get(
         "PATH",
         DEFAULT_PATH,
     )  # Always ambient system PATH. Pyinfra has no bin_dir field of its own and never mutates PATH in setup().
-
-    pyinfra_installer_module: str = (
-        "auto"  # e.g. operations.apt.packages, operations.server.packages, etc.
-    )
-    pyinfra_installer_kwargs: dict[str, Any] = {}
 
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(
@@ -230,17 +233,18 @@ class PyinfraProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
         install_args = install_args or self.get_install_args(bin_name)
-        pyinfra_abspath = self.INSTALLER_BINARY().loaded_abspath
+        pyinfra_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert pyinfra_abspath
 
         return pyinfra_package_install(
             pkg_names=install_args,
             pyinfra_abspath=str(pyinfra_abspath),
-            installer_module=self.pyinfra_installer_module,
-            installer_extra_kwargs=self.pyinfra_installer_kwargs,
+            installer_module="auto",
+            installer_extra_kwargs={},
             timeout=timeout,
         )
 
@@ -252,18 +256,18 @@ class PyinfraProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
         install_args = install_args or self.get_install_args(bin_name)
-        pyinfra_abspath = self.INSTALLER_BINARY().loaded_abspath
+        pyinfra_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert pyinfra_abspath
 
         return pyinfra_package_install(
             pkg_names=install_args,
             pyinfra_abspath=str(pyinfra_abspath),
-            installer_module=self.pyinfra_installer_module,
+            installer_module="auto",
             installer_extra_kwargs={
-                **self.pyinfra_installer_kwargs,
                 "latest": True,
             },
             timeout=timeout,
@@ -277,18 +281,18 @@ class PyinfraProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> bool:
         install_args = install_args or self.get_install_args(bin_name)
-        pyinfra_abspath = self.INSTALLER_BINARY().loaded_abspath
+        pyinfra_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert pyinfra_abspath
 
         pyinfra_package_install(
             pkg_names=install_args,
             pyinfra_abspath=str(pyinfra_abspath),
-            installer_module=self.pyinfra_installer_module,
+            installer_module="auto",
             installer_extra_kwargs={
-                **self.pyinfra_installer_kwargs,
                 "present": False,
             },
             timeout=timeout,

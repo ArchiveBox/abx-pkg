@@ -20,7 +20,7 @@ from .base_types import (
     abxpkg_install_root_default,
 )
 from .semver import SemVer
-from .binprovider import BinProvider, remap_kwargs
+from .binprovider import BinProvider, log_method_call, remap_kwargs
 from .logging import format_subprocess_output
 
 
@@ -31,6 +31,7 @@ DEFAULT_DOCKER_ROOT = DEFAULT_LIB_DIR / "docker"
 
 class DockerProvider(BinProvider):
     name: BinProviderName = "docker"
+    _log_emoji = "🐳"
     INSTALLER_BIN: BinName = "docker"
 
     PATH: PATHStr = (
@@ -43,7 +44,6 @@ class DockerProvider(BinProvider):
         validation_alias="docker_root",
     )
     bin_dir: Path | None = Field(default=None, validation_alias="docker_shim_dir")
-    docker_run_args: list[str] = ["--rm", "-i"]
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
@@ -54,7 +54,7 @@ class DockerProvider(BinProvider):
 
         return self
 
-    def setup_PATH(self) -> None:
+    def setup_PATH(self, no_cache: bool = False) -> None:
         """Populate PATH on first use with the docker shim bin_dir only."""
         bin_dir = self.bin_dir
         assert bin_dir is not None
@@ -63,8 +63,9 @@ class DockerProvider(BinProvider):
             PATH=self.PATH,
             prepend=True,
         )
-        super().setup_PATH()
+        super().setup_PATH(no_cache=no_cache)
 
+    @log_method_call()
     def setup(
         self,
         *,
@@ -128,11 +129,16 @@ class DockerProvider(BinProvider):
             return None
         return json.loads(metadata_path.read_text(encoding="utf-8"))
 
-    def _write_shim(self, bin_name: str, image_ref: str) -> Path:
+    def _write_shim(
+        self,
+        bin_name: str,
+        image_ref: str,
+        no_cache: bool = False,
+    ) -> Path:
         bin_dir = self.bin_dir
         assert bin_dir is not None
         wrapper_path = bin_dir / bin_name
-        docker_bin = self.INSTALLER_BINARY().loaded_abspath
+        docker_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert docker_bin
 
         wrapper_path.write_text(
@@ -141,7 +147,9 @@ class DockerProvider(BinProvider):
                     "#!/usr/bin/env sh",
                     "set -eu",
                     'workdir="${PWD:-$(pwd)}"',
-                    f'exec "{docker_bin}" run {" ".join(self.docker_run_args)} --user "$(id -u):$(id -g)" -v "$workdir:$workdir" -w "$workdir" "{image_ref}" "$@"',
+                    # Keep docker shims stateless: always run as an interactive,
+                    # auto-cleaned one-shot container with the caller's uid/gid.
+                    f'exec "{docker_bin}" run --rm -i --user "$(id -u):$(id -g)" -v "$workdir:$workdir" -w "$workdir" "{image_ref}" "$@"',
                     "",
                 ],
             ),
@@ -170,16 +178,11 @@ class DockerProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        self.setup(
-            postinstall_scripts=postinstall_scripts,
-            min_release_age=min_release_age,
-            min_version=min_version,
-        )
-
         install_args = install_args or self.get_install_args(bin_name)
-        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
 
         logs: list[str] = []
@@ -220,7 +223,7 @@ class DockerProvider(BinProvider):
 
         main_image = self._main_image_ref(bin_name, install_args)
         self._write_metadata(bin_name, main_image)
-        self._write_shim(bin_name, main_image)
+        self._write_shim(bin_name, main_image, no_cache=no_cache)
 
         return "\n".join(logs).strip()
 
@@ -232,6 +235,7 @@ class DockerProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
         return self.default_install_handler(
@@ -240,6 +244,7 @@ class DockerProvider(BinProvider):
             postinstall_scripts=postinstall_scripts,
             min_release_age=min_release_age,
             min_version=min_version,
+            no_cache=no_cache,
             timeout=timeout,
         )
 
@@ -251,10 +256,11 @@ class DockerProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> bool:
         install_args = install_args or self.get_install_args(bin_name)
-        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
 
         bin_dir = self.bin_dir
@@ -319,6 +325,12 @@ class DockerProvider(BinProvider):
                 timeout=timeout,
                 **context,
             )
-            return SemVer.parse(version) if version is not None else None
+            if isinstance(version, SemVer):
+                return version
+            if isinstance(version, (str, bytes, tuple)):
+                return SemVer.parse(version)
+            if isinstance(version, list):
+                return SemVer.parse(tuple(version))
+            return None
         except ValueError:
             return None

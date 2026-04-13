@@ -18,9 +18,8 @@ from .base_types import (
     InstallArgs,
     PATHStr,
     abxpkg_install_root_default,
-    bin_abspath,
 )
-from .binprovider import BinProvider, env_flag_is_true, remap_kwargs
+from .binprovider import BinProvider, env_flag_is_true, log_method_call, remap_kwargs
 from .logging import format_subprocess_output
 from .semver import SemVer
 
@@ -48,6 +47,7 @@ class YarnProvider(BinProvider):
     """
 
     name: BinProviderName = "yarn"
+    _log_emoji = "🧶"
     INSTALLER_BIN: BinName = "yarn"
 
     PATH: PATHStr = ""  # Starts empty; setup_PATH() lazily uses install_root/node_modules/.bin only.
@@ -67,10 +67,6 @@ class YarnProvider(BinProvider):
     )
     bin_dir: Path | None = None
 
-    cache_dir: Path = USER_CACHE_PATH
-
-    yarn_install_args: list[str] = []
-
     @computed_field
     @property
     def ENV(self) -> "dict[str, str]":
@@ -86,6 +82,12 @@ class YarnProvider(BinProvider):
             env["NODE_MODULE_DIR"] = node_modules_dir
             env["NODE_PATH"] = ":" + node_modules_dir
         return env
+
+    @property
+    def cache_dir(self) -> Path:
+        # Yarn's global cache roots are always derived from the standard
+        # platform cache dir; there is no separate provider field to override.
+        return Path(USER_CACHE_PATH)
 
     def get_cache_info(
         self,
@@ -110,41 +112,48 @@ class YarnProvider(BinProvider):
             cache_info["fingerprint_paths"].append(package_json)
         return cache_info
 
-    def supports_min_release_age(self, action) -> bool:
+    def supports_min_release_age(self, action, no_cache: bool = False) -> bool:
         if action not in ("install", "update"):
             return False
         # npmMinimalAgeGate landed in Yarn 4.10
         threshold = SemVer.parse("4.10.0")
         try:
-            installer = self.INSTALLER_BINARY()
+            installer = self.INSTALLER_BINARY(no_cache=no_cache)
         except Exception:
             return False
         version = installer.loaded_version if installer else None
         return bool(version and threshold and version >= threshold)
 
-    def supports_postinstall_disable(self, action) -> bool:
+    def supports_postinstall_disable(self, action, no_cache: bool = False) -> bool:
         if action not in ("install", "update"):
             return False
         # Yarn 2+ supports the enableScripts setting and --mode skip-build
         threshold = SemVer.parse("2.0.0")
         try:
-            installer = self.INSTALLER_BINARY()
+            installer = self.INSTALLER_BINARY(no_cache=no_cache)
         except Exception:
             return False
         version = installer.loaded_version if installer else None
         return bool(version and threshold and version >= threshold)
 
+    def default_install_args_handler(
+        self,
+        bin_name: BinName,
+        **context,
+    ) -> InstallArgs:
+        if str(bin_name) == "puppeteer":
+            return ("puppeteer", "@puppeteer/browsers")
+        if str(bin_name) == "puppeteer-browsers":
+            return ("@puppeteer/browsers",)
+        return TypeAdapter(InstallArgs).validate_python(
+            super().default_install_args_handler(bin_name, **context)
+            or [str(bin_name)],
+        )
+
     @computed_field
     @property
     def is_valid(self) -> bool:
-        if self.bin_dir and not (
-            self.bin_dir.is_dir() and os.access(self.bin_dir, os.R_OK)
-        ):
-            return False
-        return bool(
-            bin_abspath(self.INSTALLER_BIN, PATH=self.PATH)
-            or bin_abspath(self.INSTALLER_BIN),
-        )
+        return super().is_valid
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
@@ -152,7 +161,7 @@ class YarnProvider(BinProvider):
             self.bin_dir = self.install_root / "node_modules" / ".bin"
         return self
 
-    def setup_PATH(self) -> None:
+    def setup_PATH(self, no_cache: bool = False) -> None:
         """Populate PATH on first use from install_root/node_modules/.bin only."""
         if self.bin_dir:
             self.PATH = self._merge_PATH(
@@ -160,8 +169,9 @@ class YarnProvider(BinProvider):
                 PATH=self.PATH,
                 prepend=True,
             )
-        super().setup_PATH()
+        super().setup_PATH(no_cache=no_cache)
 
+    @log_method_call(include_result=True)
     def exec(
         self,
         bin_name,
@@ -185,6 +195,7 @@ class YarnProvider(BinProvider):
             **kwargs,
         )
 
+    @log_method_call()
     def setup(
         self,
         *,
@@ -247,7 +258,6 @@ class YarnProvider(BinProvider):
         no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        self.setup(no_cache=no_cache)
         installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
         postinstall_scripts = bool(postinstall_scripts)
@@ -310,17 +320,16 @@ class YarnProvider(BinProvider):
                 )
                 if cache_proc.returncode != 0:
                     self._raise_proc_error("install", install_args, cache_proc)
-            cmd = ["add", *self.yarn_install_args, *install_args]
+            cmd = ["add", *install_args]
             if not postinstall_scripts:
                 cmd = [
                     "add",
-                    *self.yarn_install_args,
                     "--mode",
                     "skip-build",
                     *install_args,
                 ]
         else:
-            cmd = ["add", *self.yarn_install_args, *install_args]
+            cmd = ["add", *install_args]
             if no_cache and "--force" not in cmd:
                 cmd.insert(1, "--force")
 
@@ -344,7 +353,6 @@ class YarnProvider(BinProvider):
         no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        self.setup(no_cache=no_cache)
         installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
         postinstall_scripts = bool(postinstall_scripts)
@@ -405,17 +413,16 @@ class YarnProvider(BinProvider):
                 )
                 if cache_proc.returncode != 0:
                     self._raise_proc_error("update", install_args, cache_proc)
-            cmd = ["up", *self.yarn_install_args, *install_args]
+            cmd = ["up", *install_args]
             if not postinstall_scripts:
                 cmd = [
                     "up",
-                    *self.yarn_install_args,
                     "--mode",
                     "skip-build",
                     *install_args,
                 ]
         else:
-            cmd = ["upgrade", *self.yarn_install_args, *install_args]
+            cmd = ["upgrade", *install_args]
             if no_cache and "--force" not in cmd:
                 cmd.insert(1, "--force")
 
@@ -436,15 +443,21 @@ class YarnProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> bool:
-        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
         install_args = install_args or self.get_install_args(bin_name)
+        if str(bin_name) == "puppeteer" and tuple(install_args) == (
+            "puppeteer",
+            "@puppeteer/browsers",
+        ):
+            install_args = ["puppeteer"]
 
         proc = self.exec(
             bin_name=installer_bin,
-            cmd=["remove", *self.yarn_install_args, *install_args],
+            cmd=["remove", *install_args],
             timeout=timeout,
         )
         if proc.returncode != 0:

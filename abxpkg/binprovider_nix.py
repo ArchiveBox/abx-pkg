@@ -18,8 +18,10 @@ from .base_types import (
     bin_abspath,
 )
 from .semver import SemVer
-from .binprovider import BinProvider, DEFAULT_ENV_PATH, remap_kwargs
-from .logging import format_subprocess_output
+from .binprovider import BinProvider, DEFAULT_ENV_PATH, log_method_call, remap_kwargs
+from .logging import format_command, format_subprocess_output, get_logger
+
+logger = get_logger(__name__)
 
 
 # Ultimate fallback when neither the constructor arg nor
@@ -30,6 +32,7 @@ DEFAULT_NIX_BIN_DIR = Path("/nix/var/nix/profiles/default/bin")
 
 class NixProvider(BinProvider):
     name: BinProviderName = "nix"
+    _log_emoji = "❄️"
     INSTALLER_BIN: BinName = "nix"
 
     PATH: PATHStr = (
@@ -42,14 +45,7 @@ class NixProvider(BinProvider):
         ),
         validation_alias="nix_profile",
     )
-    nix_state_dir: Path | None = None
     bin_dir: Path | None = None
-    nix_install_args: list[str] = [
-        "--extra-experimental-features",
-        "nix-command",
-        "--extra-experimental-features",
-        "flakes",
-    ]
 
     @computed_field
     @property
@@ -59,9 +55,6 @@ class NixProvider(BinProvider):
         env: dict[str, str] = {
             "LD_LIBRARY_PATH": ":" + str(self.install_root / "lib"),
         }
-        if self.nix_state_dir:
-            env["XDG_STATE_HOME"] = str(self.nix_state_dir)
-            env["XDG_CACHE_HOME"] = str(self.nix_state_dir / "cache")
         return env
 
     @computed_field
@@ -90,7 +83,7 @@ class NixProvider(BinProvider):
 
         return self
 
-    def setup_PATH(self) -> None:
+    def setup_PATH(self, no_cache: bool = False) -> None:
         """Populate PATH on first use from install_root/bin only."""
         install_root = self.install_root
         assert install_root is not None
@@ -99,8 +92,9 @@ class NixProvider(BinProvider):
             PATH=self.PATH,
             prepend=True,
         )
-        super().setup_PATH()
+        super().setup_PATH(no_cache=no_cache)
 
+    @log_method_call()
     def setup(
         self,
         *,
@@ -122,9 +116,8 @@ class NixProvider(BinProvider):
             and install_root.is_dir()
             and not install_root.is_symlink()
         ):
+            logger.info("$ %s", format_command(["rm", "-rf", str(install_root)]))
             shutil.rmtree(install_root)
-        if self.nix_state_dir:
-            self.nix_state_dir.mkdir(parents=True, exist_ok=True)
 
     def _profile_element_name(
         self,
@@ -147,16 +140,11 @@ class NixProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        self.setup(
-            postinstall_scripts=postinstall_scripts,
-            min_release_age=min_release_age,
-            min_version=min_version,
-        )
-
         install_args = install_args or self.get_install_args(bin_name)
-        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
 
         proc = self.exec(
@@ -164,7 +152,10 @@ class NixProvider(BinProvider):
             cmd=[
                 "profile",
                 "install",
-                *self.nix_install_args,
+                "--extra-experimental-features",
+                "nix-command",
+                "--extra-experimental-features",
+                "flakes",
                 "--profile",
                 str(self.install_root),
                 *install_args,
@@ -184,13 +175,14 @@ class NixProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
         profile_element = self._profile_element_name(
             bin_name,
             install_args=install_args,
         )
-        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
 
         proc = self.exec(
@@ -198,7 +190,10 @@ class NixProvider(BinProvider):
             cmd=[
                 "profile",
                 "upgrade",
-                *self.nix_install_args,
+                "--extra-experimental-features",
+                "nix-command",
+                "--extra-experimental-features",
+                "flakes",
                 "--profile",
                 str(self.install_root),
                 profile_element,
@@ -218,13 +213,14 @@ class NixProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> bool:
         profile_element = self._profile_element_name(
             bin_name,
             install_args=install_args,
         )
-        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
 
         proc = self.exec(
@@ -232,7 +228,10 @@ class NixProvider(BinProvider):
             cmd=[
                 "profile",
                 "remove",
-                *self.nix_install_args,
+                "--extra-experimental-features",
+                "nix-command",
+                "--extra-experimental-features",
+                "flakes",
                 "--profile",
                 str(self.install_root),
                 profile_element,

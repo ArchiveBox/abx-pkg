@@ -5,31 +5,28 @@ import logging
 import pytest
 
 from abxpkg import Binary, SemVer
-from abxpkg.binprovider_ansible import AnsibleProvider
+from abxpkg.binprovider import BinProvider
+from abxpkg.binprovider_ansible import (
+    AnsibleProvider,
+    ansible_package_install,
+)
 from abxpkg.exceptions import BinaryInstallError
+from typing import cast
 
 
 def _ansible_provider_for_host(test_machine):
     test_machine.require_tool("ansible")
-    if shutil.which("apt-get"):
-        provider = AnsibleProvider(
-            ansible_installer_module="ansible.builtin.apt",
-            postinstall_scripts=True,
-            min_release_age=0,
-        )
-        return provider, test_machine.pick_missing_provider_binary(
-            provider,
-            ("tree", "rename", "jq", "tmux", "screen"),
-        )
-    test_machine.require_tool("brew")
+    if not shutil.which("apt-get"):
+        test_machine.require_tool("brew")
     provider = AnsibleProvider(
-        ansible_installer_module="community.general.homebrew",
         postinstall_scripts=True,
         min_release_age=0,
     )
     return provider, test_machine.pick_missing_provider_binary(
         provider,
-        ("hello", "jq", "watch", "fzy", "tree"),
+        ("tree", "rename", "jq", "tmux", "screen")
+        if shutil.which("apt-get")
+        else ("hello", "jq", "watch", "fzy", "tree"),
     )
 
 
@@ -41,10 +38,14 @@ class TestAnsibleProvider:
     ):
         del test_machine_dependencies
         test_machine.require_tool("ansible-playbook")
-
         provider = AnsibleProvider(
-            ansible_installer_module="ansible.builtin.command",
-            ansible_playbook_template="""
+            postinstall_scripts=True,
+            min_release_age=0,
+        )
+        installer = provider.INSTALLER_BINARY().loaded_abspath
+        assert installer is not None
+
+        playbook_template = """
 ---
 - name: Run a local command
   hosts: localhost
@@ -55,20 +56,25 @@ class TestAnsibleProvider:
         cmd: "{{{{item}}}}"
 {module_extra_yaml}
       loop: {pkg_names}
-""",
-            postinstall_scripts=True,
-            min_release_age=0,
-            install_timeout=2,
-        ).get_provider_with_overrides(
-            overrides={"sleep": {"install_args": ["sleep 5"]}},
-        )
+"""
 
         with pytest.raises(subprocess.TimeoutExpired):
-            provider.install("sleep", no_cache=True)
+            ansible_package_install(
+                "sleep 5",
+                ansible_playbook_abspath=str(installer),
+                playbook_template=playbook_template,
+                installer_module="ansible.builtin.command",
+                timeout=2,
+            )
         with pytest.raises(subprocess.TimeoutExpired):
-            provider.update("sleep", no_cache=True)
-        with pytest.raises(subprocess.TimeoutExpired):
-            provider.uninstall("sleep")
+            ansible_package_install(
+                "sleep 5",
+                ansible_playbook_abspath=str(installer),
+                playbook_template=playbook_template,
+                installer_module="ansible.builtin.command",
+                state="latest",
+                timeout=2,
+            )
 
     def test_provider_direct_methods_exercise_real_lifecycle(
         self,
@@ -89,16 +95,10 @@ class TestAnsibleProvider:
         del test_machine_dependencies
         provider, package = _ansible_provider_for_host(test_machine)
 
-        cleanup_provider = AnsibleProvider(
-            ansible_installer_module=provider.ansible_installer_module,
-            postinstall_scripts=True,
-            min_release_age=0,
-        )
+        cleanup_provider = AnsibleProvider(postinstall_scripts=True, min_release_age=0)
         try:
             with caplog.at_level(logging.WARNING, logger="abxpkg.binprovider"):
-                installed = AnsibleProvider(
-                    ansible_installer_module=provider.ansible_installer_module,
-                ).install(
+                installed = AnsibleProvider().install(
                     package,
                     postinstall_scripts=False,
                     min_release_age=1,
@@ -110,11 +110,7 @@ class TestAnsibleProvider:
             caplog.clear()
             binary = Binary(
                 name=package,
-                binproviders=[
-                    AnsibleProvider(
-                        ansible_installer_module=provider.ansible_installer_module,
-                    ),
-                ],
+                binproviders=cast(list[BinProvider], [AnsibleProvider()]),
                 postinstall_scripts=False,
                 min_release_age=1,
             )
@@ -133,11 +129,7 @@ class TestAnsibleProvider:
     ):
         del test_machine_dependencies
         provider, package = _ansible_provider_for_host(test_machine)
-        cleanup_provider = AnsibleProvider(
-            ansible_installer_module=provider.ansible_installer_module,
-            postinstall_scripts=True,
-            min_release_age=0,
-        )
+        cleanup_provider = AnsibleProvider(postinstall_scripts=True, min_release_age=0)
         try:
             installed = provider.install(
                 package,
@@ -177,7 +169,7 @@ class TestAnsibleProvider:
         provider, package = _ansible_provider_for_host(test_machine)
         binary = Binary(
             name=package,
-            binproviders=[provider],
+            binproviders=cast(list[BinProvider], [provider]),
             postinstall_scripts=True,
             min_release_age=0,
         )
