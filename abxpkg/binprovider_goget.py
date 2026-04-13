@@ -152,6 +152,7 @@ class GoGetProvider(BinProvider):
                         if loaded.loaded_binprovider is not None
                         else self.name
                     ),
+                    cache_kind="dependency",
                 )
             self._INSTALLER_BINARY = loaded
             return self._INSTALLER_BINARY

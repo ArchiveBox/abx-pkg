@@ -158,6 +158,7 @@ class PlaywrightProvider(BinProvider):
                             if loaded.loaded_binprovider is not None
                             else self.name
                         ),
+                        cache_kind="dependency",
                     )
                 node_loaded = Binary(
                     name="node",
@@ -166,8 +167,6 @@ class PlaywrightProvider(BinProvider):
                         for provider in upstream_providers
                         if provider.name != self.name
                     ],
-                    postinstall_scripts=True,
-                    min_release_age=0,
                 ).load(no_cache=no_cache)
                 if (
                     node_loaded
@@ -185,6 +184,7 @@ class PlaywrightProvider(BinProvider):
                             if node_loaded.loaded_binprovider is not None
                             else self.name
                         ),
+                        cache_kind="dependency",
                     )
                 self._INSTALLER_BINARY = loaded
                 return self._INSTALLER_BINARY
@@ -208,8 +208,6 @@ class PlaywrightProvider(BinProvider):
         node_loaded = Binary(
             name="node",
             binproviders=upstream_providers,
-            postinstall_scripts=True,
-            min_release_age=0,
         ).load(no_cache=no_cache)
         if (
             node_loaded
@@ -227,6 +225,7 @@ class PlaywrightProvider(BinProvider):
                     if node_loaded.loaded_binprovider is not None
                     else self.name
                 ),
+                cache_kind="dependency",
             )
         return loaded
 

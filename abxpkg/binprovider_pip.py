@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Self
 from pydantic import Field, model_validator, TypeAdapter, computed_field
 
+from .binary import Binary
 from .base_types import (
     BinProviderName,
     PATHStr,
@@ -199,10 +200,74 @@ class PipProvider(BinProvider):
                                 if loaded.loaded_binprovider is not None
                                 else self.name
                             ),
+                            cache_kind="dependency",
+                        )
+                    python_loaded = EnvProvider(
+                        PATH=str(venv_pip.parent),
+                        install_root=None,
+                        bin_dir=None,
+                    ).load(
+                        bin_name="python",
+                        no_cache=no_cache,
+                    )
+                    if (
+                        python_loaded
+                        and python_loaded.loaded_abspath
+                        and python_loaded.loaded_version
+                        and python_loaded.loaded_sha256
+                    ):
+                        self.write_cached_binary(
+                            "python",
+                            python_loaded.loaded_abspath,
+                            python_loaded.loaded_version,
+                            python_loaded.loaded_sha256,
+                            resolved_provider_name=(
+                                python_loaded.loaded_binprovider.name
+                                if python_loaded.loaded_binprovider is not None
+                                else self.name
+                            ),
+                            cache_kind="dependency",
                         )
                     self._INSTALLER_BINARY = loaded
                     return self._INSTALLER_BINARY
-        return super().INSTALLER_BINARY(no_cache=no_cache)
+        loaded = super().INSTALLER_BINARY(no_cache=no_cache)
+        from . import DEFAULT_PROVIDER_NAMES, PROVIDER_CLASS_BY_NAME
+
+        raw_provider_names = os.environ.get("ABXPKG_BINPROVIDERS")
+        selected_provider_names = (
+            [provider_name.strip() for provider_name in raw_provider_names.split(",")]
+            if raw_provider_names
+            else list(DEFAULT_PROVIDER_NAMES)
+        )
+        python_loaded = Binary(
+            name="python",
+            binproviders=[
+                PROVIDER_CLASS_BY_NAME[provider_name]()
+                for provider_name in selected_provider_names
+                if provider_name
+                and provider_name in PROVIDER_CLASS_BY_NAME
+                and provider_name != self.name
+            ],
+        ).load(no_cache=no_cache)
+        if (
+            python_loaded
+            and python_loaded.loaded_abspath
+            and python_loaded.loaded_version
+            and python_loaded.loaded_sha256
+        ):
+            self.write_cached_binary(
+                "python",
+                python_loaded.loaded_abspath,
+                python_loaded.loaded_version,
+                python_loaded.loaded_sha256,
+                resolved_provider_name=(
+                    python_loaded.loaded_binprovider.name
+                    if python_loaded.loaded_binprovider is not None
+                    else self.name
+                ),
+                cache_kind="dependency",
+            )
+        return loaded
 
     @log_method_call()
     def setup(

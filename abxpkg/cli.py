@@ -10,7 +10,7 @@ import sys
 import tomllib
 from dataclasses import dataclass, replace
 from importlib import metadata
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any, cast
 
@@ -22,7 +22,7 @@ from rich.theme import Theme
 
 from . import ALL_PROVIDER_NAMES, DEFAULT_PROVIDER_NAMES, PROVIDER_CLASS_BY_NAME, Binary
 from .base_types import DEFAULT_LIB_DIR
-from .binprovider import DEFAULT_ENV_PATH, BinProvider, env_flag_is_true
+from .binprovider import DEFAULT_ENV_PATH, BinProvider, HandlerDict, env_flag_is_true
 from .config import load_derived_cache
 from .exceptions import ABXPkgError
 from .logging import (
@@ -54,6 +54,7 @@ class CliOptions:
     postinstall_scripts: bool | None = None
     min_release_age: float | None = None
     overrides: dict[str, Any] | None = None
+    handler_overrides: HandlerDict | None = None
     # Provider-level fields forwarded to every provider constructor.
     install_root: Path | None = None
     bin_dir: Path | None = None
@@ -143,6 +144,16 @@ def _parse_overrides(raw: str | None) -> dict[str, Any] | None:
     if not isinstance(data, dict):
         raise click.BadParameter("--overrides must be a JSON object")
     return data
+
+
+def _parse_handler_override(raw: str | None) -> Any:
+    stripped = _none_or_stripped(raw)
+    if stripped is None:
+        return None
+    try:
+        return json.loads(stripped)
+    except json.JSONDecodeError:
+        return stripped
 
 
 def _parse_cli_path(raw: str | None) -> Path | None:
@@ -327,6 +338,37 @@ def build_providers(
 
 
 def build_binary(binary_name: str, options: CliOptions, *, dry_run: bool) -> Binary:
+    merged_overrides = options.overrides
+    if options.handler_overrides:
+        merged_overrides = {
+            provider_name: dict(options.handler_overrides)
+            for provider_name in options.provider_names
+        }
+        if options.overrides:
+
+            def merge_dicts(
+                base: dict[str, Any],
+                override: dict[str, Any],
+            ) -> dict[str, Any]:
+                merged: dict[str, Any] = dict(base)
+                for key, value in override.items():
+                    existing = merged.get(key)
+                    if isinstance(existing, dict) and isinstance(value, dict):
+                        merged[key] = merge_dicts(existing, value)
+                    else:
+                        merged[key] = value
+                return merged
+
+            for provider_name, provider_overrides in options.overrides.items():
+                existing = merged_overrides.get(provider_name, {})
+                if isinstance(existing, dict) and isinstance(provider_overrides, dict):
+                    merged_overrides[provider_name] = merge_dicts(
+                        existing,
+                        provider_overrides,
+                    )
+                else:
+                    merged_overrides[provider_name] = provider_overrides
+
     binary_kwargs: dict[str, Any] = {
         "name": binary_name,
         "binproviders": build_providers(
@@ -349,7 +391,7 @@ def build_binary(binary_name: str, options: CliOptions, *, dry_run: bool) -> Bin
         ("min_version", options.min_version),
         ("postinstall_scripts", options.postinstall_scripts),
         ("min_release_age", options.min_release_age),
-        ("overrides", options.overrides),
+        ("overrides", merged_overrides),
     ):
         if value is not None:
             binary_kwargs[key] = value
@@ -366,6 +408,10 @@ def build_cli_options(
     debug: bool | None,
     no_cache: bool | None,
     min_version: str | None,
+    abspath_override: Any = None,
+    version_override: Any = None,
+    install_args_override: Any = None,
+    packages_override: Any = None,
     postinstall_scripts: bool | None,
     min_release_age: float | None,
     overrides: dict[str, Any] | None,
@@ -404,6 +450,19 @@ def build_cli_options(
     if global_mode is True:
         lib_dir = "None"
 
+    handler_overrides: HandlerDict | None = None
+    for key, value in (
+        ("abspath", abspath_override),
+        ("version", version_override),
+        ("install_args", install_args_override),
+        ("packages", packages_override),
+    ):
+        if value is None:
+            continue
+        if handler_overrides is None:
+            handler_overrides = {}
+        handler_overrides[key] = value
+
     if group is None:
         provider_names = parse_provider_names(binproviders)
         os.environ["ABXPKG_BINPROVIDERS"] = ",".join(provider_names)
@@ -414,6 +473,7 @@ def build_cli_options(
             debug=resolve_debug(debug),
             no_cache=resolve_no_cache(no_cache),
             min_version=min_version,
+            handler_overrides=handler_overrides,
             postinstall_scripts=postinstall_scripts,
             min_release_age=min_release_age,
             overrides=overrides,
@@ -440,6 +500,14 @@ def build_cli_options(
         debug=_override(debug, group.debug),
         no_cache=_override(no_cache, group.no_cache),
         min_version=_override(min_version, group.min_version),
+        handler_overrides=(
+            group.handler_overrides
+            if handler_overrides is None
+            else {
+                **(group.handler_overrides or {}),
+                **handler_overrides,
+            }
+        ),
         postinstall_scripts=_override(postinstall_scripts, group.postinstall_scripts),
         min_release_age=_override(min_release_age, group.min_release_age),
         overrides=_override(overrides, group.overrides),
@@ -645,17 +713,33 @@ def format_error(err: Exception) -> str:
 def cached_binaries(
     options: CliOptions,
     names: tuple[str, ...] = (),
-) -> list[tuple[str, str, str, Path, str]]:
-    records: list[tuple[str, str, str, Path, str]] = []
+    providers: Iterable[BinProvider] | None = None,
+) -> list[tuple[str, str, str, Path, str, str]]:
+    records: list[tuple[str, str, str, Path, str, str]] = []
     selected_names = set(names)
-    for provider_name in options.provider_names:
-        derived_env_path = options.lib_dir / provider_name / "derived.env"
-        if not derived_env_path.is_file():
+    provider_instances = tuple(
+        providers
+        if providers is not None
+        else build_providers(
+            options.provider_names,
+            dry_run=False,
+            install_root=options.install_root,
+            bin_dir=options.bin_dir,
+            euid=options.euid,
+            install_timeout=options.install_timeout,
+            version_timeout=options.version_timeout,
+        ),
+    )
+    for provider in provider_instances:
+        provider_name = provider.name
+        derived_env_path = provider.derived_env_path
+        if derived_env_path is None or not derived_env_path.is_file():
             continue
-
         cache = load_derived_cache(derived_env_path)
-        provider_class = PROVIDER_CLASS_BY_NAME[provider_name]
-        installer_bin = cast(str, provider_class.model_fields["INSTALLER_BIN"].default)
+        installer_bin = cast(
+            str,
+            type(provider).model_fields["INSTALLER_BIN"].default,
+        )
         for cache_key, record in sorted(cache.items()):
             if not isinstance(record, dict):
                 continue
@@ -690,10 +774,15 @@ def cached_binaries(
 
             version = record.get("loaded_version")
             resolved_provider_name = record.get("resolved_provider_name")
+            cache_kind = record.get("cache_kind")
             if not isinstance(version, str):
                 continue
             if not isinstance(resolved_provider_name, str):
                 resolved_provider_name = provider_name
+            if not isinstance(cache_kind, str):
+                cache_kind = (
+                    "dependency" if cached_bin_name == installer_bin else "binary"
+                )
 
             abspath_path = Path(cached_abspath)
             if not abspath_path.exists():
@@ -706,6 +795,7 @@ def cached_binaries(
                     cached_bin_name,
                     abspath_path,
                     version,
+                    cache_kind,
                 ),
             )
 
@@ -716,15 +806,29 @@ def list_cached_binaries(
     options: CliOptions,
     names: tuple[str, ...] = (),
 ) -> list[str]:
+    providers = tuple(
+        build_providers(
+            options.provider_names,
+            dry_run=False,
+            install_root=options.install_root,
+            bin_dir=options.bin_dir,
+            euid=options.euid,
+            install_timeout=options.install_timeout,
+            version_timeout=options.version_timeout,
+        ),
+    )
     installer_lines: list[str] = []
     binary_lines: list[str] = []
+    seen_installer_lines: set[str] = set()
+    seen_binary_lines: set[str] = set()
     for (
         _cache_owner,
         resolved_provider_name,
         _bin_name,
         abspath,
         version,
-    ) in cached_binaries(options, names):
+        _cache_kind,
+    ) in cached_binaries(options, names, providers=providers):
         line = format_loaded_binary_line(
             version,
             abspath,
@@ -736,8 +840,14 @@ def list_cached_binaries(
             PROVIDER_CLASS_BY_NAME[_cache_owner].model_fields["INSTALLER_BIN"].default,
         )
         if _bin_name == installer_bin:
+            if line in seen_installer_lines:
+                continue
+            seen_installer_lines.add(line)
             installer_lines.append(line)
         else:
+            if line in seen_binary_lines:
+                continue
+            seen_binary_lines.add(line)
             binary_lines.append(line)
     if installer_lines and binary_lines:
         return [*installer_lines, "", *binary_lines]
@@ -875,34 +985,24 @@ def version_report(options: CliOptions):
 
         upstream_binary_lines: list[str] = []
         installed_binary_lines: list[str] = []
-        provider_install_root = (
-            provider.install_root.expanduser().resolve(strict=False)
-            if provider.install_root is not None
-            else None
-        )
         for (
             _cache_owner,
             resolved_provider_name,
             cached_bin_name,
             abspath,
             version,
-        ) in cached_binaries(
-            options,
-            (provider.name,),
-        ):
+            cache_kind,
+        ) in cached_binaries(options, (provider.name,), providers=(provider,)):
             line = format_loaded_binary_line(
                 version,
                 abspath,
                 resolved_provider_name,
                 cached_bin_name,
             )
-            resolved_abspath = abspath.expanduser().resolve(strict=False)
-            if provider_install_root and resolved_abspath.is_relative_to(
-                provider_install_root,
-            ):
-                installed_binary_lines.append(line)
-            else:
+            if cache_kind == "dependency":
                 upstream_binary_lines.append(line)
+                continue
+            installed_binary_lines.append(line)
 
         if upstream_binary_lines:
             upstream_line = Text("   ")
@@ -1036,6 +1136,45 @@ def shared_options(command):
     return command
 
 
+def binary_override_options(command):
+    for decorator in (
+        click.option(
+            "--packages",
+            "packages_override",
+            metavar="JSON_OR_STR",
+            default=None,
+            callback=_click_parse(_parse_handler_override),
+            help="Default packages override applied to all selected providers unless --overrides specifies a provider-specific value.",
+        ),
+        click.option(
+            "--install-args",
+            "install_args_override",
+            metavar="JSON_OR_STR",
+            default=None,
+            callback=_click_parse(_parse_handler_override),
+            help="Default install_args override applied to all selected providers unless --overrides specifies a provider-specific value.",
+        ),
+        click.option(
+            "--version",
+            "version_override",
+            metavar="JSON_OR_STR",
+            default=None,
+            callback=_click_parse(_parse_handler_override),
+            help="Default version override applied to all selected providers unless --overrides specifies a provider-specific value.",
+        ),
+        click.option(
+            "--abspath",
+            "abspath_override",
+            metavar="JSON_OR_STR",
+            default=None,
+            callback=_click_parse(_parse_handler_override),
+            help="Default abspath override applied to all selected providers unless --overrides specifies a provider-specific value.",
+        ),
+    ):
+        command = decorator(command)
+    return command
+
+
 # Single canonical list of kwargs carried by every CLI callback that
 # uses @shared_options. Defined once so command callbacks don't have to
 # enumerate all of them, and so ``get_command_options`` has a single
@@ -1048,6 +1187,10 @@ _SHARED_OPTION_NAMES: tuple[str, ...] = (
     "debug",
     "no_cache",
     "min_version",
+    "abspath_override",
+    "version_override",
+    "install_args_override",
+    "packages_override",
     "postinstall_scripts",
     "min_release_age",
     "overrides",
@@ -1203,6 +1346,7 @@ def list_command(
 @cli.command("install")
 @click.argument("binary_name")
 @click.pass_context
+@binary_override_options
 @shared_options
 def install_command(
     ctx: click.Context,
@@ -1241,6 +1385,7 @@ def clear_command(ctx: click.Context, **shared_kwargs: Any) -> None:
 @cli.command("update")
 @click.argument("binary_name")
 @click.pass_context
+@binary_override_options
 @shared_options
 def update_command(
     ctx: click.Context,
@@ -1269,6 +1414,7 @@ def upgrade_command(
 @cli.command("uninstall")
 @click.argument("binary_name")
 @click.pass_context
+@binary_override_options
 @shared_options
 def uninstall_command(
     ctx: click.Context,
@@ -1297,6 +1443,7 @@ def remove_command(
 @cli.command("load")
 @click.argument("binary_name")
 @click.pass_context
+@binary_override_options
 @shared_options
 def load_command(
     ctx: click.Context,
@@ -1322,6 +1469,7 @@ def load_command(
         "help_option_names": [],
     },
 )
+@binary_override_options
 @shared_options
 @click.option(
     "--install",
@@ -1607,7 +1755,7 @@ _ABXPKG_GROUP_OPTS_WITH_VALUES = frozenset(
     if isinstance(param, click.Option) and not param.is_flag
     for opt in param.opts
     if opt.startswith("--") and opt not in _BARE_TRUE_BOOL_FLAGS
-)
+) | frozenset({"--abspath", "--version", "--install-args", "--packages"})
 
 _ABX_USAGE = (
     "Usage: abx [OPTIONS] BINARY_NAME [BINARY_ARGS]...\n"
@@ -1618,7 +1766,7 @@ _ABX_USAGE = (
     "Options (forwarded to abxpkg): --lib, --binproviders, --dry-run,\n"
     "--debug, "
     "--no-cache, "
-    "--update, --version, --help.\n"
+    "--update, --version, --help, --abspath, --install-args, --packages.\n"
 )
 
 

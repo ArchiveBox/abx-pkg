@@ -131,8 +131,6 @@ class PuppeteerProvider(BinProvider):
                 and provider_name in PROVIDER_CLASS_BY_NAME
                 and provider_name != self.name
             ],
-            postinstall_scripts=True,
-            min_release_age=0,
         ).load(no_cache=no_cache)
         if (
             node_loaded
@@ -150,6 +148,7 @@ class PuppeteerProvider(BinProvider):
                     if node_loaded.loaded_binprovider is not None
                     else self.name
                 ),
+                cache_kind="dependency",
             )
         return loaded
 

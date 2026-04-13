@@ -8,6 +8,7 @@ from pathlib import Path
 from pydantic import Field, model_validator, computed_field
 from typing import Self
 
+from .binary import Binary
 from .base_types import (
     BinProviderName,
     PATHStr,
@@ -74,6 +75,46 @@ class GemProvider(BinProvider):
         else:
             self.PATH = self._merge_PATH(bin_dir, PATH=self.PATH)
         super().setup_PATH(no_cache=no_cache)
+
+    def INSTALLER_BINARY(self, no_cache: bool = False):
+        from . import DEFAULT_PROVIDER_NAMES, PROVIDER_CLASS_BY_NAME
+
+        loaded = super().INSTALLER_BINARY(no_cache=no_cache)
+        raw_provider_names = os.environ.get("ABXPKG_BINPROVIDERS")
+        selected_provider_names = (
+            [provider_name.strip() for provider_name in raw_provider_names.split(",")]
+            if raw_provider_names
+            else list(DEFAULT_PROVIDER_NAMES)
+        )
+        ruby_loaded = Binary(
+            name="ruby",
+            binproviders=[
+                PROVIDER_CLASS_BY_NAME[provider_name]()
+                for provider_name in selected_provider_names
+                if provider_name
+                and provider_name in PROVIDER_CLASS_BY_NAME
+                and provider_name != self.name
+            ],
+        ).load(no_cache=no_cache)
+        if (
+            ruby_loaded
+            and ruby_loaded.loaded_abspath
+            and ruby_loaded.loaded_version
+            and ruby_loaded.loaded_sha256
+        ):
+            self.write_cached_binary(
+                "ruby",
+                ruby_loaded.loaded_abspath,
+                ruby_loaded.loaded_version,
+                ruby_loaded.loaded_sha256,
+                resolved_provider_name=(
+                    ruby_loaded.loaded_binprovider.name
+                    if ruby_loaded.loaded_binprovider is not None
+                    else self.name
+                ),
+                cache_kind="dependency",
+            )
+        return loaded
 
     @log_method_call()
     def setup(

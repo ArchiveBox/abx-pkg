@@ -914,7 +914,7 @@ cache_dir = <deno_root>/.cache or user_cache_path("deno", "abxpkg")
 Source: [`abxpkg/binprovider_bash.py`](./abxpkg/binprovider_bash.py) • Tests: [`tests/test_bashprovider.py`](./tests/test_bashprovider.py)
 
 ```python
-INSTALLER_BIN = "sh"
+INSTALLER_BIN = "bash"
 PATH = ""
 bash_root = $ABXPKG_BASH_ROOT or $ABXPKG_LIB_DIR/bash
 bash_bin_dir = <bash_root>/bin

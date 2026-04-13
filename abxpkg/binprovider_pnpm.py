@@ -12,6 +12,7 @@ from typing import Self
 from platformdirs import user_cache_path
 from pydantic import Field, TypeAdapter, computed_field, model_validator
 
+from .binary import Binary
 from .base_types import (
     BinName,
     BinProviderName,
@@ -154,6 +155,46 @@ class PnpmProvider(BinProvider):
             )
             self.PATH = self._merge_PATH(pnpm_home, PATH=self.PATH)
         super().setup_PATH(no_cache=no_cache)
+
+    def INSTALLER_BINARY(self, no_cache: bool = False):
+        from . import DEFAULT_PROVIDER_NAMES, PROVIDER_CLASS_BY_NAME
+
+        loaded = super().INSTALLER_BINARY(no_cache=no_cache)
+        raw_provider_names = os.environ.get("ABXPKG_BINPROVIDERS")
+        selected_provider_names = (
+            [provider_name.strip() for provider_name in raw_provider_names.split(",")]
+            if raw_provider_names
+            else list(DEFAULT_PROVIDER_NAMES)
+        )
+        node_loaded = Binary(
+            name="node",
+            binproviders=[
+                PROVIDER_CLASS_BY_NAME[provider_name]()
+                for provider_name in selected_provider_names
+                if provider_name
+                and provider_name in PROVIDER_CLASS_BY_NAME
+                and provider_name != self.name
+            ],
+        ).load(no_cache=no_cache)
+        if (
+            node_loaded
+            and node_loaded.loaded_abspath
+            and node_loaded.loaded_version
+            and node_loaded.loaded_sha256
+        ):
+            self.write_cached_binary(
+                "node",
+                node_loaded.loaded_abspath,
+                node_loaded.loaded_version,
+                node_loaded.loaded_sha256,
+                resolved_provider_name=(
+                    node_loaded.loaded_binprovider.name
+                    if node_loaded.loaded_binprovider is not None
+                    else self.name
+                ),
+                cache_kind="dependency",
+            )
+        return loaded
 
     @log_method_call(include_result=True)
     def exec(

@@ -12,6 +12,7 @@ from typing import Self
 from pydantic import Field, model_validator, TypeAdapter, computed_field
 from platformdirs import user_cache_path
 
+from .binary import Binary
 from .base_types import (
     BinProviderName,
     PATHStr,
@@ -24,6 +25,7 @@ from .base_types import (
 from .semver import SemVer
 from .binprovider import (
     BinProvider,
+    EnvProvider,
     env_flag_is_true,
     log_method_call,
     remap_kwargs,
@@ -217,12 +219,13 @@ class NpmProvider(BinProvider):
         npm_abspath = installer_binary.loaded_abspath
         if not npm_abspath:
             return PATH
+        env_provider = EnvProvider(install_root=None, bin_dir=None, euid=self.euid)
 
         npm_bin_dirs: set[Path] = set()
 
         # find all local and global npm PATHs
         npm_local_dir = Path(
-            self.exec(
+            env_provider.exec(
                 bin_name=npm_abspath,
                 cmd=["prefix"],
                 quiet=True,
@@ -245,7 +248,7 @@ class NpmProvider(BinProvider):
 
         npm_global_dir = (
             Path(
-                self.exec(
+                env_provider.exec(
                     bin_name=npm_abspath,
                     cmd=["prefix", "-g"],
                     quiet=True,
@@ -262,6 +265,46 @@ class NpmProvider(BinProvider):
         self.PATH = self._load_PATH(no_cache=no_cache)
         super().setup_PATH(no_cache=no_cache)
 
+    def INSTALLER_BINARY(self, no_cache: bool = False):
+        from . import DEFAULT_PROVIDER_NAMES, PROVIDER_CLASS_BY_NAME
+
+        loaded = super().INSTALLER_BINARY(no_cache=no_cache)
+        raw_provider_names = os.environ.get("ABXPKG_BINPROVIDERS")
+        selected_provider_names = (
+            [provider_name.strip() for provider_name in raw_provider_names.split(",")]
+            if raw_provider_names
+            else list(DEFAULT_PROVIDER_NAMES)
+        )
+        node_loaded = Binary(
+            name="node",
+            binproviders=[
+                PROVIDER_CLASS_BY_NAME[provider_name]()
+                for provider_name in selected_provider_names
+                if provider_name
+                and provider_name in PROVIDER_CLASS_BY_NAME
+                and provider_name != self.name
+            ],
+        ).load(no_cache=no_cache)
+        if (
+            node_loaded
+            and node_loaded.loaded_abspath
+            and node_loaded.loaded_version
+            and node_loaded.loaded_sha256
+        ):
+            self.write_cached_binary(
+                "node",
+                node_loaded.loaded_abspath,
+                node_loaded.loaded_version,
+                node_loaded.loaded_sha256,
+                resolved_provider_name=(
+                    node_loaded.loaded_binprovider.name
+                    if node_loaded.loaded_binprovider is not None
+                    else self.name
+                ),
+                cache_kind="dependency",
+            )
+        return loaded
+
     @log_method_call()
     def setup(
         self,
@@ -273,7 +316,7 @@ class NpmProvider(BinProvider):
     ) -> None:
         """create npm install prefix and node_modules_dir if needed"""
         if not self.PATH:
-            self.PATH = self._load_PATH()
+            self.PATH = self._load_PATH(no_cache=no_cache)
         if self.euid is None:
             self.euid = self.detect_euid(
                 owner_paths=(self.install_root, self.bin_dir),

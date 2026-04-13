@@ -839,6 +839,11 @@ def test_run_forwards_variadic_positional_args_to_binary(
             ["--binproviders", "pip,brew"],
             ["black", "-v"],
         ),
+        (
+            ["--install-args", '["black==24.2.0"]', "black", "--version"],
+            ["--install-args", '["black==24.2.0"]'],
+            ["black", "--version"],
+        ),
         (["--version"], ["--version"], []),
         ([], [], []),
         # POSIX `--` option terminator: the `--` itself is consumed and
@@ -1259,6 +1264,10 @@ def test_build_cli_options_passes_typed_values_through(tmp_path):
         debug=False,
         no_cache=True,
         min_version="1.2.3",
+        abspath_override="/tmp/custom-bin",
+        version_override=["python3", "--version"],
+        install_args_override=["black==24.2.0"],
+        packages_override=["black==24.2.0"],
         postinstall_scripts=False,
         min_release_age=14.0,
         overrides={"pip": {"install_args": ["black==24.2.0"]}},
@@ -1275,6 +1284,12 @@ def test_build_cli_options_passes_typed_values_through(tmp_path):
     assert options.debug is False
     assert options.no_cache is True
     assert options.min_version == "1.2.3"
+    assert options.handler_overrides == {
+        "abspath": "/tmp/custom-bin",
+        "version": ["python3", "--version"],
+        "install_args": ["black==24.2.0"],
+        "packages": ["black==24.2.0"],
+    }
     assert options.postinstall_scripts is False
     assert options.min_release_age == 14.0
     assert options.overrides == {"pip": {"install_args": ["black==24.2.0"]}}
@@ -1298,6 +1313,10 @@ def test_build_cli_options_nones_all_leave_fields_at_default(tmp_path):
         debug=None,
         no_cache=None,
         min_version=None,
+        abspath_override=None,
+        version_override=None,
+        install_args_override=None,
+        packages_override=None,
         postinstall_scripts=None,
         min_release_age=None,
         overrides=None,
@@ -1311,6 +1330,7 @@ def test_build_cli_options_nones_all_leave_fields_at_default(tmp_path):
     assert options.debug is False
     assert options.no_cache is False
     assert options.min_version is None
+    assert options.handler_overrides is None
     assert options.postinstall_scripts is None
     assert options.min_release_age is None
     assert options.overrides is None
@@ -1395,6 +1415,69 @@ def test_build_binary_forwards_binary_level_fields(tmp_path):
     assert binary.postinstall_scripts is False
     assert binary.min_release_age == 30.0
     assert binary.overrides == {"pip": {"install_args": ["custom==1.0"]}}
+
+
+def test_build_binary_merges_cli_handler_overrides_into_all_selected_providers(
+    tmp_path,
+):
+    options = cli_module.CliOptions(
+        lib_dir=tmp_path,
+        provider_names=["env", "pip"],
+        dry_run=False,
+        debug=False,
+        no_cache=False,
+        handler_overrides={
+            "version": ["python3", "--version"],
+            "install_args": ["black==24.2.0"],
+        },
+    )
+
+    binary = cli_module.build_binary("black", options, dry_run=False)
+
+    assert binary.overrides == {
+        "env": {
+            "version": ["python3", "--version"],
+            "install_args": ["black==24.2.0"],
+        },
+        "pip": {
+            "version": ["python3", "--version"],
+            "install_args": ["black==24.2.0"],
+        },
+    }
+
+
+def test_build_binary_explicit_overrides_deepmerge_over_cli_handler_defaults(tmp_path):
+    options = cli_module.CliOptions(
+        lib_dir=tmp_path,
+        provider_names=["env", "pip"],
+        dry_run=False,
+        debug=False,
+        no_cache=False,
+        handler_overrides={
+            "version": ["python3", "--version"],
+            "install_args": ["black==24.2.0"],
+        },
+        overrides={
+            "pip": {
+                "install_args": ["black==25.0.0"],
+                "version_timeout": 99,
+            },
+        },
+    )
+
+    binary = cli_module.build_binary("black", options, dry_run=False)
+
+    assert binary.overrides == {
+        "env": {
+            "version": ["python3", "--version"],
+            "install_args": ["black==24.2.0"],
+        },
+        "pip": {
+            "version": ["python3", "--version"],
+            "install_args": ["black==25.0.0"],
+            "version_timeout": 99,
+        },
+    }
 
 
 def test_upgrade_command_dispatches_to_update(monkeypatch):

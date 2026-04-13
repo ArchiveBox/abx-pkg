@@ -36,7 +36,7 @@ DEFAULT_BASH_ROOT = DEFAULT_LIB_DIR / "bash"
 class BashProvider(EnvProvider):
     name: BinProviderName = "bash"
     _log_emoji = "🧪"
-    INSTALLER_BIN: BinName = "sh"
+    INSTALLER_BIN: BinName = "bash"
 
     PATH: PATHStr = ""  # Starts empty; setup_PATH() replaces it with bin_dir only.
     postinstall_scripts: bool | None = Field(default=None, repr=False)

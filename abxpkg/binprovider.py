@@ -45,6 +45,7 @@ from pydantic import (
 
 from .semver import SemVer
 from .base_types import (
+    DEFAULT_LIB_DIR,
     BinName,
     BinDirPath,
     HostBinPath,
@@ -468,6 +469,7 @@ class BinProvider(BaseModel):
         loaded_version: str
         loaded_sha256: str
         loaded_euid: int
+        cache_kind: str
         provider_name: str
         resolved_provider_name: str
         bin_name: str
@@ -566,12 +568,18 @@ class BinProvider(BaseModel):
         resolved_abspath = str(Path(abspath).expanduser().resolve(strict=False))
         cached_install_args = cached_record.get("install_args")
         resolved_provider_name = cached_record.get("resolved_provider_name")
+        cache_kind = cached_record.get("cache_kind")
         if not isinstance(resolved_provider_name, str):
             resolved_provider_name = self.name
+        if not isinstance(cache_kind, str):
+            cache_kind = (
+                "dependency" if str(bin_name) == str(self.INSTALLER_BIN) else "binary"
+            )
         primary_fingerprint = fingerprints[0]
         if (
             cached_record.get("provider_name") != self.name
             or cached_record.get("resolved_provider_name") != resolved_provider_name
+            or cached_record.get("cache_kind") != cache_kind
             or cached_record.get("bin_name") != str(bin_name)
             or cached_record.get("abspath") != resolved_abspath
             or not isinstance(cached_install_args, list)
@@ -585,6 +593,7 @@ class BinProvider(BaseModel):
                 "loaded_version": str(version),
                 "loaded_sha256": str(sha256),
                 "loaded_euid": euid,
+                "cache_kind": cache_kind,
                 "provider_name": self.name,
                 "resolved_provider_name": resolved_provider_name,
                 "bin_name": str(bin_name),
@@ -624,11 +633,9 @@ class BinProvider(BaseModel):
         loaded_version: SemVer,
         loaded_sha256: Sha256,
         resolved_provider_name: str | None = None,
+        cache_kind: str = "binary",
     ) -> tuple[MTimeNs, EUID] | None:
         derived_env_path = self.derived_env_path
-        if derived_env_path is None:
-            return None
-
         cache_info = self.get_cache_info(bin_name, abspath)
         if cache_info is None:
             return None
@@ -637,14 +644,14 @@ class BinProvider(BaseModel):
         if fingerprints is None:
             return None
 
-        cache = load_derived_cache(derived_env_path)
         resolved_abspath = str(Path(abspath).expanduser().resolve(strict=False))
         primary_fingerprint = fingerprints[0]
-        cache[self._cache_key(bin_name, abspath)] = {
+        record: dict[str, object] = {
             "fingerprint": fingerprints,
             "loaded_version": str(loaded_version),
             "loaded_sha256": str(loaded_sha256),
             "loaded_euid": primary_fingerprint["euid"],
+            "cache_kind": cache_kind,
             "provider_name": self.name,
             "resolved_provider_name": resolved_provider_name or self.name,
             "bin_name": str(bin_name),
@@ -656,13 +663,19 @@ class BinProvider(BaseModel):
             "mtime": primary_fingerprint["mtime_ns"],
             "euid": primary_fingerprint["euid"],
         }
+        if derived_env_path is None:
+            return None
+        cache = load_derived_cache(derived_env_path)
+        cache[self._cache_key(bin_name, abspath)] = record
         save_derived_cache(derived_env_path, cache)
         return (
             TypeAdapter(MTimeNs).validate_python(fingerprints[0]["mtime_ns"]),
             TypeAdapter(EUID).validate_python(fingerprints[0]["euid"]),
         )
 
-    _cache: dict[str, dict[str, Any]] | None = None
+    _cache: dict[str, dict[str, Any]] | None = (
+        None  # Per-method in-memory cache populated by @binprovider_cache during the current process only.
+    )
     _INSTALLER_BINARY: ShallowBinary | None = (
         None  # cached by INSTALLER_BINARY property after first resolution
     )
@@ -854,36 +867,8 @@ class BinProvider(BaseModel):
                                 if loaded.loaded_binprovider is not None
                                 else self.name
                             ),
+                            cache_kind="dependency",
                         )
-                    try:
-                        first_line = loaded.loaded_abspath.read_text(
-                            encoding="utf-8",
-                            errors="ignore",
-                        ).splitlines()[0]
-                    except Exception:
-                        first_line = ""
-                    if "node" in first_line:
-                        node_loaded = Binary(
-                            name="node",
-                            binproviders=manual_installer_providers,
-                        ).load(no_cache=no_cache)
-                        if (
-                            node_loaded
-                            and node_loaded.loaded_abspath
-                            and node_loaded.loaded_version
-                            and node_loaded.loaded_sha256
-                        ):
-                            self.write_cached_binary(
-                                "node",
-                                node_loaded.loaded_abspath,
-                                node_loaded.loaded_version,
-                                node_loaded.loaded_sha256,
-                                resolved_provider_name=(
-                                    node_loaded.loaded_binprovider.name
-                                    if node_loaded.loaded_binprovider is not None
-                                    else self.name
-                                ),
-                            )
                     self._INSTALLER_BINARY = loaded
                     return self._INSTALLER_BINARY
             except Exception:
@@ -906,36 +891,8 @@ class BinProvider(BaseModel):
                             if loaded.loaded_binprovider is not None
                             else self.name
                         ),
+                        cache_kind="dependency",
                     )
-                try:
-                    first_line = loaded.loaded_abspath.read_text(
-                        encoding="utf-8",
-                        errors="ignore",
-                    ).splitlines()[0]
-                except Exception:
-                    first_line = ""
-                if "node" in first_line:
-                    node_loaded = Binary(
-                        name="node",
-                        binproviders=installer_providers,
-                    ).load(no_cache=no_cache)
-                    if (
-                        node_loaded
-                        and node_loaded.loaded_abspath
-                        and node_loaded.loaded_version
-                        and node_loaded.loaded_sha256
-                    ):
-                        self.write_cached_binary(
-                            "node",
-                            node_loaded.loaded_abspath,
-                            node_loaded.loaded_version,
-                            node_loaded.loaded_sha256,
-                            resolved_provider_name=(
-                                node_loaded.loaded_binprovider.name
-                                if node_loaded.loaded_binprovider is not None
-                                else self.name
-                            ),
-                        )
                 self._INSTALLER_BINARY = loaded
                 return self._INSTALLER_BINARY
         except Exception:
@@ -2344,7 +2301,9 @@ class EnvProvider(BinProvider):
         DEFAULT_ENV_PATH  # Ambient runtime PATH; no provider-specific setup step.
     )
     install_root: Path | None = Field(
-        default_factory=lambda: abxpkg_install_root_default("env"),
+        default_factory=lambda: (
+            abxpkg_install_root_default("env") or (DEFAULT_LIB_DIR / "env")
+        ),
     )
 
     overrides: "BinProviderOverrides" = {
@@ -2434,6 +2393,7 @@ class EnvProvider(BinProvider):
                         if loaded.loaded_binprovider is not None
                         else self.name
                     ),
+                    cache_kind="dependency",
                 )
             self._INSTALLER_BINARY = loaded
             return self._INSTALLER_BINARY
@@ -2643,6 +2603,7 @@ class EnvProvider(BinProvider):
         loaded_version: SemVer,
         loaded_sha256: Sha256,
         resolved_provider_name: str | None = None,
+        cache_kind: str = "binary",
     ) -> tuple[MTimeNs, EUID] | None:
         if self._is_managed_by_other_provider(abspath):
             self.invalidate_cache(bin_name)
@@ -2670,6 +2631,7 @@ class EnvProvider(BinProvider):
             loaded_version,
             loaded_sha256,
             resolved_provider_name,
+            cache_kind,
         )
 
 
