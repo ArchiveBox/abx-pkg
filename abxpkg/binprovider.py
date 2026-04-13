@@ -674,7 +674,10 @@ class BinProvider(BaseModel):
         }
         if derived_env_path is None:
             return None
-        derived_env_path.parent.mkdir(parents=True, exist_ok=True)
+        if not (
+            derived_env_path.parent.exists() or derived_env_path.parent.is_symlink()
+        ):
+            derived_env_path.parent.mkdir(parents=True, exist_ok=True)
         cache = load_derived_cache(derived_env_path)
         cache[self._cache_key(bin_name, abspath)] = record
         try:
@@ -2432,7 +2435,14 @@ class EnvProvider(BinProvider):
         bin_name: BinName | str,
         abspath: HostBinPath | Path,
     ) -> HostBinPath:
-        target = Path(abspath).expanduser().absolute()
+        source_path = Path(abspath).expanduser().absolute()
+        if (
+            self.bin_dir is not None
+            and source_path.parent == self.bin_dir
+            and source_path.is_symlink()
+        ):
+            return TypeAdapter(HostBinPath).validate_python(source_path)
+        target = source_path
         if self.bin_dir is None:
             return TypeAdapter(HostBinPath).validate_python(target)
 

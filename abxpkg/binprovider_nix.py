@@ -18,7 +18,13 @@ from .base_types import (
     bin_abspath,
 )
 from .semver import SemVer
-from .binprovider import BinProvider, DEFAULT_ENV_PATH, log_method_call, remap_kwargs
+from .binprovider import (
+    BinProvider,
+    EnvProvider,
+    DEFAULT_ENV_PATH,
+    log_method_call,
+    remap_kwargs,
+)
 from .logging import format_command, format_subprocess_output, get_logger
 
 logger = get_logger(__name__)
@@ -96,6 +102,70 @@ class NixProvider(BinProvider):
             prepend=True,
         )
         super().setup_PATH(no_cache=no_cache)
+
+    @property
+    def derived_env_path(self) -> Path | None:
+        install_root = self.install_root
+        if install_root is None:
+            return None
+        return install_root.parent / f".{install_root.name}.derived.env"
+
+    def INSTALLER_BINARY(self, no_cache: bool = False):
+        if not no_cache and self._INSTALLER_BINARY and self._INSTALLER_BINARY.is_valid:
+            return self._INSTALLER_BINARY
+
+        derived_env_path = self.derived_env_path
+        if not no_cache and derived_env_path and derived_env_path.is_file():
+            from .config import load_derived_cache
+
+            cache = load_derived_cache(derived_env_path)
+            for cached_record in cache.values():
+                if not isinstance(cached_record, dict):
+                    continue
+                if cached_record.get("provider_name") != self.name or cached_record.get(
+                    "bin_name",
+                ) != str(self.INSTALLER_BIN):
+                    continue
+                cached_abspath = cached_record.get("abspath")
+                if not isinstance(cached_abspath, str):
+                    continue
+                loaded = self.load_cached_binary(
+                    self.INSTALLER_BIN,
+                    Path(cached_abspath),
+                )
+                if loaded and loaded.loaded_abspath:
+                    self._INSTALLER_BINARY = loaded
+                    return loaded
+
+        env_provider = EnvProvider(install_root=None, bin_dir=None)
+        env_var = f"{self.INSTALLER_BIN.upper()}_BINARY"
+        manual = os.environ.get(env_var)
+        if manual and os.path.isabs(manual) and Path(manual).is_file():
+            env_provider.PATH = env_provider._merge_PATH(
+                str(Path(manual).parent),
+                PATH=env_provider.PATH,
+                prepend=True,
+            )
+
+        loaded = env_provider.load(bin_name=self.INSTALLER_BIN, no_cache=no_cache)
+        if loaded and loaded.loaded_abspath:
+            if loaded.loaded_version and loaded.loaded_sha256:
+                self.write_cached_binary(
+                    self.INSTALLER_BIN,
+                    loaded.loaded_abspath,
+                    loaded.loaded_version,
+                    loaded.loaded_sha256,
+                    resolved_provider_name=(
+                        loaded.loaded_binprovider.name
+                        if loaded.loaded_binprovider is not None
+                        else self.name
+                    ),
+                    cache_kind="dependency",
+                )
+            self._INSTALLER_BINARY = loaded
+            return self._INSTALLER_BINARY
+
+        return super().INSTALLER_BINARY(no_cache=no_cache)
 
     @log_method_call()
     def setup(
