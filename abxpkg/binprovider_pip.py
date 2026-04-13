@@ -247,7 +247,9 @@ class PipProvider(BinProvider):
         python_loaded = Binary(
             name="python",
             binproviders=[
-                PROVIDER_CLASS_BY_NAME[provider_name]()
+                EnvProvider(install_root=None, bin_dir=None)
+                if provider_name == "env"
+                else PROVIDER_CLASS_BY_NAME[provider_name]()
                 for provider_name in selected_provider_names
                 if provider_name
                 and provider_name in PROVIDER_CLASS_BY_NAME

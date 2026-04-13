@@ -582,6 +582,8 @@ class BinProvider(BaseModel):
             save_derived_cache(derived_env_path, cache)
             return None
         primary_fingerprint = fingerprints[0]
+        if cached_abspath == resolved_abspath and original_abspath != resolved_abspath:
+            cached_abspath = original_abspath
         if (
             cached_record.get("provider_name") != self.name
             or cached_record.get("resolved_provider_name") != resolved_provider_name

@@ -17,7 +17,13 @@ from typing import Any
 from .binary import Binary
 from .base_types import BinProviderName, PATHStr, BinName, InstallArgs
 from .semver import SemVer
-from .binprovider import BinProvider, OPERATING_SYSTEM, DEFAULT_PATH, remap_kwargs
+from .binprovider import (
+    BinProvider,
+    EnvProvider,
+    OPERATING_SYSTEM,
+    DEFAULT_PATH,
+    remap_kwargs,
+)
 from .logging import (
     format_command,
     format_subprocess_output,
@@ -239,7 +245,9 @@ class PyinfraProvider(BinProvider):
         python_loaded = Binary(
             name="python",
             binproviders=[
-                PROVIDER_CLASS_BY_NAME[provider_name]()
+                EnvProvider(install_root=None, bin_dir=None)
+                if provider_name == "env"
+                else PROVIDER_CLASS_BY_NAME[provider_name]()
                 for provider_name in selected_provider_names
                 if provider_name
                 and provider_name in PROVIDER_CLASS_BY_NAME

@@ -22,7 +22,13 @@ from .base_types import (
     abxpkg_install_root_default,
     bin_abspath,
 )
-from .binprovider import BinProvider, env_flag_is_true, log_method_call, remap_kwargs
+from .binprovider import (
+    BinProvider,
+    EnvProvider,
+    env_flag_is_true,
+    log_method_call,
+    remap_kwargs,
+)
 from .logging import format_subprocess_output
 from .semver import SemVer
 
@@ -179,7 +185,9 @@ class PnpmProvider(BinProvider):
         node_loaded = Binary(
             name="node",
             binproviders=[
-                PROVIDER_CLASS_BY_NAME[provider_name]()
+                EnvProvider(install_root=None, bin_dir=None)
+                if provider_name == "env"
+                else PROVIDER_CLASS_BY_NAME[provider_name]()
                 for provider_name in selected_provider_names
                 if provider_name
                 and provider_name in PROVIDER_CLASS_BY_NAME
