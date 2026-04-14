@@ -1523,6 +1523,7 @@ def run_command(
     configure_cli_logging(debug=run_options.debug)
 
     runtime_binproviders: list[BinProvider] = []
+    binary_options = run_options
 
     # --script: the OS appends the script path as binary_args[0] via the
     # shebang.  Parse its /// metadata and resolve deps before normal run.
@@ -1558,6 +1559,9 @@ def run_command(
         # Resolve all declared dependencies and collect their runtime ENV for
         # the final script execution. Provider resolution remains hermetic:
         # only the subprocess env gets the merged dependency PATH / ENV.
+        explicit_provider_selection = shared_kwargs.get(
+            "binproviders",
+        ) is not None or os.environ.get("ABXPKG_BINPROVIDERS") not in (None, "")
         for dep in meta.get("dependencies", []):
             if isinstance(dep, str):
                 dep_name = dep
@@ -1575,6 +1579,79 @@ def run_command(
                 if "min_version" in dep:
                     dep_options = replace(dep_options, min_version=dep["min_version"])
             else:
+                continue
+
+            if dep_name == binary_name:
+                if not isinstance(dep, dict):
+                    continue
+                if (
+                    not explicit_provider_selection
+                    and "binproviders" in dep
+                    and binary_options.provider_names == run_options.provider_names
+                ):
+                    binary_options = replace(
+                        binary_options,
+                        provider_names=dep["binproviders"],
+                    )
+                replacement_kwargs: dict[str, Any] = {}
+                for field_name in (
+                    "min_version",
+                    "postinstall_scripts",
+                    "min_release_age",
+                    "euid",
+                    "install_timeout",
+                    "version_timeout",
+                ):
+                    if (
+                        field_name in dep
+                        and getattr(binary_options, field_name) is None
+                    ):
+                        replacement_kwargs[field_name] = dep[field_name]
+                for field_name in ("install_root", "bin_dir"):
+                    if (
+                        field_name in dep
+                        and getattr(binary_options, field_name) is None
+                        and dep[field_name] is not None
+                    ):
+                        replacement_kwargs[field_name] = (
+                            Path(
+                                dep[field_name],
+                            )
+                            .expanduser()
+                            .resolve()
+                        )
+                if "overrides" in dep and dep["overrides"] is not None:
+                    merged_overrides = json.loads(
+                        json.dumps(dep["overrides"]),
+                    )
+                    if binary_options.overrides:
+                        stack: list[tuple[dict[str, Any], dict[str, Any]]] = [
+                            (merged_overrides, binary_options.overrides),
+                        ]
+                        while stack:
+                            base_dict, override_dict = stack.pop()
+                            for key, value in override_dict.items():
+                                existing = base_dict.get(key)
+                                if isinstance(existing, dict) and isinstance(
+                                    value,
+                                    dict,
+                                ):
+                                    stack.append((existing, value))
+                                else:
+                                    base_dict[key] = value
+                    replacement_kwargs["overrides"] = merged_overrides
+                dep_handler_overrides = {
+                    key: dep[key]
+                    for key in ("abspath", "version", "install_args", "packages")
+                    if key in dep and dep[key] is not None
+                }
+                if dep_handler_overrides:
+                    replacement_kwargs["handler_overrides"] = {
+                        **dep_handler_overrides,
+                        **(binary_options.handler_overrides or {}),
+                    }
+                if replacement_kwargs:
+                    binary_options = replace(binary_options, **replacement_kwargs)
                 continue
 
             try:
@@ -1603,7 +1680,7 @@ def run_command(
 
     binary = build_binary(
         binary_name,
-        run_options,
+        binary_options,
         dry_run=run_options.dry_run,
     )
     if not script_mode:
