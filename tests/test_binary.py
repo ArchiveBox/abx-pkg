@@ -310,8 +310,8 @@ class TestBinary:
             assert updated.loaded_version == SemVer("999.999.999")
             assert provider.load("black", quiet=True, no_cache=True) is None
 
-            with pytest.raises(BinaryUninstallError):
-                binary.uninstall(dry_run=True)
+            removed = binary.uninstall(dry_run=True)
+            assert removed.loaded_abspath is None
             assert provider.load("black", quiet=True, no_cache=True) is None
 
     def test_binary_dry_run_install_does_not_update_stale_existing_binary(self):
