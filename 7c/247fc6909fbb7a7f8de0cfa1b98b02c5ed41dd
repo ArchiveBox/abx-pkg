@@ -1,0 +1,50 @@
+abxpkg/logging.py
+  675681f7d2b2b8ca 86,215,219-221,270-286,303,744-746
+abxpkg/binprovider.py
+  675681f7d2b2b8ca 1330,1347-1354,1365-1495,2268,2320,2748,2763-2769
+README.md
+  675681f7d2b2b8ca 201
+  67a976da5825c26a 604-605,675
+docs/generate.py
+  675681f7d2b2b8ca 18,385-386,393-395,411-414,529
+abxpkg/cli.py
+  675681f7d2b2b8ca 39,67,72,859-882,884-908,910-919,1009-1018,1020-1036,1043,1050,1406-1411
+tests/test_cli.py
+  675681f7d2b2b8ca 464-465,1171,1543-1545,1547-1551,1797,1812-1813
+docs/index.html
+  675681f7d2b2b8ca 1751,3289,3487,5472,5643,5924
+  67a976da5825c26a 5771,5776,5786
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "7c247fc6909fbb7a7f8de0cfa1b98b02c5ed41dd",
+  "prompts": {
+    "675681f7d2b2b8ca": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d84cf-f8bf-7421-aa46-1ef0e140c385",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 312,
+      "total_deletions": 105,
+      "accepted_lines": 312,
+      "overriden_lines": 0
+    },
+    "67a976da5825c26a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d717c-705b-75f1-8c2f-c652b4164be1",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 13,
+      "total_deletions": 21,
+      "accepted_lines": 6,
+      "overriden_lines": 0
+    }
+  }
+}
