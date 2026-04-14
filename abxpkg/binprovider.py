@@ -1867,6 +1867,17 @@ class BinProvider(BaseModel):
         min_release_age = (
             self.min_release_age if min_release_age is None else min_release_age
         )
+        if postinstall_scripts is None:
+            postinstall_scripts = not self.supports_postinstall_disable(
+                "install",
+                no_cache=no_cache,
+            )
+        if min_release_age is None:
+            min_release_age = (
+                7.0
+                if self.supports_min_release_age("install", no_cache=no_cache)
+                else 0.0
+            )
         # Warn about unsupported security flags early (before load/install)
         # so warnings fire even when the binary is already cached.
         if (
@@ -1880,7 +1891,7 @@ class BinProvider(BaseModel):
                 min_release_age,
                 self.name,
             )
-            min_release_age = None
+            min_release_age = 0.0
         if postinstall_scripts is False and not self.supports_postinstall_disable(
             "install",
             no_cache=no_cache,
@@ -1891,7 +1902,7 @@ class BinProvider(BaseModel):
                 postinstall_scripts,
                 self.name,
             )
-            postinstall_scripts = None
+            postinstall_scripts = True
         if not no_cache:
             try:
                 installed = self.load(bin_name=bin_name, quiet=True, no_cache=False)
@@ -2069,6 +2080,17 @@ class BinProvider(BaseModel):
         min_release_age = (
             self.min_release_age if min_release_age is None else min_release_age
         )
+        if postinstall_scripts is None:
+            postinstall_scripts = not self.supports_postinstall_disable(
+                "update",
+                no_cache=no_cache,
+            )
+        if min_release_age is None:
+            min_release_age = (
+                7.0
+                if self.supports_min_release_age("update", no_cache=no_cache)
+                else 0.0
+            )
         install_args = self.get_install_args(bin_name, quiet=quiet, no_cache=no_cache)
         if (
             min_release_age is not None
@@ -2081,7 +2103,7 @@ class BinProvider(BaseModel):
                 min_release_age,
                 self.name,
             )
-            min_release_age = None
+            min_release_age = 0.0
         if postinstall_scripts is False and not self.supports_postinstall_disable(
             "update",
             no_cache=no_cache,
@@ -2092,7 +2114,7 @@ class BinProvider(BaseModel):
                 postinstall_scripts,
                 self.name,
             )
-            postinstall_scripts = None
+            postinstall_scripts = True
 
         update_handler = self._get_handler_for_action(
             bin_name=bin_name,
@@ -2206,6 +2228,10 @@ class BinProvider(BaseModel):
         min_release_age = (
             self.min_release_age if min_release_age is None else min_release_age
         )
+        postinstall_scripts = (
+            True if postinstall_scripts is None else postinstall_scripts
+        )
+        min_release_age = 0.0 if min_release_age is None else min_release_age
         had_cached_binary = self.has_cached_binary(bin_name)
         try:
             loaded_binary = self.load(
