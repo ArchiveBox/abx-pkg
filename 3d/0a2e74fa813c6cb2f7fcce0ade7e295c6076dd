@@ -1,0 +1,23 @@
+abxpkg/cli.py
+  67a976da5825c26a 1526,1562-1564,1584-1654,1683
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "3d0a2e74fa813c6cb2f7fcce0ade7e295c6076dd",
+  "prompts": {
+    "67a976da5825c26a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d717c-705b-75f1-8c2f-c652b4164be1",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 97,
+      "total_deletions": 20,
+      "accepted_lines": 78,
+      "overriden_lines": 0
+    }
+  }
+}
