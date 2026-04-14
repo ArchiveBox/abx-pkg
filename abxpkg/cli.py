@@ -36,6 +36,7 @@ from .logging import (
 )
 
 logger = get_logger(__name__)
+_INITIAL_ENV = dict(os.environ)
 
 
 @dataclass(slots=True)
@@ -63,12 +64,12 @@ class CliOptions:
     version_timeout: int | None = None
 
 
-_NONE_STRINGS = frozenset({"", "none", "null", "nil"})
+_NONE_STRINGS = frozenset({"", "none", "null"})
 
 
 def _none_or_stripped(raw: str | None) -> str | None:
     """Return ``raw.strip()`` unless the value is the ``None`` /
-    ``'None'`` / ``'null'`` / ``'nil'`` / empty-string sentinel.
+    ``'None'`` / ``'null'`` / empty-string sentinel.
 
     Called from every CLI parser below as a single short-circuit so
     pyright can narrow ``raw`` past the ``None`` branch and each parser
@@ -855,45 +856,67 @@ def list_cached_binaries(
 
 
 def version_report(options: CliOptions):
-    recognized_env_vars = [
-        "ABXPKG_DRY_RUN",
-        "DRY_RUN",
-        "ABXPKG_DEBUG",
-        "ABXPKG_NO_CACHE",
-        "ABXPKG_INSTALL_TIMEOUT",
-        "ABXPKG_VERSION_TIMEOUT",
-        "ABXPKG_POSTINSTALL_SCRIPTS",
-        "ABXPKG_MIN_RELEASE_AGE",
-        "ABXPKG_BINPROVIDERS",
-        "ABXPKG_LIB_DIR",
-    ]
-    for provider_name in ALL_PROVIDER_NAMES:
-        provider_class = PROVIDER_CLASS_BY_NAME[provider_name]
-        recognized_env_vars.append(f"ABXPKG_{provider_name.upper()}_ROOT")
-        recognized_env_vars.append(
-            f"{cast(str, provider_class.model_fields['INSTALLER_BIN'].default).upper()}_BINARY",
-        )
-    env_parts = []
-    for env_name in recognized_env_vars:
-        value = os.environ.get(env_name)
-        if value is None:
-            continue
-        rendered_value = (
-            summarize_value(value, 120)
-            if os.sep in value or value.startswith(("~", ".", "/"))
-            else value
-        )
-        env_parts.append(f"{env_name}={rendered_value}")
-    yield get_package_version()
-    yield " ".join(
-        (
-            f"ARCH={platform.machine()}",
-            f"OS={platform.system()}",
-            f"PLATFORM={platform.platform()}",
-            f"PYTHON={sys.implementation.name.title()}-{'.'.join(map(str, sys.version_info[:3]))}",
-            *env_parts,
-        ),
+    highlighter = ReprHighlighter()
+    all_providers = build_providers(
+        list(ALL_PROVIDER_NAMES),
+        dry_run=False,
+        install_root=options.install_root,
+        bin_dir=options.bin_dir,
+        euid=options.euid,
+        install_timeout=options.install_timeout,
+        version_timeout=options.version_timeout,
     )
+    install_timeout = all_providers[0].install_timeout if all_providers else 120
+    version_timeout = all_providers[0].version_timeout if all_providers else 10
+
+    def render_env_value(value: Any) -> str:
+        if isinstance(value, Path):
+            return summarize_value(value, 10_000)
+        if isinstance(value, str):
+            return (
+                summarize_value(value, 10_000)
+                if os.sep in value or value.startswith(("~", ".", "/"))
+                else value
+            )
+        return str(value)
+
+    yield get_package_version()
+    summary_line = Text()
+
+    def append_part(
+        text: str,
+        *,
+        style: str | None = None,
+    ) -> None:
+        if summary_line:
+            summary_line.append(" ")
+        summary_line.append(text, style=style)
+
+    def append_env_var(name: str, value: Any, prefix: str = " ") -> None:
+        if summary_line:
+            summary_line.append(prefix)
+        summary_line.append(
+            f"{name}=",
+            style="green" if name in _INITIAL_ENV else "grey42",
+        )
+        summary_line.append(render_env_value(value))
+
+    append_part(f"ARCH={platform.machine()}")
+    append_part(f"OS={platform.system()}")
+    append_part(f"PLATFORM={platform.platform()}")
+    append_part(
+        f"PYTHON={sys.implementation.name.title()}-{'.'.join(map(str, sys.version_info[:3]))}",
+    )
+    append_env_var("ABXPKG_DRY_RUN", options.dry_run, prefix="\n")
+    append_env_var("ABXPKG_DEBUG", options.debug)
+    append_env_var("ABXPKG_NO_CACHE", options.no_cache)
+    append_env_var("ABXPKG_INSTALL_TIMEOUT", install_timeout)
+    append_env_var("ABXPKG_VERSION_TIMEOUT", version_timeout)
+    append_env_var("ABXPKG_POSTINSTALL_SCRIPTS", options.postinstall_scripts)
+    append_env_var("ABXPKG_MIN_RELEASE_AGE", options.min_release_age)
+    append_env_var("ABXPKG_BINPROVIDERS", ",".join(options.provider_names))
+    append_env_var("ABXPKG_LIB_DIR", options.lib_dir)
+    yield summary_line
     for provider in build_providers(
         options.provider_names,
         dry_run=False,
@@ -983,40 +1006,48 @@ def version_report(options: CliOptions):
         bin_dir_line.append(summarize_value(provider.bin_dir, 10_000))
         yield bin_dir_line
 
-        upstream_binary_lines: list[str] = []
-        installed_binary_lines: list[str] = []
-        for (
-            _cache_owner,
-            resolved_provider_name,
-            cached_bin_name,
-            abspath,
-            version,
-            cache_kind,
-        ) in cached_binaries(options, (provider.name,), providers=(provider,)):
-            line = format_loaded_binary_line(
-                version,
-                abspath,
-                resolved_provider_name,
-                cached_bin_name,
+        upstream_binary_lines = [
+            format_loaded_binary_line(
+                binary.loaded_version,
+                binary.loaded_abspath,
+                (
+                    binary.loaded_binprovider.name
+                    if binary.loaded_binprovider is not None
+                    else provider.name
+                ),
+                binary.name,
             )
-            if cache_kind == "dependency":
-                upstream_binary_lines.append(line)
-                continue
-            installed_binary_lines.append(line)
+            for binary in provider.depends_on_binaries()
+            if binary.loaded_abspath is not None and binary.loaded_version is not None
+        ]
+        installed_binary_lines = [
+            format_loaded_binary_line(
+                binary.loaded_version,
+                binary.loaded_abspath,
+                (
+                    binary.loaded_binprovider.name
+                    if binary.loaded_binprovider is not None
+                    else provider.name
+                ),
+                binary.name,
+            )
+            for binary in provider.installed_binaries()
+            if binary.loaded_abspath is not None and binary.loaded_version is not None
+        ]
 
         if upstream_binary_lines:
             upstream_line = Text("   ")
             upstream_line.append("depends_on_binaries=", style="bold cyan")
             yield upstream_line
             for line in upstream_binary_lines:
-                yield Text("      " + line)
+                yield highlighter(Text("      " + line))
 
         if installed_binary_lines:
             installed_line = Text("   ")
             installed_line.append("installed_binaries=", style="bold cyan")
             yield installed_line
             for line in installed_binary_lines:
-                yield Text("      " + line)
+                yield highlighter(Text("      " + line))
 
 
 def shared_options(command):
@@ -1370,6 +1401,14 @@ def add_command(
 ) -> None:
     options = get_command_options(ctx, **shared_kwargs)
     run_binary_command(binary_name, action="install", options=options)
+
+
+@cli.command("help", hidden=True)
+@click.pass_context
+def help_command(ctx: click.Context) -> None:
+    parent = ctx.parent
+    assert parent is not None
+    _echo(parent.get_help())
 
 
 @cli.command("clear")

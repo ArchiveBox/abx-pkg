@@ -101,14 +101,6 @@ abxpkg uninstall yt-dlp
 abxpkg load yt-dlp
 ```
 
-Hidden aliases are also available:
-
-```bash
-abxpkg add yt-dlp       # alias for install
-abxpkg upgrade yt-dlp   # alias for update
-abxpkg remove yt-dlp    # alias for uninstall
-```
-
 `abxpkg --version` and `abxpkg version` stream the package version first, then a host/env summary line, then one section per selected provider showing its current resolved runtime state (`INSTALLER_BINARY`, `PATH`, `ENV`, `install_root`, `bin_dir`, and any active cached dependency / installed binaries).
 
 `abxpkg version <binary>` is a thin alias for `abxpkg load <binary>`.
@@ -206,7 +198,7 @@ abx --min-version=2024.1.1 --min-release-age=0 yt-dlp --help
 | `--dry-run[=BOOL]` | `bool` | Show installer commands without executing them. Bare `--dry-run` = `True`. |
 | `--debug[=BOOL]` | `bool` | Emit DEBUG logs to `stderr`. Bare `--debug` = `True`. Defaults to `ABXPKG_DEBUG` or `False`. |
 
-Every value-taking flag also accepts the literal string `None` / `null` / `nil` / `""` to reset to the provider's built-in default (or its env-var-backed default). The precedence is: explicit per-subcommand flag > group-level flag > environment variable > built-in default.
+Every value-taking flag also accepts the literal string `None` / `null` / `""` to reset to the provider's default resolution path. For `postinstall_scripts` / `min_release_age`, that means the action-specific effective default for that provider (`False` / `7` on supporting providers, `True` / `0` otherwise). The precedence is: explicit per-subcommand flag > group-level flag > environment variable > built-in default.
 
 #### Select specific providers / re-order provider precedence
 
@@ -609,8 +601,8 @@ All abxpkg env vars are read once at import time and only apply when set. Explic
 | `ABXPKG_DEBUG` | `0` | Enables DEBUG-level CLI logging on `stderr` for `abxpkg` / `abx`. The matching CLI flag is `--debug`. Default CLI logging level is `INFO`. |
 | `ABXPKG_INSTALL_TIMEOUT` | `120` | Seconds to wait for `install()` / `update()` / `uninstall()` handler subprocesses. |
 | `ABXPKG_VERSION_TIMEOUT` | `10` | Seconds to wait for version / metadata probes (`--version`, `npm show`, `pip show`, etc.). |
-| `ABXPKG_POSTINSTALL_SCRIPTS` | unset | Hydrates the provider-level default for the `postinstall_scripts` kwarg on every provider that supports it (`pip`, `uv`, `npm`, `pnpm`, `yarn`, `bun`, `deno`, `brew`, `chromewebstore`, `puppeteer`). |
-| `ABXPKG_MIN_RELEASE_AGE` | `7` | Hydrates the provider-level default (in days) for the `min_release_age` kwarg on every provider that supports it (`pip`, `uv`, `npm`, `pnpm`, `yarn`, `bun`, `deno`). |
+| `ABXPKG_POSTINSTALL_SCRIPTS` | unset | Hydrates the provider-level default for the `postinstall_scripts` kwarg on every provider that supports it (`pip`, `uv`, `npm`, `pnpm`, `yarn`, `bun`, `deno`, `brew`, `chromewebstore`, `puppeteer`). When left unset, action execution resolves to the provider/action default (`False` on supporting providers, `True` otherwise). |
+| `ABXPKG_MIN_RELEASE_AGE` | `7` | Hydrates the provider-level default (in days) for the `min_release_age` kwarg on every provider that supports it (`pip`, `uv`, `npm`, `pnpm`, `yarn`, `bun`, `deno`). When left unset, action execution resolves to the provider/action default (`7` on supporting providers, `0` otherwise). |
 | `ABXPKG_BINPROVIDERS` | shared default order | Comma-separated list of provider names to enable (and their order) for the `abxpkg` CLI. By default this uses `DEFAULT_PROVIDER_NAMES` from `abxpkg.__init__` (which excludes `ansible` / `pyinfra`, and also excludes `apt` on macOS). |
 
 **Install-root controls** (one global default + one per-provider override):
@@ -680,7 +672,7 @@ dry_run = False                      # or ABXPKG_DRY_RUN=1 / DRY_RUN=1
 - `no_cache`: use `--no-cache` / `ABXPKG_NO_CACHE=1` on the CLI, or pass `no_cache=True` directly to `load()` / `install()` / `update()` / `uninstall()`. For `install()`, this skips the initial `load()` check and forces a fresh install path.
 - `install_timeout`: shared provider-level timeout used by `install()`, `update()`, and `uninstall()` handler execution paths. Can also be set with `ABXPKG_INSTALL_TIMEOUT`.
 - `version_timeout`: shared provider-level timeout used by version / metadata probes such as `--version`, `npm show`, `npm list`, `pip show`, `go version -m`, and brew lookups. Can also be set with `ABXPKG_VERSION_TIMEOUT`.
-- `postinstall_scripts` and `min_release_age` are standard provider/binary/action kwargs, but only supporting providers hydrate default values from `ABXPKG_POSTINSTALL_SCRIPTS` and `ABXPKG_MIN_RELEASE_AGE`.
+- `postinstall_scripts` and `min_release_age` are standard provider/binary/action kwargs. Supporting providers hydrate defaults from `ABXPKG_POSTINSTALL_SCRIPTS` and `ABXPKG_MIN_RELEASE_AGE`; when those remain unset/`None`, install/update/uninstall resolve them to effective action defaults (`False` / `7` on supporting providers, `True` / `0` otherwise).
 - Providers that do not support one of those controls leave the provider default as `None`. If you pass an explicit unsupported value during `install()` / `update()`, it is logged as a warning and ignored.
 - Precedence is: explicit action args > `Binary(...)` defaults > provider defaults.
 

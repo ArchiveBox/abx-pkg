@@ -1327,6 +1327,7 @@ class BinProvider(BaseModel):
             cached_provider_name = cache_value.get("provider_name")
             cached_bin_name = cache_value.get("bin_name")
             cached_abspath = cache_value.get("abspath")
+            cache_kind = cache_value.get("cache_kind")
             if not isinstance(cached_provider_name, str) or not isinstance(
                 cached_bin_name,
                 str,
@@ -1343,6 +1344,14 @@ class BinProvider(BaseModel):
                 or not isinstance(cached_abspath, str)
             ):
                 continue
+            if not isinstance(cache_kind, str):
+                cache_kind = (
+                    "dependency"
+                    if str(cached_bin_name) == str(self.INSTALLER_BIN)
+                    else "binary"
+                )
+            if cache_kind != "binary":
+                continue
             cached_path = Path(cached_abspath)
             if not (cached_path.exists() or cached_path.is_symlink()):
                 cache.pop(cache_key, None)
@@ -1352,6 +1361,138 @@ class BinProvider(BaseModel):
         if cache_changed:
             save_derived_cache(derived_env_path, cache)
         return has_valid_cache
+
+    @log_method_call(include_result=True)
+    def depends_on_binaries(self) -> list[ShallowBinary]:
+        derived_env_path = self.derived_env_path
+        if derived_env_path is None or not derived_env_path.is_file():
+            return []
+        cache = load_derived_cache(derived_env_path)
+        dependencies: list[ShallowBinary] = []
+        seen: set[tuple[str, str, str]] = set()
+        for cache_key, cache_value in sorted(cache.items()):
+            if not isinstance(cache_value, dict):
+                continue
+            cached_provider_name = cache_value.get("provider_name")
+            cached_bin_name = cache_value.get("bin_name")
+            cached_abspath = cache_value.get("abspath")
+            cache_kind = cache_value.get("cache_kind")
+            if (
+                not isinstance(cached_provider_name, str)
+                or not isinstance(cached_bin_name, str)
+                or not isinstance(cached_abspath, str)
+            ):
+                try:
+                    cached_provider_name, cached_bin_name, cached_abspath = json.loads(
+                        cache_key,
+                    )
+                except Exception:
+                    continue
+            if cached_provider_name != self.name or not isinstance(cached_abspath, str):
+                continue
+            if not isinstance(cache_kind, str):
+                cache_kind = (
+                    "dependency"
+                    if str(cached_bin_name) == str(self.INSTALLER_BIN)
+                    else "binary"
+                )
+            if cache_kind != "dependency":
+                continue
+            loaded = self.load_cached_binary(cached_bin_name, Path(cached_abspath))
+            if loaded is None or loaded.loaded_abspath is None:
+                continue
+            resolved_provider = loaded.loaded_binprovider or self
+            dedupe_key = (
+                loaded.name,
+                str(loaded.loaded_abspath),
+                resolved_provider.name,
+            )
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            dependencies.append(
+                ShallowBinary.model_validate(
+                    {
+                        "name": loaded.name,
+                        "description": loaded.description,
+                        "binprovider": resolved_provider,
+                        "abspath": loaded.loaded_abspath,
+                        "version": loaded.loaded_version,
+                        "sha256": loaded.loaded_sha256,
+                        "mtime": loaded.loaded_mtime,
+                        "euid": loaded.loaded_euid,
+                        "binproviders": [resolved_provider],
+                        "overrides": loaded.overrides,
+                    },
+                ),
+            )
+        return dependencies
+
+    @log_method_call(include_result=True)
+    def installed_binaries(self) -> list[ShallowBinary]:
+        derived_env_path = self.derived_env_path
+        if derived_env_path is None or not derived_env_path.is_file():
+            return []
+        cache = load_derived_cache(derived_env_path)
+        binaries: list[ShallowBinary] = []
+        seen: set[tuple[str, str, str]] = set()
+        for cache_key, cache_value in sorted(cache.items()):
+            if not isinstance(cache_value, dict):
+                continue
+            cached_provider_name = cache_value.get("provider_name")
+            cached_bin_name = cache_value.get("bin_name")
+            cached_abspath = cache_value.get("abspath")
+            cache_kind = cache_value.get("cache_kind")
+            if (
+                not isinstance(cached_provider_name, str)
+                or not isinstance(cached_bin_name, str)
+                or not isinstance(cached_abspath, str)
+            ):
+                try:
+                    cached_provider_name, cached_bin_name, cached_abspath = json.loads(
+                        cache_key,
+                    )
+                except Exception:
+                    continue
+            if cached_provider_name != self.name or not isinstance(cached_abspath, str):
+                continue
+            if not isinstance(cache_kind, str):
+                cache_kind = (
+                    "dependency"
+                    if str(cached_bin_name) == str(self.INSTALLER_BIN)
+                    else "binary"
+                )
+            if cache_kind != "binary":
+                continue
+            loaded = self.load_cached_binary(cached_bin_name, Path(cached_abspath))
+            if loaded is None or loaded.loaded_abspath is None:
+                continue
+            resolved_provider = loaded.loaded_binprovider or self
+            dedupe_key = (
+                loaded.name,
+                str(loaded.loaded_abspath),
+                resolved_provider.name,
+            )
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            binaries.append(
+                ShallowBinary.model_validate(
+                    {
+                        "name": loaded.name,
+                        "description": loaded.description,
+                        "binprovider": resolved_provider,
+                        "abspath": loaded.loaded_abspath,
+                        "version": loaded.loaded_version,
+                        "sha256": loaded.loaded_sha256,
+                        "mtime": loaded.loaded_mtime,
+                        "euid": loaded.loaded_euid,
+                        "binproviders": [resolved_provider],
+                        "overrides": loaded.overrides,
+                    },
+                ),
+            )
+        return binaries
 
     def setup_PATH(self, no_cache: bool = False) -> None:
         """Populate runtime PATH lazily.
@@ -2124,15 +2265,7 @@ class BinProvider(BaseModel):
             getattr(getattr(update_handler, "__func__", update_handler), "__name__", "")
             == "update_noop"
         ):
-            result = self.load(bin_name=bin_name, quiet=quiet, no_cache=no_cache)
-            if result is not None:
-                self._assert_min_version_satisfied(
-                    bin_name=bin_name,
-                    action="update",
-                    loaded_version=result.loaded_version,
-                    min_version=min_version,
-                )
-            return result
+            return None
 
         self.setup(
             postinstall_scripts=postinstall_scripts,
@@ -2184,7 +2317,7 @@ class BinProvider(BaseModel):
 
         self.invalidate_cache(bin_name)
 
-        result = self.load(bin_name, quiet=True, no_cache=True)
+        result = self.load(bin_name, quiet=True, no_cache=no_cache)
         if not quiet:
             assert result is not None, (
                 f"❌ {self.__class__.__name__} Unable to find version for {bin_name} after updating. PATH={self.PATH} LOG={update_log}"
@@ -2612,6 +2745,7 @@ class EnvProvider(BinProvider):
             cached_provider_name = cache_value.get("provider_name")
             cached_bin_name = cache_value.get("bin_name")
             cached_abspath = cache_value.get("abspath")
+            cache_kind = cache_value.get("cache_kind")
             if (
                 not isinstance(cached_provider_name, str)
                 or not isinstance(cached_bin_name, str)
@@ -2625,6 +2759,14 @@ class EnvProvider(BinProvider):
                     continue
 
             if cached_provider_name != self.name or cached_bin_name != str(bin_name):
+                continue
+            if not isinstance(cache_kind, str):
+                cache_kind = (
+                    "dependency"
+                    if str(cached_bin_name) == str(self.INSTALLER_BIN)
+                    else "binary"
+                )
+            if cache_kind != "binary":
                 continue
 
             if self._is_managed_by_other_provider(Path(cached_abspath)):

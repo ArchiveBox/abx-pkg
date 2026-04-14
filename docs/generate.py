@@ -15,7 +15,7 @@ from markupsafe import Markup
 from pydantic.fields import PydanticUndefined
 
 import abxpkg
-from abxpkg.binprovider import BinProvider
+from abxpkg.binprovider import DEFAULT_ENV_PATH, BinProvider
 
 
 SITE_DIR = Path(__file__).resolve().parent
@@ -382,15 +382,17 @@ GLOBAL_ENV_VARS: list[dict[str, str]] = [
         "description": (
             "Hydrates the provider-level default for postinstall_scripts on "
             "supporting providers (pip, uv, npm, pnpm, yarn, bun, deno, brew, "
-            "chromewebstore, puppeteer)."
+            "chromewebstore, puppeteer). When unset, action execution falls back "
+            "to the provider/action default."
         ),
     },
     {
         "name": "ABXPKG_MIN_RELEASE_AGE",
         "default": "7",
         "description": (
-            "Days of release age to require on supporting providers (pip, uv, "
-            "npm, pnpm, yarn, bun, deno)."
+            "Hydrates the provider-level minimum release age (days) on supporting "
+            "providers (pip, uv, npm, pnpm, yarn, bun, deno). When unset, action "
+            "execution falls back to the provider/action default."
         ),
     },
     {
@@ -406,9 +408,10 @@ GLOBAL_ENV_VARS: list[dict[str, str]] = [
         "name": "ABXPKG_LIB_DIR",
         "default": "<platform default abx lib dir>",
         "description": (
-            "Centralized library root. When set, each provider defaults its "
-            "install root to $ABXPKG_LIB_DIR/<provider name>. Accepts relative, "
-            "tilde, and absolute paths. --global is a thin alias for --lib=None."
+            "Centralized library root. When set, providers with abxpkg-managed "
+            "install roots default to $ABXPKG_LIB_DIR/<provider name>. Accepts "
+            "relative, tilde, and absolute paths. --global is a thin alias for "
+            "--lib=None."
         ),
     },
 ]
@@ -523,6 +526,7 @@ def format_json_value_html(value: Any) -> Markup:
     if isinstance(value, (int, float)):
         return Markup(f'<span class="cfg-number">{_esc(str(value))}</span>')
     if isinstance(value, str):
+        value = value.replace(DEFAULT_ENV_PATH, "$PATH")
         escaped = _esc(value)
         return Markup(f'<span class="cfg-string">&quot;{escaped}&quot;</span>')
     if isinstance(value, Path):

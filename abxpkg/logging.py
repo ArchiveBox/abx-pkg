@@ -83,7 +83,7 @@ def _abxpkg_log_record_factory(*args: Any, **kwargs: Any) -> py_logging.LogRecor
     if getattr(record, "abx_trace_indented", False):
         return record
     message = _shorten_paths(record.getMessage())
-    trace_depth = _active_trace_depth()
+    trace_depth = _active_trace_depth() if logger.isEnabledFor(py_logging.DEBUG) else 0
     if trace_depth > 0:
         message = _indent_message(message, trace_depth)
     record.msg = message
@@ -212,10 +212,13 @@ def format_loaded_binary_line(
     bin_name: str | None = None,
 ) -> str:
     suffix = f" {bin_name}" if bin_name else ""
+    rendered_version = str(version).ljust(12)
     rendered_abspath = str(abspath)
     if " " in rendered_abspath:
         rendered_abspath = f'"{rendered_abspath}"'
-    return _shorten_paths(f"{version} {rendered_abspath} ({provider_name}){suffix}")
+    return _shorten_paths(
+        f"{rendered_version} {rendered_abspath} ({provider_name}){suffix}",
+    )
 
 
 def format_loaded_binary(
@@ -264,6 +267,25 @@ def _truncate_rendered(rendered: str, max_length: int) -> str:
     return _truncate_middle(rendered)
 
 
+def _format_subprocess_payload_lines(
+    stdout: str | bytes | None,
+    stderr: str | bytes | None,
+) -> list[str]:
+    stdout_rendered = format_subprocess_output(stdout, None)
+    stderr_rendered = format_subprocess_output(None, stderr)
+    lines: list[str] = []
+    if stderr_rendered:
+        lines.extend(
+            "  " + DIM_RED + ">" + ANSI_RESET + " " + _shorten_paths(line)
+            for line in stderr_rendered.splitlines()
+        )
+    if stdout_rendered:
+        lines.extend(
+            "  > " + _shorten_paths(line) for line in stdout_rendered.splitlines()
+        )
+    return lines
+
+
 def format_completed_process(proc: subprocess.CompletedProcess) -> str:
     args = proc.args
     if isinstance(args, (list, tuple)):
@@ -278,15 +300,7 @@ def format_completed_process(proc: subprocess.CompletedProcess) -> str:
         ),
     ]
 
-    stdout = format_subprocess_output(proc.stdout, None)
-    stderr = format_subprocess_output(None, proc.stderr)
-    if stderr:
-        lines.extend(
-            "  " + DIM_RED + ">" + ANSI_RESET + " " + _shorten_paths(line)
-            for line in stderr.splitlines()
-        )
-    if stdout:
-        lines.extend("  > " + _shorten_paths(line) for line in stdout.splitlines())
+    lines.extend(_format_subprocess_payload_lines(proc.stdout, proc.stderr))
 
     return "\n".join(lines)
 
@@ -727,12 +741,9 @@ def log_subprocess_output(
     stderr: str | None,
     level: int = py_logging.DEBUG,
 ) -> None:
-    trimmed_stdout = (stdout or "").strip()
-    trimmed_stderr = (stderr or "").strip()
-    if trimmed_stdout:
-        command_logger.log(level, "%s stdout: %s", action, trimmed_stdout)
-    if trimmed_stderr:
-        command_logger.log(level, "%s stderr: %s", action, trimmed_stderr)
+    payload_lines = _format_subprocess_payload_lines(stdout, stderr)
+    if payload_lines:
+        command_logger.log(level, "%s:\n%s", action, "\n".join(payload_lines))
 
 
 def format_subprocess_output(

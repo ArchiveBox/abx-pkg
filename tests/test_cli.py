@@ -461,8 +461,8 @@ def test_run_accepts_update_flag_after_subcommand_for_env_provider():
         "--version",
     )
 
-    assert proc.returncode == 0, proc.stderr
-    assert proc.stdout.strip().startswith("Python "), proc.stdout
+    assert proc.returncode != 0
+    assert "Unable to update binary python3 via providers env" in proc.stderr
 
 
 def test_run_accepts_binproviders_flag_after_subcommand():
@@ -1168,6 +1168,7 @@ def test_upgrade_command_is_hidden_from_help():
 
     assert result.exit_code == 0
     assert " add" not in result.output
+    assert " help" not in result.output
     assert " upgrade" not in result.output
     assert " remove" not in result.output
 
@@ -1539,6 +1540,15 @@ def test_remove_command_dispatches_to_uninstall(monkeypatch):
     assert captured["action"] == "uninstall"
 
 
+def test_help_command_matches_root_help_output():
+    help_result = CliRunner().invoke(cli_module.cli, ["--help"])
+    alias_result = CliRunner().invoke(cli_module.cli, ["help"])
+
+    assert help_result.exit_code == 0
+    assert alias_result.exit_code == 0
+    assert alias_result.output == help_result.output
+
+
 def test_install_postinstall_scripts_false_warns_on_unsupporting_providers(tmp_path):
     """Providers that can't enforce postinstall_scripts=False must emit a
     warning to stderr and continue (no hard-fail).
@@ -1784,7 +1794,7 @@ def test_every_subcommand_accepts_the_full_option_surface(subcommand, tmp_path):
 
 
 def test_update_subcommand_accepts_the_full_option_surface(tmp_path):
-    """`update` must also honour every option, just like install."""
+    """`update` must still parse every option even when the provider cannot update."""
 
     proc = _run_abxpkg_cli(
         f"--lib={tmp_path}",
@@ -1799,7 +1809,8 @@ def test_update_subcommand_accepts_the_full_option_surface(tmp_path):
         "python3",
     )
 
-    assert proc.returncode == 0, proc.stderr
+    assert proc.returncode != 0
+    assert "Unable to update binary python3 via providers env" in proc.stderr
 
 
 def test_subcommand_level_option_overrides_group_level():
