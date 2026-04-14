@@ -242,9 +242,6 @@ class BrewProvider(BinProvider):
         # print(f'[*] {self.__class__.__name__}: Installing {bin_name}: {self.INSTALLER_BIN} install {install_args}')
 
         assert postinstall_scripts is not None
-        if any(arg.startswith("--skip-post-install") for arg in install_args):
-            postinstall_scripts = False
-
         if (
             not _LAST_UPDATE_CHECK
             or (time.time() - _LAST_UPDATE_CHECK) > UPDATE_CHECK_INTERVAL
@@ -297,10 +294,6 @@ class BrewProvider(BinProvider):
 
         installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
-
-        assert postinstall_scripts is not None
-        if any(arg.startswith("--skip-post-install") for arg in install_args):
-            postinstall_scripts = False
 
         if (
             not _LAST_UPDATE_CHECK
