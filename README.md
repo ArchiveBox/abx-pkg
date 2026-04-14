@@ -57,8 +57,8 @@ dependencies = [
 for binary in dependencies:
     binary = binary.install()
 
-    print(binary.abspath, binary.version, binary.binprovider, binary.is_valid, binary.sha256)
-    # Path(...) SemVer(...) EnvProvider()/AptProvider()/BrewProvider()/PipProvider()/NpmProvider() True '<sha256>'
+    print(binary.abspath, binary.version, binary.binprovider, binary.is_valid, binary.sha256, binary.mtime)
+    # Path(...) SemVer(...) EnvProvider()/AptProvider()/BrewProvider()/PipProvider()/NpmProvider() True '<sha256>' 1712890123456789000
 
     binary.exec(cmd=['--version'])   # curl 7.81.0 (x86_64-apple-darwin23.0) libcurl/7.81.0 ...
 ```
@@ -70,7 +70,7 @@ for binary in dependencies:
 > 
 >  - `min_release_age=7` (we only install packages that have been published for 7 days or longer)
 >  - `postinstall_scripts=False` (we don't run post-install scripts for packages by default)
->  - `install_root=~/.config/abx/lib` (CLI defaults to installing packages in a dedicated prefix so host system stays clean)
+>  - `install_root=<platform default abx lib dir>` (the CLI defaults to a dedicated provider-rooted library dir so host system stays clean)
 >
 > You can customize these defaults on `Binary` or `BinProvider`, or with `ABXPKG_MIN_RELEASE_AGE`/`ABXPKG_POSTINSTALL_SCRIPTS=`/`ABXPKG_NO_CACHE`/`ABXPKG_LIB_DIR` (see [Configuration](#Configuration) below).
 
@@ -92,11 +92,33 @@ Installing `abxpkg` also provides an `abxpkg` CLI entrypoint:
 
 ```bash
 abxpkg --version
+abxpkg version
+abxpkg list
 
 abxpkg install yt-dlp
 abxpkg update yt-dlp
 abxpkg uninstall yt-dlp
 abxpkg load yt-dlp
+```
+
+Hidden aliases are also available:
+
+```bash
+abxpkg add yt-dlp       # alias for install
+abxpkg upgrade yt-dlp   # alias for update
+abxpkg remove yt-dlp    # alias for uninstall
+```
+
+`abxpkg --version` and `abxpkg version` stream the package version first, then a host/env summary line, then one section per selected provider showing its current resolved runtime state (`INSTALLER_BINARY`, `PATH`, `ENV`, `install_root`, `bin_dir`, and any active cached dependency / installed binaries).
+
+`abxpkg version <binary>` is a thin alias for `abxpkg load <binary>`.
+
+`abxpkg list` prints the full active cache for the selected providers, grouping provider installer binaries first and normal cached binaries after a blank line. You can optionally pass binary names and/or provider names positionally to filter the output:
+
+```bash
+abxpkg list
+abxpkg list yt-dlp chromium
+abxpkg list env puppeteer chromium
 ```
 
 #### Execute an installed binary via the configured providers
@@ -164,6 +186,7 @@ abxpkg --no-cache install black
 abxpkg --install-root=/tmp/yt-dlp-root --bin-dir=/tmp/yt-dlp-bin install yt-dlp
 abxpkg --overrides='{"pip":{"install_args":["yt-dlp[default]"]}}' install yt-dlp
 abxpkg --install-timeout=600 --version-timeout=20 --euid=1000 install yt-dlp
+abxpkg --global install yt-dlp
 abx --min-version=2024.1.1 --min-release-age=0 yt-dlp --help
 ```
 
@@ -173,7 +196,8 @@ abx --min-version=2024.1.1 --min-release-age=0 yt-dlp --help
 | `--postinstall-scripts[=BOOL]` | `bool` | Allow post-install scripts. Bare `--postinstall-scripts` = `True`. Providers that can't disable them warn-and-ignore. |
 | `--min-release-age=DAYS` | `float` | Minimum days since publication. Non-supporting providers warn-and-ignore. |
 | `--no-cache[=BOOL]` | `bool` | Skip cached/current-state checks and force fresh install/update/load probes. Bare `--no-cache` = `True`. |
-| `--overrides=JSON` | `dict` | Per-provider `Binary.overrides` handler replacements (`install_args`, `abspath`, `version`, …). |
+| `--overrides=JSON` | `dict` | Per-provider `Binary.overrides` patches for shared provider fields (`PATH`, `INSTALLER_BIN`, `install_root`, `bin_dir`, `euid`, `postinstall_scripts`, `min_release_age`, `dry_run`, `install_timeout`, `version_timeout`) plus per-binary handler replacements (`install_args`, `abspath`, `version`, `install`, `update`, `uninstall`). |
+| `--global[=BOOL]` | `bool` | Thin alias for `--lib=None`. Bare `--global` = `True`. |
 | `--install-root=PATH` | `Path` | Override the per-provider install directory. |
 | `--bin-dir=PATH` | `Path` | Override the per-provider bin directory. |
 | `--euid=UID` | `int` | Pin the UID used when providers shell out. |
@@ -195,9 +219,10 @@ env ABXPKG_BINPROVIDERS=env,uv,pip,apt,brew abxpkg install yt-dlp
 #### Customize where installed packages are located
 
 ```bash
-abxpkg --lib=~/.config/abx/lib install yt-dlp   # the default behavior
+abxpkg --lib=~/my-abx-lib install yt-dlp        # pin a custom provider-rooted library dir
 abxpkg --lib=./vendor install yt-dlp            # store all packages under $PWD/vendor
 abxpkg --lib=/tmp/abxlib install yt-dlp         # store all packages under /tmp/abxlib
+abxpkg --global install yt-dlp                  # alias for --lib=None (use provider-native global mode where supported)
 
 # or
 env ABXPKG_LIB_DIR=/any/dir/path abxpkg install yt-dlp
@@ -234,7 +259,7 @@ These are instantiated on first access and cached for reuse. If you need custom 
 from pathlib import Path
 from abxpkg import PipProvider
 
-custom_pip = PipProvider(install_root=Path("/tmp/abxpkg-venv"), min_release_age=0)
+custom_pip = PipProvider(install_root=Path("/tmp/abxpkg-pip"), min_release_age=0)
 ```
 
 Use the `Binary` class to declare a package that can be installed by one of several ordered providers, with an optional version floor:
@@ -311,7 +336,7 @@ print(apt.PATH, apt.get_abspaths('wget'), apt.get_version('wget'))
 
 # our Binary API provides a nice type-checkable, validated, serializable handle
 ffmpeg = Binary(name='ffmpeg', binproviders=[env, apt, brew]).load()
-print(ffmpeg)                       # Binary(name='ffmpeg', abspath=Path(...), version=SemVer(...), sha256='...')
+print(ffmpeg)                       # Binary(name='ffmpeg', abspath=Path(...), version=SemVer(...), sha256='...', mtime=1712890123456789000)
 print(ffmpeg.abspaths)              # show all matching binaries found via each provider PATH
 print(ffmpeg.model_dump(mode='json'))  # JSON-ready dict
 print(ffmpeg.model_json_schema())   # ... OpenAPI-ready JSON schema showing all available fields
@@ -586,16 +611,16 @@ All abxpkg env vars are read once at import time and only apply when set. Explic
 | `ABXPKG_VERSION_TIMEOUT` | `10` | Seconds to wait for version / metadata probes (`--version`, `npm show`, `pip show`, etc.). |
 | `ABXPKG_POSTINSTALL_SCRIPTS` | unset | Hydrates the provider-level default for the `postinstall_scripts` kwarg on every provider that supports it (`pip`, `uv`, `npm`, `pnpm`, `yarn`, `bun`, `deno`, `brew`, `chromewebstore`, `puppeteer`). |
 | `ABXPKG_MIN_RELEASE_AGE` | `7` | Hydrates the provider-level default (in days) for the `min_release_age` kwarg on every provider that supports it (`pip`, `uv`, `npm`, `pnpm`, `yarn`, `bun`, `deno`). |
-| `ABXPKG_BINPROVIDERS` | all | Comma-separated list of provider names to enable (and their order) for the `abxpkg` CLI. |
+| `ABXPKG_BINPROVIDERS` | shared default order | Comma-separated list of provider names to enable (and their order) for the `abxpkg` CLI. By default this uses `DEFAULT_PROVIDER_NAMES` from `abxpkg.__init__` (which excludes `ansible` / `pyinfra`, and also excludes `apt` on macOS). |
 
 **Install-root controls** (one global default + one per-provider override):
 
 | Variable | Applies to | Effect |
 | --- | --- | --- |
-| `ABXPKG_LIB_DIR` | providers that use `install_root` | Centralized install root. When set, each provider with an `install_root` default points it at `$ABXPKG_LIB_DIR/<provider name>` (e.g. `<lib>/npm`, `<lib>/pip`, `<lib>/gem`, `<lib>/playwright`). Accepts relative (`./lib`), tilde (`~/.config/abx/lib`), and absolute (`/tmp/abxlib`) paths. |
+| `ABXPKG_LIB_DIR` | providers whose default `install_root` is abxpkg-managed | Centralized library root. When set, each matching provider points its default `install_root` at `$ABXPKG_LIB_DIR/<provider name>` (e.g. `<lib>/env`, `<lib>/npm`, `<lib>/pip`, `<lib>/gem`, `<lib>/playwright`). Accepts relative (`./lib`), tilde (`~/.config/abx/lib`), and absolute (`/tmp/abxlib`) paths. `--global` is a thin alias for `--lib=None`, which clears this root for the current CLI invocation. |
 | `ABXPKG_<BINPROVIDER>_ROOT` | the matching provider's `install_root` | Generic per-provider override; beats `ABXPKG_LIB_DIR/<provider name>`. Examples: `ABXPKG_PIP_ROOT`, `ABXPKG_UV_ROOT`, `ABXPKG_NPM_ROOT`, `ABXPKG_GOGET_ROOT`, `ABXPKG_CHROMEWEBSTORE_ROOT`. The `<BINPROVIDER>` token is the provider name uppercased. |
 
-Install-root precedence (most specific wins): explicit `install_root=` / provider alias kwarg > `ABXPKG_<NAME>_ROOT` > `ABXPKG_LIB_DIR/<name>` > provider-native global mode.
+Install-root precedence (most specific wins): explicit `install_root=` / provider alias kwarg > `ABXPKG_<NAME>_ROOT` > `ABXPKG_LIB_DIR/<name>` > provider-specific built-in default / native global mode.
 
 **Provider-specific binary overrides:**
 
@@ -607,12 +632,12 @@ Each provider also honors a `<NAME>_BINARY=/abs/path/to/<name>` env var to pin t
 - `min_release_age` can be set on `Binary` or `BinProvider`, or via `ABXPKG_MIN_RELEASE_AGE` (days).
 - `postinstall_scripts` can be set on `Binary` or `BinProvider`, or via `ABXPKG_POSTINSTALL_SCRIPTS`.
 - `no_cache` can be passed per-call to `load()` / `install()` / `update()` / `uninstall()`, or enabled globally for the CLI via `ABXPKG_NO_CACHE`.
-- `install_root` / `bin_dir` can be set on any `BinProvider` with an isolated install location, or default to `ABXPKG_<NAME>_ROOT` / `ABXPKG_LIB_DIR/<provider name>`.
+- `install_root` / `bin_dir` can be set on any `BinProvider` with an isolated install location, or default to `ABXPKG_<NAME>_ROOT` / `ABXPKG_LIB_DIR/<provider name>` / the provider's own built-in default.
 - `dry_run` can be set on `BinProvider` or passed per-call to `install()` / `update()` / `uninstall()`, or via `ABXPKG_DRY_RUN` / `DRY_RUN`.
 - `install_timeout` can be set on `BinProvider` or via `ABXPKG_INSTALL_TIMEOUT` (seconds).
 - `version_timeout` can be set on `BinProvider` or via `ABXPKG_VERSION_TIMEOUT` (seconds).
 - `euid` can be set on `BinProvider` to pin the UID used to `sudo`/drop into when running provider subprocesses; otherwise it's auto-detected from `install_root` ownership.
-- `overrides` is a `dict[BinProviderName, HandlerDict]` (on `Binary`) or `dict[BinName, HandlerDict]` (on `BinProvider`) mapping to per-binary / per-provider handler replacements (`install_args`, `abspath`, `version`, `install`, `update`, `uninstall`). See [Advanced Usage](#define-a-reusable-binary-subclass-with-per-provider-overrides) for examples.
+- `overrides` is a `dict[BinProviderName, HandlerDict]` (on `Binary`) or `dict[BinName, HandlerDict]` (on `BinProvider`) mapping to per-provider field patches and per-binary handler replacements. Supported keys are `PATH`, `INSTALLER_BIN`, `euid`, `install_root`, `bin_dir`, `dry_run`, `postinstall_scripts`, `min_release_age`, `install_timeout`, `version_timeout`, `install_args` / `packages`, `abspath`, `version`, `install`, `update`, and `uninstall`. See [Advanced Usage](#define-a-reusable-binary-subclass-with-per-provider-overrides) for examples.
 
 Precedence is always: explicit action kwarg > `Binary(...)` field > `BinProvider(...)` field > env var > built-in default.
 
@@ -642,7 +667,7 @@ Every provider exposes the same lifecycle surface:
 Shared base defaults come from [`abxpkg/binprovider.py`](./abxpkg/binprovider.py) and apply unless a concrete provider overrides them:
 
 ```python
-INSTALLER_BIN = "env"
+INSTALLER_BIN = "env"              # base-class placeholder; real providers override this
 PATH = str(Path(sys.executable).parent)
 postinstall_scripts = None           # some providers override this with ABXPKG_POSTINSTALL_SCRIPTS
 min_release_age = None               # some providers override this with ABXPKG_MIN_RELEASE_AGE
@@ -682,6 +707,7 @@ provider = PipProvider(install_root=Path("/tmp/venv")).get_provider_with_overrid
 
 - `install_args` / `packages`: package-manager arguments for that provider. `packages` is the legacy alias.
 - `abspath`, `version`, `install`, `update`, `uninstall`: literal values, callables, or `"self.method_name"` references that replace the provider handler for a specific binary.
+- `PATH`, `INSTALLER_BIN`, `euid`, `install_root`, `bin_dir`, `dry_run`, `postinstall_scripts`, `min_release_age`, `install_timeout`, `version_timeout`: shared provider field patches applied to the copied provider instance before handler resolution.
 
 Providers with isolated install locations also expose a shared constructor surface:
 
@@ -706,11 +732,11 @@ INSTALLER_BIN = "which"
 PATH = DEFAULT_ENV_PATH              # current PATH + current Python bin dir
 ```
 
-- Install root: none. `env` is read-only and only searches existing binaries on `$PATH`.
+- Install root: defaults to `ABXPKG_ENV_ROOT`, or `ABXPKG_LIB_DIR/env`, or the platform default abx lib dir under `env/`. `env` is still read-only: it only resolves binaries that already exist on the host PATH, but when an install root is configured it also keeps a managed `bin/` symlink dir and `derived.env` cache there.
 - Auto-switching: none.
 - Security: `min_release_age` and `postinstall_scripts` are unsupported here and are ignored with a warning if explicitly passed to `install()` / `update()`.
 - Overrides: `abspath` / `version` are the useful ones here. `python` has a built-in override to the current `sys.executable` and interpreter version.
-- Notes: `install()` / `update()` return explanatory no-op messages, and `uninstall()` returns `False`.
+- Notes: resolved `abspath`s always point at the real underlying host binary, not the managed `env/bin/<name>` symlink. `install()` / `update()` return explanatory no-op messages, and `uninstall()` is a no-op.
 
 </details>
 
@@ -726,10 +752,10 @@ euid = 0                             # always runs as root
 ```
 
 - Install root: **no hermetic prefix support**. Installs into the host package database.
-- Auto-switching: tries `PyinfraProvider` first, then `AnsibleProvider`, then falls back to direct `apt-get`.
+- Auto-switching: none. Shells out to `apt-get` directly.
 - `dry_run`: shared behavior.
 - Security: `min_release_age` and `postinstall_scripts=False` are unsupported and are ignored with a warning if explicitly requested.
-- Overrides: in the direct shell fallback, `install_args` becomes `apt-get install -y -qq --no-install-recommends ...`; `update()` uses `apt-get install --only-upgrade ...`.
+- Overrides: `install_args` becomes `apt-get install -y -qq --no-install-recommends ...`; `update()` uses `apt-get install --only-upgrade ...`; `uninstall()` uses `apt-get remove -y -qq ...`.
 - Notes: direct mode runs `apt-get update -qq` at most once per day and requests privilege escalation when needed.
 
 </details>
@@ -745,12 +771,12 @@ PATH = "/home/linuxbrew/.linuxbrew/bin:/opt/homebrew/bin:/usr/local/bin"
 brew_prefix = guessed host prefix    # /opt/homebrew, /usr/local, or linuxbrew
 ```
 
-- Install root: `brew_prefix` is still the host Homebrew prefix for package discovery and installation. If you pass `install_root=...`, abxpkg uses `<install_root>/bin` as the shim/symlink dir for the resolved formula binaries, but Homebrew itself still installs into the host prefix.
-- Auto-switching: if `postinstall_scripts=True`, it prefers `PyinfraProvider` and then `AnsibleProvider`; otherwise it falls back to direct `brew`.
+- Install root: `brew_prefix` is the Homebrew prefix used for discovery and shelling out to `brew`. By default it resolves from `ABXPKG_BREW_ROOT`, or `ABXPKG_LIB_DIR/brew`, or a guessed host prefix (`/opt/homebrew`, `/usr/local`, or linuxbrew). `bin_dir` is used for linked formula binaries when abxpkg manages them separately.
+- Auto-switching: none. Shells out to `brew` directly.
 - `dry_run`: shared behavior.
-- Security: `min_release_age` is unsupported and is ignored with a warning if explicitly requested. `postinstall_scripts=False` is supported for direct `brew` installs via `--skip-post-install`, and `ABXPKG_POSTINSTALL_SCRIPTS` hydrates the provider default here.
-- Overrides: in the direct shell fallback, `install_args` maps to formula / cask args passed to `brew install`, `brew upgrade`, and `brew uninstall`.
-- Notes: direct mode runs `brew update` at most once per day. Explicit `--skip-post-install` args in `install_args` win over derived defaults.
+- Security: `min_release_age` is unsupported and is ignored with a warning if explicitly requested. `postinstall_scripts=False` is supported on `brew install` via `--skip-post-install`, and `ABXPKG_POSTINSTALL_SCRIPTS` hydrates the provider default here. Homebrew has no equivalent flag for `brew upgrade`, so updates run without it.
+- Overrides: `install_args` maps to formula / cask args passed to `brew install`, `brew upgrade`, and `brew uninstall`.
+- Notes: direct mode runs `brew update` at most once per day. Explicit `--skip-post-install` args in `install_args` win over derived defaults for installs.
 
 </details>
 
@@ -764,14 +790,13 @@ INSTALLER_BIN = "pip"
 PATH = ""                            # auto-built from global/user Python bin dirs
 pip_venv = None                      # set this for hermetic installs
 cache_dir = user_cache_path("pip", "abxpkg") or <system temp>/pip-cache
-pip_install_args = ["--no-input", "--disable-pip-version-check", "--quiet"]
 pip_bootstrap_packages = ["pip", "setuptools"]
 ```
 
-- Install root: `install_root=None` uses the system/user Python environment. Set `install_root=Path(...)` or `install_root=Path(...)` for a hermetic venv rooted at `<pip_venv>/bin`, and that venv bin dir becomes the provider's active executable search path. When `pip_venv` is set, `setup()` creates the venv on first use via Python's built-in `venv` module and bootstraps the latest `pip_bootstrap_packages` into it.
+- Install root: `install_root=None` uses the system/user Python environment. Set `install_root=Path(...)` for a hermetic provider root whose actual virtualenv lives at `<install_root>/venv`, with executables under `<install_root>/venv/bin` and provider metadata like `derived.env` kept at `<install_root>`.
 - Auto-switching: none. Shells out to `pip` directly. Honors `PIP_BINARY=/abs/path/to/pip`. Use `UvProvider` for uv-backed installs.
 - `dry_run`: shared behavior.
-- Security: supports `postinstall_scripts=False` (always) and `min_release_age` (on pip >= 26.0 or in a freshly bootstrapped `pip_venv`). Hydrated from `ABXPKG_POSTINSTALL_SCRIPTS` and `ABXPKG_MIN_RELEASE_AGE`. For stricter enforcement on hosts with older system pip, use `UvProvider` instead.
+- Security: supports `postinstall_scripts=False` (always) and `min_release_age` (on pip >= 26.0 or in a freshly bootstrapped pip venv). Hydrated from `ABXPKG_POSTINSTALL_SCRIPTS` and `ABXPKG_MIN_RELEASE_AGE`. For stricter enforcement on hosts with older system pip, use `UvProvider` instead.
 - Overrides: `install_args` is passed as pip requirement specs; unpinned specs get a `>=min_version` floor when `min_version` is supplied.
 - Notes: `postinstall_scripts=False` adds `pip --only-binary :all:` (wheels only, no arbitrary sdist build scripts). `min_release_age` is enforced with `pip --uploaded-prior-to=<ISO8601>` on pip >= 26.0 (see pypa/pip#13625); older pip silently skips the flag. Explicit conflicting flags already present in `install_args` win over the derived defaults. `get_version` / `get_abspath` fall back to parsing `pip show <package>` output when the console script can't report its own version.
 
@@ -784,17 +809,14 @@ Source: [`abxpkg/binprovider_uv.py`](./abxpkg/binprovider_uv.py) • Tests: [`te
 
 ```python
 INSTALLER_BIN = "uv"
-PATH = ""                            # prepends <uv_venv>/bin or uv_tool_bin_dir
+PATH = ""                            # prepends <uv_venv>/venv/bin or UV_TOOL_BIN_DIR
 uv_venv = None                       # None = global uv tool mode, Path(...) = hermetic venv
-uv_tool_dir = None                   # mirrors $UV_TOOL_DIR (global mode only)
-uv_tool_bin_dir = None               # mirrors $UV_TOOL_BIN_DIR (global mode only)
-cache_dir = user_cache_path("uv", "abxpkg") or <system temp>/uv-cache
-uv_install_args = []
+cache_dir = user_cache_path("uv", "abxpkg")
 ```
 
 - Install root: **two modes, picked by whether `uv_venv` is set.**
-  - *Hermetic venv mode (`install_root=Path(...)` or `install_root=Path(...)`)*: creates a real venv at the requested path via `uv venv` and installs packages into it with `uv pip install --python <venv>/bin/python ...`. Binaries land in `<uv_venv>/bin/<name>`. This is the idiomatic "install a Python library + its CLI entrypoints into an isolated environment" path and matches `PipProvider`'s `pip_venv` semantics.
-  - *Global tool mode (`install_root=None`)*: delegates to `uv tool install` which creates a fresh venv per tool under `UV_TOOL_DIR` (default `~/.local/share/uv/tools`) and writes shims into `UV_TOOL_BIN_DIR` (default `~/.local/bin`). Pass `uv_tool_dir=Path(...)` / `bin_dir=Path(...)` to override those dirs hermetically. This is the idiomatic "install a CLI tool globally" path.
+  - *Hermetic venv mode (`install_root=Path(...)`)*: treats `install_root` as a provider root, creates the real venv at `<install_root>/venv` via `uv venv`, and installs packages into it with `uv pip install --python <install_root>/venv/bin/python ...`. Binaries land in `<install_root>/venv/bin/<name>`, while provider metadata like `derived.env` stays at `<install_root>`. This matches `PipProvider`'s layout.
+  - *Global tool mode (`install_root=None`)*: delegates to `uv tool install` which creates a fresh venv per tool under `UV_TOOL_DIR` (default `~/.local/share/uv/tools`) and writes shims into `UV_TOOL_BIN_DIR` (default `~/.local/bin`). Pass `bin_dir=Path(...)` to override the shim dir. This is the idiomatic "install a CLI tool globally" path.
 - Auto-switching: none. Honors `UV_BINARY=/abs/path/to/uv`. If `uv` isn't on the host, the provider is unavailable.
 - `dry_run`: shared behavior.
 - Security: supports both `min_release_age` and `postinstall_scripts=False`, and hydrates their provider defaults from `ABXPKG_MIN_RELEASE_AGE` and `ABXPKG_POSTINSTALL_SCRIPTS`. In both modes, `postinstall_scripts=False` becomes `--no-build` (wheels-only, no arbitrary sdist build scripts) and `min_release_age` becomes `--exclude-newer=<ISO8601>` (uv 0.4+). Explicit conflicting flags already present in `install_args` win over the derived defaults.
@@ -812,16 +834,15 @@ Source: [`abxpkg/binprovider_npm.py`](./abxpkg/binprovider_npm.py) • Tests: [`
 INSTALLER_BIN = "npm"
 PATH = ""                            # auto-built from npm local + global bin dirs
 npm_prefix = None                    # None = global install, Path(...) = hermetic-ish prefix
-cache_dir = user_cache_path("npm", "abxpkg") or <system temp>/npm-cache
-npm_install_args = ["--force", "--no-audit", "--no-fund", "--loglevel=error"]
+cache_dir = user_cache_path("npm", "abxpkg")
 ```
 
-- Install root: `install_root=None` installs globally (walks up from the host's `npm prefix` / `npm prefix -g` to seed `PATH`). Set `install_root=Path(...)` or `install_root=Path(...)` to install under `<prefix>/node_modules/.bin`; that prefix bin dir becomes the provider's active executable search path.
+- Install root: `install_root=None` installs globally (walks up from the host's `npm prefix` / `npm prefix -g` to seed `PATH`). Set `install_root=Path(...)` to install under `<prefix>/node_modules/.bin`; that prefix bin dir becomes the provider's active executable search path.
 - Auto-switching: none. Shells out to `npm` directly and expects `npm` to be installed on the host. Honors `NPM_BINARY=/abs/path/to/npm`. Use `PnpmProvider` for pnpm.
 - `dry_run`: shared behavior.
 - Security: supports both `postinstall_scripts=False` and `min_release_age`, hydrated from `ABXPKG_POSTINSTALL_SCRIPTS` and `ABXPKG_MIN_RELEASE_AGE`. `min_release_age` requires an npm build that ships `--min-release-age` (detected once by probing `npm install --help`).
 - Overrides: `install_args` is passed as npm package specs; unpinned specs get rewritten to `pkg@>=<min_version>` when `min_version` is supplied.
-- Notes: `postinstall_scripts=False` adds `--ignore-scripts`; `min_release_age` adds `--min-release-age=<days>`. Explicit conflicting flags already present in `install_args` win over the derived defaults. `get_version` / `get_abspath` fall back to parsing `npm show --json <package>` and `npm list --json --depth=0` output when the console script can't report its own version.
+- Notes: `postinstall_scripts=False` adds `--ignore-scripts`; `min_release_age` adds `--min-release-age=<days>`; and installs always include npm's standard non-interactive flags (`--force --no-audit --no-fund --loglevel=error`). `puppeteer` is special-cased to install both `puppeteer` and `@puppeteer/browsers`, and `puppeteer-browsers` resolves to `@puppeteer/browsers`. Explicit conflicting flags already present in `install_args` win over the derived defaults. `get_version` / `get_abspath` fall back to parsing `npm show --json <package>` and `npm list --json --depth=0` output when the console script can't report its own version.
 
 </details>
 
@@ -834,16 +855,15 @@ Source: [`abxpkg/binprovider_pnpm.py`](./abxpkg/binprovider_pnpm.py) • Tests: 
 INSTALLER_BIN = "pnpm"
 PATH = ""                            # auto-built from pnpm local + global bin dirs
 pnpm_prefix = None                   # None = global install, Path(...) = hermetic-ish prefix
-cache_dir = user_cache_path("pnpm", "abxpkg") or <system temp>/pnpm-cache
-pnpm_install_args = ["--loglevel=error"]
+cache_dir = user_cache_path("pnpm", "abxpkg") or tempfile fallback
 ```
 
-- Install root: `install_root=None` installs globally. Set `install_root=Path(...)` or `install_root=Path(...)` to install under `<prefix>/node_modules/.bin`; that prefix bin dir becomes the provider's active executable search path.
+- Install root: `install_root=None` installs globally. Set `install_root=Path(...)` to install under `<prefix>/node_modules/.bin`; that prefix bin dir becomes the provider's active executable search path.
 - Shells out to `pnpm` directly. Honors `PNPM_BINARY=/abs/path/to/pnpm`. Use `NpmProvider` for `npm`.
 - `dry_run`: shared behavior.
 - Security: supports both `min_release_age` and `postinstall_scripts=False`, and hydrates their provider defaults from `ABXPKG_MIN_RELEASE_AGE` and `ABXPKG_POSTINSTALL_SCRIPTS`. `min_release_age` requires pnpm 10.16+, and `supports_min_release_age()` returns `False` on older hosts (then it logs a warning and continues).
 - Overrides: `install_args` is passed as pnpm package specs; unpinned specs get rewritten to `pkg@>=<min_version>` when `min_version` is supplied.
-- Notes: pnpm has no `--min-release-age` CLI flag; this provider passes `--config.minimumReleaseAge=<minutes>` (the camelCase / kebab-case form pnpm exposes via its `--config.<key>=<value>` override). `PNPM_HOME` is auto-populated so `pnpm add -g` works without polluting the user's shell config.
+- Notes: pnpm has no `--min-release-age` CLI flag; this provider passes `--config.minimumReleaseAge=<minutes>` (the camelCase / kebab-case form pnpm exposes via its `--config.<key>=<value>` override). Installs always include `--loglevel=error`, and `PNPM_HOME` is auto-populated so `pnpm add -g` works without polluting the user's shell config. `puppeteer` is special-cased to install both `puppeteer` and `@puppeteer/browsers`, and `puppeteer-browsers` resolves to `@puppeteer/browsers`.
 
 </details>
 
@@ -856,16 +876,15 @@ Source: [`abxpkg/binprovider_yarn.py`](./abxpkg/binprovider_yarn.py) • Tests: 
 INSTALLER_BIN = "yarn"
 PATH = ""                            # prepends <yarn_prefix>/node_modules/.bin
 yarn_prefix = None                   # project dir, defaults to ABXPKG_YARN_ROOT or ABXPKG_LIB_DIR/yarn
-cache_dir = user_cache_path("yarn", "abxpkg") or <system temp>/yarn-cache
-yarn_install_args = []
+cache_dir = user_cache_path("yarn", "abxpkg")
 ```
 
-- Install root: Yarn 4 / Yarn Berry always operates inside a project directory. Set `install_root=Path(...)` for an isolated project dir; that directory is auto-initialized with a stub `package.json` and `.yarnrc.yml` (`nodeLinker: node-modules` so binaries land in `<install_root>/node_modules/.bin`). When unset, the provider uses `$ABXPKG_YARN_ROOT` or `$ABXPKG_LIB_DIR/yarn`.
+- Install root: Yarn operates inside a project directory. Set `install_root=Path(...)` for an isolated project dir; that directory is auto-initialized with a stub `package.json` and `.yarnrc.yml` (`nodeLinker: node-modules` so binaries land in `<install_root>/node_modules/.bin`). When unset, the provider relies on `$ABXPKG_YARN_ROOT` or `$ABXPKG_LIB_DIR/yarn`; if neither is configured, the provider is unavailable.
 - Auto-switching: none. Honors `YARN_BINARY=/abs/path/to/yarn`. Both Yarn classic (1.x) and Yarn Berry (2+) work for basic install/update/uninstall, but only Yarn 4.10+ supports the security flags.
 - `dry_run`: shared behavior.
 - Security: supports both `min_release_age` and `postinstall_scripts=False`, and hydrates their provider defaults from `ABXPKG_MIN_RELEASE_AGE` and `ABXPKG_POSTINSTALL_SCRIPTS`. Both controls require Yarn 4.10+; on older hosts `supports_min_release_age()` / `supports_postinstall_disable()` return `False` and explicit values are logged-and-ignored.
 - Overrides: `install_args` is passed as Yarn package specs; unpinned specs get rewritten to `pkg@>=<min_version>` when `min_version` is supplied.
-- Notes: Yarn has no `--ignore-scripts` / `--minimum-release-age` CLI flags; the provider writes `npmMinimalAgeGate: 7d` (or whatever days value is configured) and `enableScripts: false` into `<yarn_prefix>/.yarnrc.yml` and additionally passes `--mode skip-build` to `yarn add` / `yarn up` when `postinstall_scripts=False`. Updates use `yarn up <pkg>` (Berry) or `yarn upgrade <pkg>` (classic). `YARN_GLOBAL_FOLDER` and `YARN_CACHE_FOLDER` are pointed at `cache_dir` so installs share a single cache across workspaces.
+- Notes: Yarn has no `--ignore-scripts` / `--minimum-release-age` CLI flags; the provider writes `npmMinimalAgeGate: 7d` (or whatever days value is configured) and `enableScripts: false` into `<yarn_prefix>/.yarnrc.yml` and additionally passes `--mode skip-build` to `yarn add` / `yarn up` when `postinstall_scripts=False`. Updates use `yarn up <pkg>` (Berry) or `yarn upgrade <pkg>` (classic). `YARN_GLOBAL_FOLDER` and `YARN_CACHE_FOLDER` are pointed at `cache_dir` so installs share a single cache across workspaces. `puppeteer` is special-cased to install both `puppeteer` and `@puppeteer/browsers`, and `puppeteer-browsers` resolves to `@puppeteer/browsers`.
 
 </details>
 
@@ -878,8 +897,7 @@ Source: [`abxpkg/binprovider_bun.py`](./abxpkg/binprovider_bun.py) • Tests: [`
 INSTALLER_BIN = "bun"
 PATH = ""                            # prepends <bun_prefix>/bin
 bun_prefix = None                    # mirrors $BUN_INSTALL, None = ~/.bun (host-default)
-cache_dir = user_cache_path("bun", "abxpkg") or <system temp>/bun-cache
-bun_install_args = []
+cache_dir = user_cache_path("bun", "abxpkg")
 ```
 
 - Install root: `bun_prefix=None` writes into the host `$BUN_INSTALL` (default `~/.bun`). Set `bun_prefix=Path(...)` or `install_root=Path(...)` to install under `<prefix>/bin`; the provider also creates `<prefix>/install/global` for the global `node_modules` dir, which is where bun puts the actual package state. The prefix bin dir becomes the provider's active executable search path.
@@ -887,7 +905,7 @@ bun_install_args = []
 - `dry_run`: shared behavior.
 - Security: supports both `min_release_age` and `postinstall_scripts=False`, and hydrates their provider defaults from `ABXPKG_MIN_RELEASE_AGE` and `ABXPKG_POSTINSTALL_SCRIPTS`. `min_release_age` requires Bun 1.3+, and `supports_min_release_age()` returns `False` on older hosts.
 - Overrides: `install_args` is passed as Bun package specs; unpinned specs get rewritten to `pkg@>=<min_version>` when `min_version` is supplied.
-- Notes: install/update use `bun add -g` (with `--force` as the update fallback). The provider passes `--ignore-scripts` for `postinstall_scripts=False` and `--minimum-release-age=<seconds>` (Bun's unit is seconds; this provider converts from days). Explicit conflicting flags already present in `install_args` win over the derived defaults.
+- Notes: install/update use `bun add -g` (with `--force` as the update fallback). The provider passes `--ignore-scripts` for `postinstall_scripts=False` and `--minimum-release-age=<seconds>` (Bun's unit is seconds; this provider converts from days). `puppeteer` is special-cased to install both `puppeteer` and `@puppeteer/browsers`, and `puppeteer-browsers` resolves to `@puppeteer/browsers`. Explicit conflicting flags already present in `install_args` win over the derived defaults.
 
 </details>
 
@@ -900,18 +918,15 @@ Source: [`abxpkg/binprovider_deno.py`](./abxpkg/binprovider_deno.py) • Tests: 
 INSTALLER_BIN = "deno"
 PATH = ""                            # prepends <deno_root>/bin
 deno_root = None                     # mirrors $DENO_INSTALL_ROOT, None = ~/.deno
-deno_dir = None                      # mirrors $DENO_DIR for cache isolation
-cache_dir = user_cache_path("deno", "abxpkg") or <system temp>/deno-cache
-deno_install_args = ["--allow-all"]
-deno_default_scheme = "npm"          # 'npm' or 'jsr'
+cache_dir = <deno_root>/.cache or user_cache_path("deno", "abxpkg")
 ```
 
-- Install root: `deno_root=None` writes into the host `$DENO_INSTALL_ROOT` (default `~/.deno`). Set `deno_root=Path(...)` or `install_root=Path(...)` for a hermetic root with executables under `<deno_root>/bin`. Set `deno_dir=Path(...)` to also isolate the module cache.
+- Install root: `deno_root=None` writes into the host `$DENO_INSTALL_ROOT` (default `~/.deno`). Set `deno_root=Path(...)` or `install_root=Path(...)` for a hermetic root with executables under `<deno_root>/bin`; `DENO_DIR` is then derived as `<deno_root>/.cache`.
 - Auto-switching: none. Honors `DENO_BINARY=/abs/path/to/deno`.
 - `dry_run`: shared behavior.
 - Security: supports both `min_release_age` and `postinstall_scripts=False` / `True`, and hydrates their provider defaults from `ABXPKG_MIN_RELEASE_AGE` and `ABXPKG_POSTINSTALL_SCRIPTS`. `min_release_age` requires Deno 2.5+, and `supports_min_release_age()` returns `False` on older hosts.
-- Overrides: `install_args` is passed as `deno install` package specs and is auto-prefixed with `npm:` (or `jsr:` if `deno_default_scheme="jsr"`) when an unqualified bare name is supplied. Already-qualified specs (`npm:`, `jsr:`, `https://...`) are passed through verbatim. Unpinned specs get rewritten to `pkg@>=<min_version>` when `min_version` is supplied.
-- Notes: install / update both run `deno install -g --force --allow-all -n <bin_name> <pkg>` because Deno's idiomatic update path is just a fresh global install. Deno's npm lifecycle scripts are *opt-in* (the opposite of npm), so the provider only adds `--allow-scripts` when `postinstall_scripts=True`. `min_release_age` is passed as `--minimum-dependency-age=<minutes>` (Deno's preferred unit; this provider converts from days). `DENO_TLS_CA_STORE=system` is set so installs work on hosts with corporate / sandboxed CA bundles.
+- Overrides: `install_args` is passed as `deno install` package specs and is auto-prefixed with `npm:` when an unqualified bare name is supplied. Already-qualified specs (`npm:`, `jsr:`, `https://...`) are passed through verbatim. Unpinned specs get rewritten to `pkg@>=<min_version>` when `min_version` is supplied.
+- Notes: install / update both run `deno install -g --force --allow-all -n <bin_name> <pkg>` because Deno's idiomatic update path is just a fresh global install. Deno's npm lifecycle scripts are *opt-in* (the opposite of npm), so the provider only adds `--allow-scripts` when `postinstall_scripts=True`. `min_release_age` is passed as `--minimum-dependency-age=<minutes>` (Deno's preferred unit; this provider converts from days). `puppeteer` is special-cased to install both `puppeteer` and `@puppeteer/browsers`, and `puppeteer-browsers` resolves to `@puppeteer/browsers`. `DENO_TLS_CA_STORE=system` is set so installs work on hosts with corporate / sandboxed CA bundles.
 
 </details>
 
@@ -921,7 +936,7 @@ deno_default_scheme = "npm"          # 'npm' or 'jsr'
 Source: [`abxpkg/binprovider_bash.py`](./abxpkg/binprovider_bash.py) • Tests: [`tests/test_bashprovider.py`](./tests/test_bashprovider.py)
 
 ```python
-INSTALLER_BIN = "sh"
+INSTALLER_BIN = "bash"
 PATH = ""
 bash_root = $ABXPKG_BASH_ROOT or $ABXPKG_LIB_DIR/bash
 bash_bin_dir = <bash_root>/bin
@@ -1011,14 +1026,13 @@ Source: [`abxpkg/binprovider_nix.py`](./abxpkg/binprovider_nix.py) • Tests: [`
 INSTALLER_BIN = "nix"
 PATH = ""                            # prepends <nix_profile>/bin
 nix_profile = $ABXPKG_NIX_PROFILE or ~/.nix-profile
-nix_state_dir = None                 # optional XDG state/cache isolation
 nix_install_args = [
     "--extra-experimental-features", "nix-command",
     "--extra-experimental-features", "flakes",
 ]
 ```
 
-- Install root: set `nix_profile=Path(...)` or `install_root=Path(...)` for a custom profile; add `nix_state_dir=Path(...)` to isolate state/cache paths too.
+- Install root: set `nix_profile=Path(...)` or `install_root=Path(...)` for a custom profile.
 - Auto-switching: none.
 - `dry_run`: shared behavior.
 - Security: `min_release_age` and `postinstall_scripts=False` are unsupported and are ignored with a warning if explicitly requested.
@@ -1079,15 +1093,15 @@ INSTALLER_BIN = "puppeteer-browsers"
 PATH = ""
 puppeteer_root = $ABXPKG_PUPPETEER_ROOT or $ABXPKG_LIB_DIR/puppeteer
 browser_bin_dir = <puppeteer_root>/bin
-browser_cache_dir = <puppeteer_root>/cache
+cache_dir = <puppeteer_root>/cache
 ```
 
-- Install root: set `puppeteer_root` / `install_root` for the root dir, `browser_bin_dir` / `bin_dir` for symlinked executables, and `browser_cache_dir` for downloaded browser artifacts.
+- Install root: set `puppeteer_root` / `install_root` for the root dir and `browser_bin_dir` / `bin_dir` for symlinked executables. Downloaded browser artifacts live under `<puppeteer_root>/cache` when an install root is pinned. Leave it unset for ambient/global mode, where cache ownership stays with the host and `INSTALLER_BINARY` must already be resolvable from the ambient provider set.
 - Auto-switching: bootstraps `@puppeteer/browsers` through `NpmProvider` and then uses that CLI for browser installs.
 - `dry_run`: shared behavior.
 - Security: `min_release_age` is unsupported for browser installs and is ignored with a warning if explicitly requested. `postinstall_scripts=False` is supported for the underlying npm bootstrap path, and `ABXPKG_POSTINSTALL_SCRIPTS` hydrates the provider default here.
-- Overrides: `install_args` are passed through to `@puppeteer/browsers install ...`, with the provider appending `--path=<cache_dir>`.
-- Notes: installed-browser resolution uses semantic version ordering, not lexicographic string sorting.
+- Overrides: `install_args` are passed through to `@puppeteer/browsers install ...`, with the provider appending `--path=<cache_dir>`. Installing `puppeteer-browsers` itself is treated as the CLI bootstrap case, not as a browser target.
+- Notes: installed-browser resolution uses semantic version ordering, not lexicographic string sorting. The provider records `node` and `puppeteer-browsers` as dependency cache entries when they are resolved through upstream providers.
 
 </details>
 
@@ -1169,8 +1183,10 @@ Represents a single binary dependency aka a package (e.g. `wget`, `curl`, `ffmpe
 - `abspaths` / `loaded_abspaths`
 - `version` / `loaded_version`
 - `sha256` / `loaded_sha256`
+- `mtime` / `loaded_mtime`
+- `euid` / `loaded_euid`
 
-`Binary.install()` and `Binary.update()` return a fresh loaded `Binary`. `Binary.uninstall()` returns a `Binary` with `binprovider`, `abspath`, `version`, and `sha256` cleared after removal. `Binary.load()`, `Binary.install()`, and `Binary.update()` all enforce `min_version` consistently. All four lifecycle methods also accept `no_cache=True` to bypass cached/current-state checks.
+`Binary.install()` and `Binary.update()` return a fresh loaded `Binary`. `Binary.uninstall()` returns a `Binary` with `binprovider`, `abspath`, `version`, `sha256`, `mtime`, and `euid` cleared after removal. `Binary.load()`, `Binary.install()`, and `Binary.update()` all enforce `min_version` consistently. All four lifecycle methods also accept `no_cache=True` to bypass cached/current-state checks.
 
 ```python
 from abxpkg import Binary, SemVer, env, brew

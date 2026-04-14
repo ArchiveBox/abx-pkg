@@ -7,6 +7,7 @@ import pytest
 from abxpkg import (
     Binary,
     BashProvider,
+    BrewProvider,
     EnvProvider,
     NpmProvider,
     PipProvider,
@@ -125,3 +126,31 @@ class TestSecurityControls:
                 postinstall_scripts=False,
                 min_release_age=0,
             ).install()
+
+    def test_nullable_provider_security_fields_resolve_before_handlers_run(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            assert (
+                PipProvider(
+                    install_root=Path(tmpdir) / "pip",
+                    dry_run=True,
+                    postinstall_scripts=None,
+                    min_release_age=None,
+                ).install("black", no_cache=True)
+                is not None
+            )
+            assert (
+                NpmProvider(
+                    install_root=Path(tmpdir) / "npm",
+                    dry_run=True,
+                    postinstall_scripts=None,
+                    min_release_age=None,
+                ).install("zx", no_cache=True)
+                is not None
+            )
+            assert (
+                BrewProvider(
+                    dry_run=True,
+                    postinstall_scripts=None,
+                ).install("node", no_cache=True)
+                is not None
+            )

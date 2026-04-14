@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Self
 from collections.abc import Iterable
 
-from pydantic import Field, PrivateAttr, TypeAdapter, computed_field, model_validator
+from pydantic import Field, TypeAdapter, computed_field, model_validator
 
 from .base_types import (
     BinName,
@@ -22,9 +22,20 @@ from .base_types import (
     abxpkg_install_root_default,
 )
 from .binary import Binary
-from .binprovider import BinProvider, EnvProvider, env_flag_is_true, remap_kwargs
+from .binprovider import (
+    BinProvider,
+    EnvProvider,
+    env_flag_is_true,
+    log_method_call,
+    remap_kwargs,
+)
 from .binprovider_npm import NpmProvider
-from .logging import format_subprocess_output, get_logger, log_subprocess_output
+from .logging import (
+    format_command,
+    format_subprocess_output,
+    get_logger,
+    log_subprocess_output,
+)
 from .semver import SemVer
 
 logger = get_logger(__name__)
@@ -37,6 +48,7 @@ CLAUDE_SANDBOX_NO_PROXY = (
 
 class PuppeteerProvider(BinProvider):
     name: BinProviderName = "puppeteer"
+    _log_emoji = "🎭"
     INSTALLER_BIN: BinName = "puppeteer-browsers"
 
     PATH: PATHStr = ""  # Starts empty; setup_PATH() fills it with bin_dir and any install_root/npm helper bins.
@@ -51,9 +63,9 @@ class PuppeteerProvider(BinProvider):
         default_factory=lambda: abxpkg_install_root_default("puppeteer"),
         validation_alias="puppeteer_root",
     )
+    # Only set in managed mode: setup()/default_abspath_handler() use it to expose stable
+    # browser launch shims under ``<install_root>/bin``; global mode leaves it unset.
     bin_dir: Path | None = None
-    browser_cache_dir: Path | None = None
-    _SUDO_BINARY: Binary | None = PrivateAttr(default=None)
 
     @computed_field
     @property
@@ -62,14 +74,14 @@ class PuppeteerProvider(BinProvider):
             return {}
         return {"PUPPETEER_CACHE_DIR": str(self.cache_dir)}
 
-    def supports_postinstall_disable(self, action) -> bool:
+    def supports_postinstall_disable(self, action, no_cache: bool = False) -> bool:
         return action in ("install", "update")
 
     @computed_field
     @property
     def cache_dir(self) -> Path | None:
-        if self.browser_cache_dir is not None:
-            return self.browser_cache_dir
+        # Browser downloads always live under ``install_root/cache`` when we
+        # manage an install root; global mode leaves cache ownership to the host.
         if self.install_root is not None:
             return self.install_root / "cache"
         return None
@@ -80,7 +92,7 @@ class PuppeteerProvider(BinProvider):
             self.bin_dir = self.install_root / "bin"
         return self
 
-    def setup_PATH(self) -> None:
+    def setup_PATH(self, no_cache: bool = False) -> None:
         """Populate PATH on first use with bin_dir and any install_root/npm helper bin dirs."""
         lib_dir = os.environ.get("ABXPKG_LIB_DIR")
         hermetic = self.install_root is not None and (
@@ -98,7 +110,54 @@ class PuppeteerProvider(BinProvider):
                 PATH=self.PATH,
                 prepend=True,
             )
-        super().setup_PATH()
+        super().setup_PATH(no_cache=no_cache)
+
+    def INSTALLER_BINARY(self, no_cache: bool = False):
+        from . import DEFAULT_PROVIDER_NAMES, PROVIDER_CLASS_BY_NAME
+
+        loaded = super().INSTALLER_BINARY(no_cache=no_cache)
+        raw_provider_names = os.environ.get("ABXPKG_BINPROVIDERS")
+        selected_provider_names = (
+            [provider_name.strip() for provider_name in raw_provider_names.split(",")]
+            if raw_provider_names
+            else list(DEFAULT_PROVIDER_NAMES)
+        )
+        dependency_providers = [
+            EnvProvider(install_root=None, bin_dir=None)
+            if provider_name == "env"
+            else PROVIDER_CLASS_BY_NAME[provider_name]()
+            for provider_name in selected_provider_names
+            if provider_name
+            and provider_name in PROVIDER_CLASS_BY_NAME
+            and provider_name != self.name
+        ]
+        node_loaded = (
+            Binary(
+                name="node",
+                binproviders=dependency_providers,
+            ).load(no_cache=no_cache)
+            if dependency_providers
+            else None
+        )
+        if (
+            node_loaded
+            and node_loaded.loaded_abspath
+            and node_loaded.loaded_version
+            and node_loaded.loaded_sha256
+        ):
+            self.write_cached_binary(
+                "node",
+                node_loaded.loaded_abspath,
+                node_loaded.loaded_version,
+                node_loaded.loaded_sha256,
+                resolved_provider_name=(
+                    node_loaded.loaded_binprovider.name
+                    if node_loaded.loaded_binprovider is not None
+                    else self.name
+                ),
+                cache_kind="dependency",
+            )
+        return loaded
 
     def _cli_binary(
         self,
@@ -131,6 +190,7 @@ class PuppeteerProvider(BinProvider):
             min_release_age=min_release_age,
         ).install(no_cache=no_cache)
 
+    @log_method_call()
     def setup(
         self,
         *,
@@ -173,17 +233,7 @@ class PuppeteerProvider(BinProvider):
                     prepend=True,
                 )
             return
-        postinstall_scripts = (
-            self.postinstall_scripts
-            if postinstall_scripts is None
-            else postinstall_scripts
-        )
-        min_release_age = (
-            self.min_release_age if min_release_age is None else min_release_age
-        )
-        postinstall_scripts = (
-            False if postinstall_scripts is None else postinstall_scripts
-        )
+        postinstall_scripts = bool(postinstall_scripts)
         min_release_age = 0 if min_release_age is None else min_release_age
 
         if self.install_root is not None:
@@ -246,9 +296,12 @@ class PuppeteerProvider(BinProvider):
             normalized.append(f"--path={self.cache_dir}")
         return normalized
 
-    def _list_installed_browsers(self) -> list[tuple[str, str, Path]]:
+    def _list_installed_browsers(
+        self,
+        no_cache: bool = False,
+    ) -> list[tuple[str, str, Path]]:
         try:
-            installer_bin = self.INSTALLER_BINARY().loaded_abspath
+            installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         except Exception:
             return []
         if not installer_bin:
@@ -320,11 +373,14 @@ class PuppeteerProvider(BinProvider):
         self,
         bin_name: str,
         install_args: Iterable[str] | None = None,
+        no_cache: bool = False,
     ) -> Path | None:
         browser_name = self._browser_name(bin_name, install_args or [bin_name])
         candidates = [
             (version, path)
-            for candidate_browser, version, path in self._list_installed_browsers()
+            for candidate_browser, version, path in self._list_installed_browsers(
+                no_cache=no_cache,
+            )
             if candidate_browser == browser_name
         ]
         parsed_candidates = [
@@ -361,14 +417,10 @@ class PuppeteerProvider(BinProvider):
         no_cache: bool = False,
         **context,
     ) -> HostBinPath | None:
-        # Installer binary: delegate to base class (searches PATH directly)
         if str(bin_name) == self.INSTALLER_BIN:
             try:
-                abspath = super().default_abspath_handler(
-                    bin_name,
-                    no_cache=no_cache,
-                    **context,
-                )
+                installer_binary = self.INSTALLER_BINARY(no_cache=no_cache)
+                abspath = installer_binary.loaded_abspath if installer_binary else None
                 if abspath:
                     return TypeAdapter(HostBinPath).validate_python(abspath)
             except Exception:
@@ -427,9 +479,11 @@ class PuppeteerProvider(BinProvider):
             ):
                 continue
             if target.is_dir():
+                logger.info("$ %s", format_command(["rm", "-rf", str(target)]))
                 shutil.rmtree(target, ignore_errors=True)
                 removed_any = True
             elif target.exists():
+                logger.info("$ %s", format_command(["rm", "-f", str(target)]))
                 target.unlink(missing_ok=True)
                 removed_any = True
         return removed_any
@@ -462,26 +516,25 @@ class PuppeteerProvider(BinProvider):
             return False
 
     def _sudo_binary(self, *, no_cache: bool = False) -> Binary | None:
-        sudo_binary = None if no_cache else self._SUDO_BINARY
-        if sudo_binary is None:
-            sudo_binary = Binary(
-                name="sudo",
-                binproviders=[
-                    EnvProvider(postinstall_scripts=True, min_release_age=0),
-                ],
-                postinstall_scripts=True,
-                min_release_age=0,
-            ).load(no_cache=no_cache)
-            if not no_cache and sudo_binary is not None:
-                self._SUDO_BINARY = sudo_binary
-        return sudo_binary
+        return Binary(
+            name="sudo",
+            binproviders=[
+                EnvProvider(postinstall_scripts=True, min_release_age=0),
+            ],
+            postinstall_scripts=True,
+            min_release_age=0,
+        ).load(no_cache=no_cache)
 
     def _run_install_with_sudo(
         self,
         install_args: list[str],
+        no_cache: bool = False,
     ) -> subprocess.CompletedProcess[str] | None:
         try:
-            installer_bin = self.INSTALLER_BINARY().loaded_abspath
+            installer_binary = self._INSTALLER_BINARY
+            if installer_binary is None or installer_binary.loaded_abspath is None:
+                installer_binary = self.INSTALLER_BINARY(no_cache=no_cache)
+            installer_bin = installer_binary.loaded_abspath
             assert installer_bin
         except Exception:
             return None
@@ -533,6 +586,8 @@ class PuppeteerProvider(BinProvider):
         **context,
     ) -> str:
         self.setup(no_cache=no_cache)
+        if str(bin_name) == self.INSTALLER_BIN:
+            return f"Bootstrapped {self.INSTALLER_BIN} via npm"
         install_args = list(install_args or self.get_install_args(bin_name))
         browser_name = self._browser_name(bin_name, install_args)
         normalized_install_args = self._normalize_install_args(install_args)
@@ -540,7 +595,10 @@ class PuppeteerProvider(BinProvider):
         if self.dry_run:
             return f"DRY_RUN would install {browser_name} via @puppeteer/browsers"
 
-        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        installer_binary = self._INSTALLER_BINARY
+        if installer_binary is None or installer_binary.loaded_abspath is None:
+            installer_binary = self.INSTALLER_BINARY(no_cache=no_cache)
+        installer_bin = installer_binary.loaded_abspath
         assert installer_bin
         proc = self.exec(
             bin_name=installer_bin,
@@ -562,7 +620,10 @@ class PuppeteerProvider(BinProvider):
             and os.geteuid() != 0
             and self._has_sudo()
         ):
-            sudo_proc = self._run_install_with_sudo(normalized_install_args)
+            sudo_proc = self._run_install_with_sudo(
+                normalized_install_args,
+                no_cache=no_cache,
+            )
             if sudo_proc is not None:
                 proc = sudo_proc
                 install_output = f"{proc.stdout}\n{proc.stderr}"
@@ -572,7 +633,10 @@ class PuppeteerProvider(BinProvider):
             self._INSTALLER_BINARY = (
                 cli_binary  # bootstrap: seed cache after npm install
             )
-            installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+            installer_binary = self._INSTALLER_BINARY
+            if installer_binary is None or installer_binary.loaded_abspath is None:
+                installer_binary = self.INSTALLER_BINARY(no_cache=no_cache)
+            installer_bin = installer_binary.loaded_abspath
             assert installer_bin
             proc = self.exec(
                 bin_name=installer_bin,
@@ -617,6 +681,7 @@ class PuppeteerProvider(BinProvider):
         installed_path = installed_path or self._resolve_installed_browser_path(
             bin_name,
             install_args,
+            no_cache=no_cache,
         )
         if not installed_path or not installed_path.exists():
             raise FileNotFoundError(
@@ -654,9 +719,13 @@ class PuppeteerProvider(BinProvider):
         install_args = list(install_args or self.get_install_args(bin_name))
         browser_name = self._browser_name(bin_name, install_args)
         if self.bin_dir is not None:
-            (self.bin_dir / bin_name).unlink(missing_ok=True)
+            bin_path = self.bin_dir / bin_name
+            if bin_path.exists() or bin_path.is_symlink():
+                logger.info("$ %s", format_command(["rm", "-f", str(bin_path)]))
+            bin_path.unlink(missing_ok=True)
         if self.cache_dir is not None:
             browser_dir = self.cache_dir / browser_name
             if browser_dir.exists():
+                logger.info("$ %s", format_command(["rm", "-rf", str(browser_dir)]))
                 shutil.rmtree(browser_dir, ignore_errors=True)
         return True

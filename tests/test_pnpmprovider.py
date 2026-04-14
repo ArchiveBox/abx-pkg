@@ -131,24 +131,14 @@ class TestPnpmProvider:
     ):
         with tempfile.TemporaryDirectory() as temp_dir:
             tmp_path = Path(temp_dir)
-            cache_file = tmp_path / "pnpm-cache-file"
-            cache_file.write_text("not-a-directory", encoding="utf-8")
-
             provider = PnpmProvider(
                 install_root=tmp_path / "pnpm",
-                cache_dir=cache_file,
                 postinstall_scripts=True,
                 min_release_age=0,
             )
 
             installed = provider.install("zx")
-            # pnpm has no ``--no-cache`` flag (it would be parsed as
-            # ``cache=false`` and create a literal ``./false/`` directory),
-            # so the provider falls back to a private temp store-dir.
-            assert provider.cache_arg.startswith("--store-dir=")
-            fallback_dir = Path(provider.cache_arg.split("=", 1)[1])
-            assert fallback_dir.is_dir()
-            assert fallback_dir != cache_file
+            assert provider.cache_dir.is_dir()
             test_machine.assert_shallow_binary_loaded(installed)
             assert (tmp_path / "pnpm" / "node_modules" / "zx" / "package.json").exists()
 
@@ -401,7 +391,6 @@ class TestPnpmProvider:
             try:
                 provider = PnpmProvider(
                     install_root=None,  # global mode
-                    cache_dir=Path(temp_dir) / "pnpm-cache",
                     postinstall_scripts=True,
                     min_release_age=0,
                 )

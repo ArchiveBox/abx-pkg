@@ -11,6 +11,7 @@ from typing import Self
 from platformdirs import user_cache_path
 from pydantic import Field, TypeAdapter, computed_field, model_validator
 
+from .binary import Binary
 from .base_types import (
     BinName,
     BinProviderName,
@@ -18,9 +19,14 @@ from .base_types import (
     InstallArgs,
     PATHStr,
     abxpkg_install_root_default,
-    bin_abspath,
 )
-from .binprovider import BinProvider, env_flag_is_true, remap_kwargs
+from .binprovider import (
+    BinProvider,
+    EnvProvider,
+    env_flag_is_true,
+    log_method_call,
+    remap_kwargs,
+)
 from .logging import format_subprocess_output
 from .semver import SemVer
 
@@ -28,8 +34,8 @@ from .semver import SemVer
 USER_CACHE_PATH = user_cache_path("yarn", "abxpkg")
 
 
-# No forced fallback — when no explicit prefix is set, yarn uses its
-# native global mode (yarn global add / yarn global bin / etc.).
+# No forced fallback — when no explicit workspace root is set, this
+# provider stays unconfigured instead of inventing one implicitly.
 
 
 class YarnProvider(BinProvider):
@@ -48,6 +54,7 @@ class YarnProvider(BinProvider):
     """
 
     name: BinProviderName = "yarn"
+    _log_emoji = "🧶"
     INSTALLER_BIN: BinName = "yarn"
 
     PATH: PATHStr = ""  # Starts empty; setup_PATH() lazily uses install_root/node_modules/.bin only.
@@ -65,11 +72,9 @@ class YarnProvider(BinProvider):
         default_factory=lambda: abxpkg_install_root_default("yarn"),
         validation_alias="yarn_prefix",
     )
+    # detect_euid_to_use() fills this with ``<install_root>/node_modules/.bin`` and setup()
+    # creates it as part of the managed Yarn workspace bootstrap flow.
     bin_dir: Path | None = None
-
-    cache_dir: Path = USER_CACHE_PATH
-
-    yarn_install_args: list[str] = []
 
     @computed_field
     @property
@@ -86,6 +91,13 @@ class YarnProvider(BinProvider):
             env["NODE_MODULE_DIR"] = node_modules_dir
             env["NODE_PATH"] = ":" + node_modules_dir
         return env
+
+    @property
+    def cache_dir(self) -> Path:
+        """Return Yarn's shared global cache directory."""
+        # Yarn's global cache roots are always derived from the standard
+        # platform cache dir; there is no separate provider field to override.
+        return Path(USER_CACHE_PATH)
 
     def get_cache_info(
         self,
@@ -110,49 +122,57 @@ class YarnProvider(BinProvider):
             cache_info["fingerprint_paths"].append(package_json)
         return cache_info
 
-    def supports_min_release_age(self, action) -> bool:
+    def supports_min_release_age(self, action, no_cache: bool = False) -> bool:
         if action not in ("install", "update"):
             return False
         # npmMinimalAgeGate landed in Yarn 4.10
         threshold = SemVer.parse("4.10.0")
         try:
-            installer = self.INSTALLER_BINARY()
+            installer = self.INSTALLER_BINARY(no_cache=no_cache)
         except Exception:
             return False
         version = installer.loaded_version if installer else None
         return bool(version and threshold and version >= threshold)
 
-    def supports_postinstall_disable(self, action) -> bool:
+    def supports_postinstall_disable(self, action, no_cache: bool = False) -> bool:
         if action not in ("install", "update"):
             return False
         # Yarn 2+ supports the enableScripts setting and --mode skip-build
         threshold = SemVer.parse("2.0.0")
         try:
-            installer = self.INSTALLER_BINARY()
+            installer = self.INSTALLER_BINARY(no_cache=no_cache)
         except Exception:
             return False
         version = installer.loaded_version if installer else None
         return bool(version and threshold and version >= threshold)
 
+    def default_install_args_handler(
+        self,
+        bin_name: BinName,
+        **context,
+    ) -> InstallArgs:
+        if str(bin_name) == "puppeteer":
+            return ("puppeteer", "@puppeteer/browsers")
+        if str(bin_name) == "puppeteer-browsers":
+            return ("@puppeteer/browsers",)
+        return TypeAdapter(InstallArgs).validate_python(
+            super().default_install_args_handler(bin_name, **context)
+            or [str(bin_name)],
+        )
+
     @computed_field
     @property
     def is_valid(self) -> bool:
-        if self.bin_dir and not (
-            self.bin_dir.is_dir() and os.access(self.bin_dir, os.R_OK)
-        ):
-            return False
-        return bool(
-            bin_abspath(self.INSTALLER_BIN, PATH=self.PATH)
-            or bin_abspath(self.INSTALLER_BIN),
-        )
+        return super().is_valid
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
+        """Derive Yarn's managed node_modules/.bin dir from install_root."""
         if self.bin_dir is None and self.install_root is not None:
             self.bin_dir = self.install_root / "node_modules" / ".bin"
         return self
 
-    def setup_PATH(self) -> None:
+    def setup_PATH(self, no_cache: bool = False) -> None:
         """Populate PATH on first use from install_root/node_modules/.bin only."""
         if self.bin_dir:
             self.PATH = self._merge_PATH(
@@ -160,8 +180,102 @@ class YarnProvider(BinProvider):
                 PATH=self.PATH,
                 prepend=True,
             )
-        super().setup_PATH()
+        super().setup_PATH(no_cache=no_cache)
 
+    def INSTALLER_BINARY(self, no_cache: bool = False):
+        from . import DEFAULT_PROVIDER_NAMES, PROVIDER_CLASS_BY_NAME
+
+        if not no_cache and self._INSTALLER_BINARY and self._INSTALLER_BINARY.is_valid:
+            loaded = self._INSTALLER_BINARY
+        else:
+            env_provider = EnvProvider(install_root=None, bin_dir=None)
+            env_provider.PATH = env_provider._merge_PATH(
+                self.PATH,
+                PATH=env_provider.PATH,
+                prepend=True,
+            )
+            raw_provider_names = os.environ.get("ABXPKG_BINPROVIDERS")
+            selected_provider_names = (
+                [
+                    provider_name.strip()
+                    for provider_name in raw_provider_names.split(",")
+                ]
+                if raw_provider_names
+                else list(DEFAULT_PROVIDER_NAMES)
+            )
+            installer_providers = [
+                env_provider
+                if provider_name == "env"
+                else PROVIDER_CLASS_BY_NAME[provider_name]()
+                for provider_name in selected_provider_names
+                if provider_name
+                and provider_name in PROVIDER_CLASS_BY_NAME
+                and provider_name != self.name
+            ]
+            loaded = Binary(
+                name=self.INSTALLER_BIN,
+                binproviders=installer_providers,
+            ).load(no_cache=no_cache)
+            if loaded and loaded.loaded_abspath:
+                if loaded.loaded_version and loaded.loaded_sha256:
+                    self.write_cached_binary(
+                        self.INSTALLER_BIN,
+                        loaded.loaded_abspath,
+                        loaded.loaded_version,
+                        loaded.loaded_sha256,
+                        resolved_provider_name=(
+                            loaded.loaded_binprovider.name
+                            if loaded.loaded_binprovider is not None
+                            else self.name
+                        ),
+                        cache_kind="dependency",
+                    )
+                self._INSTALLER_BINARY = loaded
+
+        raw_provider_names = os.environ.get("ABXPKG_BINPROVIDERS")
+        selected_provider_names = (
+            [provider_name.strip() for provider_name in raw_provider_names.split(",")]
+            if raw_provider_names
+            else list(DEFAULT_PROVIDER_NAMES)
+        )
+        dependency_providers = [
+            EnvProvider(install_root=None, bin_dir=None)
+            if provider_name == "env"
+            else PROVIDER_CLASS_BY_NAME[provider_name]()
+            for provider_name in selected_provider_names
+            if provider_name
+            and provider_name in PROVIDER_CLASS_BY_NAME
+            and provider_name != self.name
+        ]
+        node_loaded = (
+            Binary(
+                name="node",
+                binproviders=dependency_providers,
+            ).load(no_cache=no_cache)
+            if dependency_providers
+            else None
+        )
+        if (
+            node_loaded
+            and node_loaded.loaded_abspath
+            and node_loaded.loaded_version
+            and node_loaded.loaded_sha256
+        ):
+            self.write_cached_binary(
+                "node",
+                node_loaded.loaded_abspath,
+                node_loaded.loaded_version,
+                node_loaded.loaded_sha256,
+                resolved_provider_name=(
+                    node_loaded.loaded_binprovider.name
+                    if node_loaded.loaded_binprovider is not None
+                    else self.name
+                ),
+                cache_kind="dependency",
+            )
+        return loaded
+
+    @log_method_call(include_result=True)
     def exec(
         self,
         bin_name,
@@ -185,6 +299,7 @@ class YarnProvider(BinProvider):
             **kwargs,
         )
 
+    @log_method_call()
     def setup(
         self,
         *,
@@ -247,7 +362,6 @@ class YarnProvider(BinProvider):
         no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        self.setup(no_cache=no_cache)
         installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
         postinstall_scripts = bool(postinstall_scripts)
@@ -310,17 +424,16 @@ class YarnProvider(BinProvider):
                 )
                 if cache_proc.returncode != 0:
                     self._raise_proc_error("install", install_args, cache_proc)
-            cmd = ["add", *self.yarn_install_args, *install_args]
+            cmd = ["add", *install_args]
             if not postinstall_scripts:
                 cmd = [
                     "add",
-                    *self.yarn_install_args,
                     "--mode",
                     "skip-build",
                     *install_args,
                 ]
         else:
-            cmd = ["add", *self.yarn_install_args, *install_args]
+            cmd = ["add", *install_args]
             if no_cache and "--force" not in cmd:
                 cmd.insert(1, "--force")
 
@@ -344,7 +457,6 @@ class YarnProvider(BinProvider):
         no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        self.setup(no_cache=no_cache)
         installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
         postinstall_scripts = bool(postinstall_scripts)
@@ -405,17 +517,16 @@ class YarnProvider(BinProvider):
                 )
                 if cache_proc.returncode != 0:
                     self._raise_proc_error("update", install_args, cache_proc)
-            cmd = ["up", *self.yarn_install_args, *install_args]
+            cmd = ["up", *install_args]
             if not postinstall_scripts:
                 cmd = [
                     "up",
-                    *self.yarn_install_args,
                     "--mode",
                     "skip-build",
                     *install_args,
                 ]
         else:
-            cmd = ["upgrade", *self.yarn_install_args, *install_args]
+            cmd = ["upgrade", *install_args]
             if no_cache and "--force" not in cmd:
                 cmd.insert(1, "--force")
 
@@ -436,15 +547,21 @@ class YarnProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> bool:
-        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
         install_args = install_args or self.get_install_args(bin_name)
+        if str(bin_name) == "puppeteer" and tuple(install_args) == (
+            "puppeteer",
+            "@puppeteer/browsers",
+        ):
+            install_args = ["puppeteer"]
 
         proc = self.exec(
             bin_name=installer_bin,
-            cmd=["remove", *self.yarn_install_args, *install_args],
+            cmd=["remove", *install_args],
             timeout=timeout,
         )
         if proc.returncode != 0:

@@ -1,9 +1,11 @@
 import tempfile
 from pathlib import Path
 import logging
+from typing import cast
 
 
 from abxpkg import Binary, CargoProvider, SemVer
+from abxpkg.binprovider import BinProvider
 
 
 class TestCargoProvider:
@@ -13,7 +15,6 @@ class TestCargoProvider:
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = CargoProvider(
                 install_root=Path(temp_dir) / "cargo-root",
-                cargo_home=Path(temp_dir) / "cargo-home",
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -37,7 +38,6 @@ class TestCargoProvider:
             provider = CargoProvider.model_validate(
                 {
                     "install_root": install_root,
-                    "cargo_home": Path(temp_dir) / "cargo-home",
                     "postinstall_scripts": True,
                     "min_release_age": 0,
                 },
@@ -58,7 +58,6 @@ class TestCargoProvider:
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = CargoProvider(
                 install_root=Path(temp_dir) / "cargo",
-                cargo_home=Path(temp_dir) / "cargo-home",
                 postinstall_scripts=True,
                 min_release_age=0,
             )
@@ -72,10 +71,8 @@ class TestCargoProvider:
 
         with tempfile.TemporaryDirectory() as temp_dir:
             cargo_root = Path(temp_dir) / "cargo"
-            cargo_home = Path(temp_dir) / "cargo-home"
             old_provider = CargoProvider(
                 install_root=cargo_root,
-                cargo_home=cargo_home,
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -89,7 +86,6 @@ class TestCargoProvider:
 
             provider = CargoProvider(
                 install_root=cargo_root,
-                cargo_home=cargo_home,
                 postinstall_scripts=True,
                 min_release_age=0,
             )
@@ -111,7 +107,6 @@ class TestCargoProvider:
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = CargoProvider(
                 install_root=Path(temp_dir) / "cargo",
-                cargo_home=Path(temp_dir) / "cargo-home",
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -139,7 +134,6 @@ class TestCargoProvider:
             temp_dir_path = Path(temp_dir)
             ambient_provider = CargoProvider(
                 install_root=temp_dir_path / "ambient-cargo",
-                cargo_home=temp_dir_path / "ambient-cargo-home",
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
@@ -154,12 +148,10 @@ class TestCargoProvider:
             assert ambient_installed is not None
 
             cargo_root = temp_dir_path / "cargo"
-            cargo_home = temp_dir_path / "cargo-home"
             cargo_bin_dir = str(Path(test_machine.require_tool("cargo")).parent)
             provider = CargoProvider(
                 PATH=f"{ambient_provider.bin_dir}:{cargo_bin_dir}",
                 install_root=cargo_root,
-                cargo_home=cargo_home,
                 postinstall_scripts=True,
                 min_release_age=0,
             )
@@ -187,7 +179,6 @@ class TestCargoProvider:
             with caplog.at_level(logging.WARNING, logger="abxpkg.binprovider"):
                 installed = CargoProvider(
                     install_root=Path(temp_dir) / "bad-cargo",
-                    cargo_home=Path(temp_dir) / "bad-home",
                     postinstall_scripts=False,
                     min_release_age=1,
                 ).install("choose")
@@ -198,14 +189,16 @@ class TestCargoProvider:
             caplog.clear()
             binary = Binary(
                 name="choose",
-                binproviders=[
-                    CargoProvider(
-                        install_root=Path(temp_dir) / "ok-cargo",
-                        cargo_home=Path(temp_dir) / "ok-home",
-                        postinstall_scripts=False,
-                        min_release_age=1,
-                    ),
-                ],
+                binproviders=cast(
+                    list[BinProvider],
+                    [
+                        CargoProvider(
+                            install_root=Path(temp_dir) / "ok-cargo",
+                            postinstall_scripts=False,
+                            min_release_age=1,
+                        ),
+                    ],
+                ),
                 postinstall_scripts=False,
                 min_release_age=1,
             )
@@ -221,14 +214,16 @@ class TestCargoProvider:
         with tempfile.TemporaryDirectory() as temp_dir:
             binary = Binary(
                 name="choose",
-                binproviders=[
-                    CargoProvider(
-                        install_root=Path(temp_dir) / "cargo",
-                        cargo_home=Path(temp_dir) / "cargo-home",
-                        postinstall_scripts=True,
-                        min_release_age=0,
-                    ),
-                ],
+                binproviders=cast(
+                    list[BinProvider],
+                    [
+                        CargoProvider(
+                            install_root=Path(temp_dir) / "cargo",
+                            postinstall_scripts=True,
+                            min_release_age=0,
+                        ),
+                    ],
+                ),
                 postinstall_scripts=True,
                 min_release_age=0,
             )
@@ -240,7 +235,6 @@ class TestCargoProvider:
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = CargoProvider(
                 install_root=Path(temp_dir) / "cargo",
-                cargo_home=Path(temp_dir) / "cargo-home",
                 postinstall_scripts=True,
                 min_release_age=0,
             )

@@ -11,7 +11,7 @@ import pytest
 import rich_click as click
 from click.testing import CliRunner
 
-from abxpkg import SemVer
+from abxpkg import EnvProvider, SemVer
 import abxpkg.cli as cli_module
 
 
@@ -125,29 +125,9 @@ def test_build_providers_uses_managed_lib_layout(tmp_path, monkeypatch):
 def test_parse_provider_names_uses_preferred_default_cli_order(monkeypatch):
     monkeypatch.delenv("ABXPKG_BINPROVIDERS", raising=False)
 
-    assert cli_module.parse_provider_names(None) == [
-        "env",
-        "uv",
-        "pip",
-        "pnpm",
-        "npm",
-        "yarn",
-        "bun",
-        "brew",
-        "gem",
-        "goget",
-        "cargo",
-        "playwright",
-        "puppeteer",
-        "apt",
-        "nix",
-        "docker",
-        "deno",
-        "ansible",
-        "pyinfra",
-        "chromewebstore",
-        "bash",
-    ]
+    assert cli_module.parse_provider_names(None) == list(
+        cli_module.DEFAULT_PROVIDER_NAMES,
+    )
 
 
 def test_default_cli_sets_managed_lib_dir(monkeypatch):
@@ -208,12 +188,42 @@ def test_cli_lib_none_disables_managed_mode(monkeypatch, tmp_path):
     assert captured["install_root"] is None
 
 
+def test_cli_global_flag_disables_managed_mode(monkeypatch, tmp_path):
+    monkeypatch.setenv("ABXPKG_LIB_DIR", str(tmp_path))
+    captured = {}
+
+    def fake_run_binary_command(binary_name, *, action, options):
+        captured["binary_name"] = binary_name
+        captured["action"] = action
+        captured["options"] = options
+        captured["env_lib_dir"] = os.environ.get("ABXPKG_LIB_DIR")
+        captured["install_root"] = cli_module.build_providers(
+            ["pip"],
+            dry_run=True,
+        )[0].install_root
+
+    monkeypatch.setattr(cli_module, "run_binary_command", fake_run_binary_command)
+
+    result = CliRunner().invoke(
+        cli_module.cli,
+        ["--global", "load", "python"],
+    )
+
+    assert result.exit_code == 0
+    assert captured["binary_name"] == "python"
+    assert captured["action"] == "load"
+    assert captured["options"].lib_dir == cli_module.DEFAULT_LIB_DIR.resolve()
+    assert captured["env_lib_dir"] is None
+    assert captured["install_root"] is None
+
+
 def test_env_lib_none_disables_managed_mode(monkeypatch):
     monkeypatch.setenv("ABXPKG_LIB_DIR", "None")
 
     options = cli_module.build_cli_options(
         None,
         lib_dir=None,
+        global_mode=None,
         binproviders="pip",
         dry_run=None,
         debug=None,
@@ -262,6 +272,32 @@ def test_install_command_uses_env_defaults(monkeypatch, tmp_path):
     assert captured["options"].dry_run is True
     assert captured["options"].debug is False
     assert captured["options"].no_cache is False
+
+
+def test_build_cli_options_exports_resolved_provider_names(monkeypatch):
+    monkeypatch.delenv("ABXPKG_BINPROVIDERS", raising=False)
+
+    options = cli_module.build_cli_options(
+        None,
+        lib_dir=None,
+        global_mode=None,
+        binproviders="brew,env",
+        dry_run=None,
+        debug=None,
+        no_cache=None,
+        min_version=None,
+        postinstall_scripts=None,
+        min_release_age=None,
+        overrides=None,
+        install_root=None,
+        bin_dir=None,
+        euid=None,
+        install_timeout=None,
+        version_timeout=None,
+    )
+
+    assert options.provider_names == ["brew", "env"]
+    assert os.environ["ABXPKG_BINPROVIDERS"] == "brew,env"
 
 
 def test_install_command_uses_debug_env_default(monkeypatch, tmp_path):
@@ -445,7 +481,7 @@ def test_version_subcommand_loads_normal_binary_via_env_provider():
     proc = _run_abxpkg_cli("--binproviders=env", "version", "python3")
 
     assert proc.returncode == 0, proc.stderr
-    assert "python3" in proc.stdout
+    assert proc.stdout.strip().endswith(" python3"), proc.stdout
     assert proc.stderr == ""
 
 
@@ -453,7 +489,7 @@ def test_version_subcommand_loads_installer_binary_via_env_provider():
     proc = _run_abxpkg_cli("--binproviders=env", "version", "uv")
 
     assert proc.returncode == 0, proc.stderr
-    assert "uv" in proc.stdout
+    assert proc.stdout.strip().endswith(" uv"), proc.stdout
     assert proc.stderr == ""
 
 
@@ -510,6 +546,7 @@ def test_run_update_skips_env_for_the_update_step(monkeypatch, tmp_path):
             self.loaded_abspath = Path("/tmp/fake-bin")
             self.loaded_version = SemVer("1.2.3")
             self.loaded_binprovider = FakeLoadedProvider("env")
+            self.binproviders = []
             self.is_valid = True
 
         def load(self, no_cache=None):
@@ -787,6 +824,7 @@ def test_run_forwards_variadic_positional_args_to_binary(
     [
         (["yt-dlp", "--help"], [], ["yt-dlp", "--help"]),
         (["--update", "yt-dlp"], ["--update"], ["yt-dlp"]),
+        (["--upgrade", "yt-dlp"], ["--upgrade"], ["yt-dlp"]),
         (
             ["--binproviders=env,uv,pip,apt,brew", "yt-dlp"],
             ["--binproviders=env,uv,pip,apt,brew"],
@@ -801,6 +839,11 @@ def test_run_forwards_variadic_positional_args_to_binary(
             ["--binproviders", "pip,brew", "black", "-v"],
             ["--binproviders", "pip,brew"],
             ["black", "-v"],
+        ),
+        (
+            ["--install-args", '["black==24.2.0"]', "black", "--version"],
+            ["--install-args", '["black==24.2.0"]'],
+            ["black", "--version"],
         ),
         (["--version"], ["--version"], []),
         ([], [], []),
@@ -895,6 +938,185 @@ def test_abx_debug_does_not_probe_later_providers_before_env_resolves():
     )
 
 
+def test_abx_debug_env_provider_uses_derived_env_on_second_run(tmp_path):
+    first = _run_abx_cli(
+        "--debug",
+        f"--lib={tmp_path}",
+        "--binproviders=env",
+        "python3",
+        "--version",
+    )
+    second = _run_abx_cli(
+        "--debug",
+        f"--lib={tmp_path}",
+        "--binproviders=env",
+        "python3",
+        "--version",
+    )
+
+    assert first.returncode == 0, first.stderr
+    assert second.returncode == 0, second.stderr
+    assert "EnvProvider.get_version('python3'" in first.stderr
+    assert "EnvProvider.get_version('python3'" not in second.stderr
+
+
+def test_list_command_reads_provider_local_derived_env(tmp_path):
+    provider = EnvProvider(
+        install_root=tmp_path / "env",
+        postinstall_scripts=True,
+        min_release_age=0,
+    )
+    loaded = provider.load("python3")
+
+    assert loaded is not None
+    assert loaded.loaded_version is not None
+    assert loaded.loaded_abspath is not None
+    assert provider.install_root is not None
+    assert (provider.install_root / "derived.env").is_file()
+
+    proc = _run_abxpkg_cli("list", f"--lib={tmp_path}", "--binproviders=env")
+
+    assert proc.returncode == 0, proc.stderr
+    expected_line = cli_module.format_loaded_binary_line(
+        loaded.loaded_version,
+        loaded.loaded_abspath,
+        "env",
+        "python3",
+    )
+    assert expected_line in proc.stdout.splitlines()
+    assert proc.stderr == ""
+
+
+def test_list_command_includes_installer_binaries_by_default(tmp_path):
+    env_provider = EnvProvider(
+        install_root=tmp_path / "env",
+        postinstall_scripts=True,
+        min_release_age=0,
+    )
+    loaded = env_provider.load("python3")
+
+    uv_provider = cli_module.build_providers(
+        ["uv"],
+        dry_run=False,
+        install_root=tmp_path / "uv",
+    )[0]
+    installer_binary = uv_provider.INSTALLER_BINARY()
+
+    assert loaded is not None
+    assert loaded.loaded_version is not None
+    assert loaded.loaded_abspath is not None
+    assert installer_binary is not None
+    assert installer_binary.loaded_version is not None
+    assert installer_binary.loaded_abspath is not None
+    assert installer_binary.loaded_binprovider is not None
+
+    proc = _run_abxpkg_cli("list", f"--lib={tmp_path}", "--binproviders=env,uv")
+
+    assert proc.returncode == 0, proc.stderr
+    lines = proc.stdout.splitlines()
+    assert (
+        cli_module.format_loaded_binary_line(
+            loaded.loaded_version,
+            loaded.loaded_abspath,
+            "env",
+            "python3",
+        )
+        in lines
+    )
+    assert (
+        cli_module.format_loaded_binary_line(
+            installer_binary.loaded_version,
+            installer_binary.loaded_abspath,
+            installer_binary.loaded_binprovider.name,
+            "uv",
+        )
+        in lines
+    )
+    assert "" in lines
+    assert lines.index("") == 1
+    assert proc.stderr == ""
+
+
+def test_version_report_includes_provider_local_cached_binary_list(tmp_path):
+    provider = EnvProvider(
+        install_root=tmp_path / "env",
+        postinstall_scripts=True,
+        min_release_age=0,
+    )
+    loaded = provider.load("python3")
+
+    assert loaded is not None
+    assert loaded.loaded_version is not None
+    assert loaded.loaded_abspath is not None
+
+    proc = _run_abxpkg_cli("version", f"--lib={tmp_path}", "--binproviders=env")
+
+    assert proc.returncode == 0, proc.stderr
+    lines = proc.stdout.splitlines()
+    expected_line = cli_module.format_loaded_binary_line(
+        loaded.loaded_version,
+        loaded.loaded_abspath,
+        "env",
+        "python3",
+    )
+    assert "   installed_binaries=" in lines
+    assert f"      {expected_line}" in lines
+    assert proc.stderr == ""
+
+
+def test_list_command_filters_by_binary_name_and_provider_name(tmp_path):
+    env_provider = EnvProvider(
+        install_root=tmp_path / "env",
+        postinstall_scripts=True,
+        min_release_age=0,
+    )
+    loaded = env_provider.load("python3")
+
+    uv_provider = cli_module.build_providers(
+        ["uv"],
+        dry_run=False,
+        install_root=tmp_path / "uv",
+    )[0]
+    installer_binary = uv_provider.INSTALLER_BINARY()
+
+    assert loaded is not None
+    assert loaded.loaded_abspath is not None
+    assert installer_binary is not None
+    assert installer_binary.loaded_version is not None
+    assert installer_binary.loaded_abspath is not None
+    assert installer_binary.loaded_binprovider is not None
+
+    proc = _run_abxpkg_cli(
+        "list",
+        "python3",
+        "uv",
+        f"--lib={tmp_path}",
+        "--binproviders=env,uv",
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    lines = proc.stdout.splitlines()
+    assert (
+        cli_module.format_loaded_binary_line(
+            loaded.loaded_version,
+            loaded.loaded_abspath,
+            "env",
+            "python3",
+        )
+        in lines
+    )
+    assert (
+        cli_module.format_loaded_binary_line(
+            installer_binary.loaded_version,
+            installer_binary.loaded_abspath,
+            installer_binary.loaded_binprovider.name,
+            "uv",
+        )
+        in lines
+    )
+    assert proc.stderr == ""
+
+
 def test_abx_propagates_underlying_exit_code():
     proc = _run_abx_cli(
         "--binproviders=env",
@@ -929,6 +1151,25 @@ def test_abx_version_flag_is_forwarded_without_running_a_binary():
     from abxpkg.cli import get_package_version
 
     assert get_package_version() in proc.stdout
+
+
+def test_abxpkg_version_runs_without_error():
+    proc = _run_abxpkg_cli(
+        "--binproviders=env",
+        "version",
+        env_overrides={"ABXPKG_POSTINSTALL_SCRIPTS": "True"},
+    )
+
+    assert proc.returncode == 0, proc.stderr
+
+
+def test_upgrade_command_is_hidden_from_help():
+    result = CliRunner().invoke(cli_module.cli, ["--help"])
+
+    assert result.exit_code == 0
+    assert " add" not in result.output
+    assert " upgrade" not in result.output
+    assert " remove" not in result.output
 
 
 def test_abx_without_any_args_prints_usage_and_exits_two():
@@ -985,6 +1226,22 @@ def test_abx_update_flag_is_forwarded_and_runs_after_update(tmp_path):
     assert installed
 
 
+def test_abx_upgrade_flag_is_forwarded_and_runs_after_update(tmp_path):
+    proc = _run_abx_cli(
+        f"--lib={tmp_path}",
+        "--binproviders=pip",
+        "--upgrade",
+        "black",
+        "--version",
+        timeout=900,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.strip().startswith("black")
+    installed = list((tmp_path / "pip").rglob("black"))
+    assert installed
+
+
 # ---------------------------------------------------------------------------
 # Full Binary/BinProvider option surface (--min-version, --postinstall-scripts,
 # --min-release-age, --overrides, --install-root, --bin-dir, --euid,
@@ -1000,11 +1257,16 @@ def test_build_cli_options_passes_typed_values_through(tmp_path):
     options = cli_module.build_cli_options(
         None,
         lib_dir=str(tmp_path),
+        global_mode=None,
         binproviders="env,pip",
         dry_run=True,
         debug=False,
         no_cache=True,
         min_version="1.2.3",
+        abspath_override="/tmp/custom-bin",
+        version_override=["python3", "--version"],
+        install_args_override=["black==24.2.0"],
+        packages_override=["black==24.2.0"],
         postinstall_scripts=False,
         min_release_age=14.0,
         overrides={"pip": {"install_args": ["black==24.2.0"]}},
@@ -1021,6 +1283,12 @@ def test_build_cli_options_passes_typed_values_through(tmp_path):
     assert options.debug is False
     assert options.no_cache is True
     assert options.min_version == "1.2.3"
+    assert options.handler_overrides == {
+        "abspath": "/tmp/custom-bin",
+        "version": ["python3", "--version"],
+        "install_args": ["black==24.2.0"],
+        "packages": ["black==24.2.0"],
+    }
     assert options.postinstall_scripts is False
     assert options.min_release_age == 14.0
     assert options.overrides == {"pip": {"install_args": ["black==24.2.0"]}}
@@ -1038,11 +1306,16 @@ def test_build_cli_options_nones_all_leave_fields_at_default(tmp_path):
     options = cli_module.build_cli_options(
         None,
         lib_dir=str(tmp_path),
+        global_mode=None,
         binproviders="env",
         dry_run=None,
         debug=None,
         no_cache=None,
         min_version=None,
+        abspath_override=None,
+        version_override=None,
+        install_args_override=None,
+        packages_override=None,
         postinstall_scripts=None,
         min_release_age=None,
         overrides=None,
@@ -1056,6 +1329,7 @@ def test_build_cli_options_nones_all_leave_fields_at_default(tmp_path):
     assert options.debug is False
     assert options.no_cache is False
     assert options.min_version is None
+    assert options.handler_overrides is None
     assert options.postinstall_scripts is None
     assert options.min_release_age is None
     assert options.overrides is None
@@ -1142,31 +1416,148 @@ def test_build_binary_forwards_binary_level_fields(tmp_path):
     assert binary.overrides == {"pip": {"install_args": ["custom==1.0"]}}
 
 
+def test_build_binary_merges_cli_handler_overrides_into_all_selected_providers(
+    tmp_path,
+):
+    options = cli_module.CliOptions(
+        lib_dir=tmp_path,
+        provider_names=["env", "pip"],
+        dry_run=False,
+        debug=False,
+        no_cache=False,
+        handler_overrides={
+            "version": ["python3", "--version"],
+            "install_args": ["black==24.2.0"],
+        },
+    )
+
+    binary = cli_module.build_binary("black", options, dry_run=False)
+
+    assert binary.overrides == {
+        "env": {
+            "version": ["python3", "--version"],
+            "install_args": ["black==24.2.0"],
+        },
+        "pip": {
+            "version": ["python3", "--version"],
+            "install_args": ["black==24.2.0"],
+        },
+    }
+
+
+def test_build_binary_explicit_overrides_deepmerge_over_cli_handler_defaults(tmp_path):
+    options = cli_module.CliOptions(
+        lib_dir=tmp_path,
+        provider_names=["env", "pip"],
+        dry_run=False,
+        debug=False,
+        no_cache=False,
+        handler_overrides={
+            "version": ["python3", "--version"],
+            "install_args": ["black==24.2.0"],
+        },
+        overrides={
+            "pip": {
+                "install_args": ["black==25.0.0"],
+                "version_timeout": 99,
+            },
+        },
+    )
+
+    binary = cli_module.build_binary("black", options, dry_run=False)
+
+    assert binary.overrides == {
+        "env": {
+            "version": ["python3", "--version"],
+            "install_args": ["black==24.2.0"],
+        },
+        "pip": {
+            "version": ["python3", "--version"],
+            "install_args": ["black==25.0.0"],
+            "version_timeout": 99,
+        },
+    }
+
+
+def test_upgrade_command_dispatches_to_update(monkeypatch):
+    captured = {}
+
+    def fake_run_binary_command(binary_name, *, action, options):
+        captured["binary_name"] = binary_name
+        captured["action"] = action
+        captured["options"] = options
+
+    monkeypatch.setattr(cli_module, "run_binary_command", fake_run_binary_command)
+
+    result = CliRunner().invoke(
+        cli_module.cli,
+        ["upgrade", "--binproviders=env", "python"],
+    )
+
+    assert result.exit_code == 0
+    assert captured["binary_name"] == "python"
+    assert captured["action"] == "update"
+
+
+def test_add_command_dispatches_to_install(monkeypatch):
+    captured = {}
+
+    def fake_run_binary_command(binary_name, *, action, options):
+        captured["binary_name"] = binary_name
+        captured["action"] = action
+        captured["options"] = options
+
+    monkeypatch.setattr(cli_module, "run_binary_command", fake_run_binary_command)
+
+    result = CliRunner().invoke(
+        cli_module.cli,
+        ["add", "--binproviders=env", "python"],
+    )
+
+    assert result.exit_code == 0
+    assert captured["binary_name"] == "python"
+    assert captured["action"] == "install"
+
+
+def test_remove_command_dispatches_to_uninstall(monkeypatch):
+    captured = {}
+
+    def fake_run_binary_command(binary_name, *, action, options):
+        captured["binary_name"] = binary_name
+        captured["action"] = action
+        captured["options"] = options
+
+    monkeypatch.setattr(cli_module, "run_binary_command", fake_run_binary_command)
+
+    result = CliRunner().invoke(
+        cli_module.cli,
+        ["remove", "--binproviders=env", "python"],
+    )
+
+    assert result.exit_code == 0
+    assert captured["binary_name"] == "python"
+    assert captured["action"] == "uninstall"
+
+
 def test_install_postinstall_scripts_false_warns_on_unsupporting_providers(tmp_path):
     """Providers that can't enforce postinstall_scripts=False must emit a
     warning to stderr and continue (no hard-fail).
-
-    Exercises the user's example of mixing a provider that supports the
-    flag (pip/uv) with one that doesn't (apt). ``Binary.install``
-    iterates providers in order and calls ``install()`` on each, so the
-    warning fires unconditionally — unlike the ``run`` path, where a
-    successful ``load()`` would short-circuit install().
     """
 
     proc = _run_abxpkg_cli(
         f"--lib={tmp_path}",
-        "--binproviders=apt,uv,pip",
+        "--binproviders=env",
         "--postinstall-scripts=False",
         "--min-release-age=0",
+        "--dry-run=True",
         "install",
-        "black",
-        timeout=900,
+        "python3",
+        timeout=30,
     )
 
     assert proc.returncode == 0, proc.stderr
-    # The warn-and-ignore message from AptProvider must be on stderr.
     assert (
-        "AptProvider.install ignoring unsupported postinstall_scripts=False"
+        "EnvProvider.install ignoring unsupported postinstall_scripts=False"
         in proc.stderr
     ), proc.stderr
 
@@ -1437,6 +1828,7 @@ def test_subcommand_level_option_overrides_group_level():
         "--min-version=0.0.0",
         "--postinstall-scripts=False",
         "--min-release-age=0",
+        "--global",
         "--install-timeout=60",
         "--version-timeout=10",
         '--overrides={"env":{}}',
@@ -1475,6 +1867,7 @@ def test_run_command_honours_group_level_options(flag, tmp_path):
         "--postinstall-scripts=True",
         "--postinstall-scripts=False",
         "--min-release-age=0",
+        "--global",
         "--install-timeout=60",
         "--version-timeout=10",
         '--overrides={"env":{}}',
@@ -1818,6 +2211,43 @@ def test_run_script_dependency_provider_path_is_available_inside_script(tmp_path
 
     assert proc.returncode == 0, proc.stderr
     assert "black" in proc.stdout.lower()
+
+
+def test_run_merges_selected_provider_runtime_env_without_script(tmp_path):
+    """Plain run should merge runtime PATH/ENV from all selected providers."""
+
+    lib = tmp_path / "lib"
+
+    install_proc = _run_abxpkg_cli(
+        f"--lib={lib}",
+        "--binproviders=pip",
+        "--postinstall-scripts=True",
+        "--min-release-age=0",
+        "install",
+        "black",
+    )
+    assert install_proc.returncode == 0, install_proc.stderr
+
+    proc = _run_abxpkg_cli(
+        f"--lib={lib}",
+        "--binproviders=env,pip",
+        "run",
+        "python3",
+        "-c",
+        (
+            "import os, shutil, sys; "
+            "black = shutil.which('black'); "
+            "sys.stdout.write((black or '') + '\\n' + os.environ.get('PATH','')); "
+            "sys.exit(0 if black else 1)"
+        ),
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    lines = proc.stdout.splitlines()
+    assert lines
+    assert lines[0].startswith(str(lib / "pip" / "venv" / "bin"))
+    assert str(lib / "env" / "bin") in lines[1]
+    assert str(lib / "pip" / "venv" / "bin") in lines[1]
 
 
 @pytest.fixture()

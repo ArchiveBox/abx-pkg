@@ -38,6 +38,7 @@ UPDATE_CHECK_INTERVAL = 60 * 60 * 24  # 1 day
 
 class BrewProvider(BinProvider):
     name: BinProviderName = "brew"
+    _log_emoji = "🍺"
     INSTALLER_BIN: BinName = "brew"
 
     PATH: PATHStr = f"{DEFAULT_LINUX_DIR}:{NEW_MACOS_DIR}:{OLD_MACOS_DIR}"  # Seeded with common brew bin roots; setup_PATH() lazily normalizes it to the resolved brew/runtime bin dirs.
@@ -52,6 +53,8 @@ class BrewProvider(BinProvider):
         ),
         validation_alias="brew_prefix",
     )
+    # Starts unset so setup_PATH() can infer the real brew prefix first, then normalizes
+    # to ``<install_root>/bin`` for the shim/link refresh paths used by load().
     bin_dir: Path | None = None
 
     @computed_field
@@ -64,13 +67,14 @@ class BrewProvider(BinProvider):
             "HOMEBREW_CELLAR": str(self.install_root / "Cellar"),
         }
 
-    def supports_min_release_age(self, action) -> bool:
+    def supports_min_release_age(self, action, no_cache: bool = False) -> bool:
         return False
 
-    def supports_postinstall_disable(self, action) -> bool:
-        return action in ("install", "update")
+    def supports_postinstall_disable(self, action, no_cache: bool = False) -> bool:
+        return action == "install"
 
-    def _brew_prefixes(self) -> list[Path]:
+    def _brew_prefixes(self, no_cache: bool = False) -> list[Path]:
+        """Collect candidate Homebrew prefixes from the installer binary and current PATH."""
         prefixes: list[Path] = []
         seen: set[str] = set()
 
@@ -86,10 +90,10 @@ class BrewProvider(BinProvider):
             seen.add(prefix_str)
             prefixes.append(prefix)
 
-        installer_binary = self._INSTALLER_BINARY
+        installer_binary = None if no_cache else self._INSTALLER_BINARY
         if installer_binary is None or installer_binary.loaded_abspath is None:
             try:
-                installer_binary = self.INSTALLER_BINARY()
+                installer_binary = self.INSTALLER_BINARY(no_cache=no_cache)
             except Exception:
                 installer_binary = None
         installer_abspath = (
@@ -107,7 +111,12 @@ class BrewProvider(BinProvider):
 
         return prefixes
 
-    def _brew_search_paths(self, bin_name: BinName | HostBinPath) -> PATHStr:
+    def _brew_search_paths(
+        self,
+        bin_name: BinName | HostBinPath,
+        no_cache: bool = False,
+    ) -> PATHStr:
+        """Build the brew-specific bin search PATH for the requested formula names."""
         package_names = [
             package
             for package in self.get_install_args(str(bin_name), quiet=True)
@@ -124,7 +133,7 @@ class BrewProvider(BinProvider):
             seen.add(path_str)
             search_paths.append(path_str)
 
-        for prefix in self._brew_prefixes():
+        for prefix in self._brew_prefixes(no_cache=no_cache):
             for package in package_names:
                 add_path(prefix / "opt" / package / "bin")
                 add_path(prefix / "opt" / package / "libexec" / "bin")
@@ -140,6 +149,7 @@ class BrewProvider(BinProvider):
         return TypeAdapter(PATHStr).validate_python(search_paths)
 
     def _linked_bin_path(self, bin_name: BinName | HostBinPath) -> Path | None:
+        """Return the managed shim path for a loaded brew binary, if shimming is enabled."""
         if self.bin_dir is None:
             return None
         return self.bin_dir / str(bin_name)
@@ -149,6 +159,7 @@ class BrewProvider(BinProvider):
         bin_name: BinName | HostBinPath,
         target: HostBinPath,
     ) -> HostBinPath:
+        """Repoint the managed shim path at the latest resolved brew binary target."""
         link_path = self._linked_bin_path(bin_name)
         assert link_path is not None, "_refresh_bin_link requires bin_dir to be set"
         link_path.parent.mkdir(parents=True, exist_ok=True)
@@ -157,9 +168,9 @@ class BrewProvider(BinProvider):
         link_path.symlink_to(target)
         return TypeAdapter(HostBinPath).validate_python(link_path)
 
-    def setup_PATH(self) -> None:
+    def setup_PATH(self, no_cache: bool = False) -> None:
         """Populate PATH on first use from the resolved brew prefix and known runtime brew bin dirs."""
-        if (
+        if no_cache or (
             self._INSTALLER_BINARY is None
             or self._INSTALLER_BINARY.loaded_abspath is None
         ):
@@ -170,7 +181,7 @@ class BrewProvider(BinProvider):
 
             brew_binary = None
             try:
-                brew_binary = self.INSTALLER_BINARY()
+                brew_binary = self.INSTALLER_BINARY(no_cache=no_cache)
             except Exception:
                 brew_binary = None
             brew_abspath = (
@@ -205,10 +216,10 @@ class BrewProvider(BinProvider):
                         add_bin_dir(DEFAULT_LINUX_DIR)
 
                 if self.install_root == GUESSED_BREW_PREFIX:
-                    self.install_root = self._brew_prefixes()[0]
+                    self.install_root = self._brew_prefixes(no_cache=no_cache)[0]
                     self.bin_dir = self.install_root / "bin"
                 self.PATH = TypeAdapter(PATHStr).validate_python(bin_dirs)
-        super().setup_PATH()
+        super().setup_PATH(no_cache=no_cache)
 
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(
@@ -218,57 +229,19 @@ class BrewProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
         global _LAST_UPDATE_CHECK
 
         install_args = install_args or self.get_install_args(bin_name)
 
-        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
 
         # print(f'[*] {self.__class__.__name__}: Installing {bin_name}: {self.INSTALLER_BIN} install {install_args}')
 
-        # Attempt 1: Try installing with Pyinfra
-        from .binprovider_pyinfra import PyinfraProvider, pyinfra_package_install
-
-        postinstall_scripts = (
-            False if postinstall_scripts is None else postinstall_scripts
-        )
-        if any(arg.startswith("--skip-post-install") for arg in install_args):
-            postinstall_scripts = False
-
-        pyinfra_binary = None
-        if postinstall_scripts:
-            try:
-                pyinfra_binary = PyinfraProvider().INSTALLER_BINARY().loaded_abspath
-            except Exception:
-                pass
-        if pyinfra_binary and postinstall_scripts:
-            return pyinfra_package_install(
-                install_args,
-                pyinfra_abspath=str(pyinfra_binary),
-                installer_module="operations.brew.packages",
-            )
-
-        # Attempt 2: Try installing with Ansible
-        from .binprovider_ansible import AnsibleProvider, ansible_package_install
-
-        ansible_binary = None
-        if postinstall_scripts:
-            try:
-                ansible_binary = AnsibleProvider().INSTALLER_BINARY().loaded_abspath
-            except Exception:
-                pass
-        if ansible_binary and postinstall_scripts:
-            return ansible_package_install(
-                install_args,
-                ansible_playbook_abspath=str(ansible_binary),
-                installer_module="community.general.homebrew",
-            )
-
-        # Attempt 3: Fallback to installing manually by calling brew in shell
-
+        assert postinstall_scripts is not None
         if (
             not _LAST_UPDATE_CHECK
             or (time.time() - _LAST_UPDATE_CHECK) > UPDATE_CHECK_INTERVAL
@@ -312,52 +285,15 @@ class BrewProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
         global _LAST_UPDATE_CHECK
 
         install_args = install_args or self.get_install_args(bin_name)
 
-        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
-
-        from .binprovider_pyinfra import PyinfraProvider, pyinfra_package_install
-
-        postinstall_scripts = (
-            False if postinstall_scripts is None else postinstall_scripts
-        )
-        if any(arg.startswith("--skip-post-install") for arg in install_args):
-            postinstall_scripts = False
-
-        pyinfra_binary = None
-        if postinstall_scripts:
-            try:
-                pyinfra_binary = PyinfraProvider().INSTALLER_BINARY().loaded_abspath
-            except Exception:
-                pass
-        if pyinfra_binary and postinstall_scripts:
-            return pyinfra_package_install(
-                install_args,
-                pyinfra_abspath=str(pyinfra_binary),
-                installer_module="operations.brew.packages",
-                installer_extra_kwargs={"latest": True},
-            )
-
-        from .binprovider_ansible import AnsibleProvider, ansible_package_install
-
-        ansible_binary = None
-        if postinstall_scripts:
-            try:
-                ansible_binary = AnsibleProvider().INSTALLER_BINARY().loaded_abspath
-            except Exception:
-                pass
-        if ansible_binary and postinstall_scripts:
-            return ansible_package_install(
-                install_args,
-                ansible_playbook_abspath=str(ansible_binary),
-                installer_module="community.general.homebrew",
-                state="latest",
-            )
 
         if (
             not _LAST_UPDATE_CHECK
@@ -374,17 +310,6 @@ class BrewProvider(BinProvider):
             bin_name=installer_bin,
             cmd=[
                 "upgrade",
-                *(
-                    ["--skip-post-install"]
-                    if (
-                        not postinstall_scripts
-                        and not any(
-                            arg.startswith("--skip-post-install")
-                            for arg in install_args
-                        )
-                    )
-                    else []
-                ),
                 *install_args,
             ],
             timeout=timeout,
@@ -401,44 +326,13 @@ class BrewProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> bool:
         install_args = install_args or self.get_install_args(bin_name)
 
-        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
-
-        from .binprovider_pyinfra import PyinfraProvider, pyinfra_package_install
-
-        pyinfra_binary = None
-        try:
-            pyinfra_binary = PyinfraProvider().INSTALLER_BINARY().loaded_abspath
-        except Exception:
-            pass
-        if pyinfra_binary:
-            pyinfra_package_install(
-                install_args,
-                pyinfra_abspath=str(pyinfra_binary),
-                installer_module="operations.brew.packages",
-                installer_extra_kwargs={"present": False},
-            )
-            return True
-
-        from .binprovider_ansible import AnsibleProvider, ansible_package_install
-
-        ansible_binary = None
-        try:
-            ansible_binary = AnsibleProvider().INSTALLER_BINARY().loaded_abspath
-        except Exception:
-            pass
-        if ansible_binary:
-            ansible_package_install(
-                install_args,
-                ansible_playbook_abspath=str(ansible_binary),
-                installer_module="community.general.homebrew",
-                state="absent",
-            )
-            return True
 
         proc = self.exec(
             bin_name=installer_bin,
@@ -483,7 +377,7 @@ class BrewProvider(BinProvider):
             if linked_abspath:
                 return linked_abspath
 
-        search_paths = self._brew_search_paths(bin_name)
+        search_paths = self._brew_search_paths(bin_name, no_cache=no_cache)
         abspath = bin_abspath(bin_name, PATH=search_paths)
         if abspath:
             if linked_bin is None or Path(abspath).parent == self.bin_dir:

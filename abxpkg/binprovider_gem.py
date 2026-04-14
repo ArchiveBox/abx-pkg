@@ -8,16 +8,22 @@ from pathlib import Path
 from pydantic import Field, model_validator, computed_field
 from typing import Self
 
+from .binary import Binary
 from .base_types import (
     BinProviderName,
     PATHStr,
     BinName,
     InstallArgs,
     abxpkg_install_root_default,
-    bin_abspath,
 )
 from .semver import SemVer
-from .binprovider import BinProvider, DEFAULT_ENV_PATH, remap_kwargs
+from .binprovider import (
+    BinProvider,
+    EnvProvider,
+    DEFAULT_ENV_PATH,
+    log_method_call,
+    remap_kwargs,
+)
 from .logging import format_subprocess_output
 
 
@@ -26,6 +32,7 @@ DEFAULT_GEM_HOME = Path(os.environ.get("GEM_HOME", "~/.local/share/gem")).expand
 
 class GemProvider(BinProvider):
     name: BinProviderName = "gem"
+    _log_emoji = "💎"
     INSTALLER_BIN: BinName = "gem"
 
     PATH: PATHStr = DEFAULT_ENV_PATH  # Starts with ambient system PATH; setup_PATH() prepends/appends gem bin_dir depending on whether install_root/bin_dir were overridden.
@@ -34,8 +41,9 @@ class GemProvider(BinProvider):
         default_factory=lambda: abxpkg_install_root_default("gem"),
         validation_alias="gem_home",
     )
+    # detect_euid_to_use() expands/fills this to the active gem bindir and setup() ensures
+    # it exists before gem writes wrappers that _patch_generated_wrappers() later edits.
     bin_dir: Path | None = Field(default=None, validation_alias="gem_bindir")
-    gem_install_args: list[str] = ["--no-document"]
 
     @computed_field
     @property
@@ -51,18 +59,11 @@ class GemProvider(BinProvider):
     @computed_field
     @property
     def is_valid(self) -> bool:
-        if self.bin_dir and not (
-            self.bin_dir.is_dir() and os.access(self.bin_dir, os.R_OK)
-        ):
-            return False
-
-        return bool(
-            bin_abspath(self.INSTALLER_BIN, PATH=self.PATH)
-            or bin_abspath(self.INSTALLER_BIN),
-        )
+        return super().is_valid
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
+        """Resolve gem_home/bin_dir defaults and expand any user-relative paths."""
         if self.install_root is None:
             self.install_root = DEFAULT_GEM_HOME
         else:
@@ -74,7 +75,7 @@ class GemProvider(BinProvider):
 
         return self
 
-    def setup_PATH(self) -> None:
+    def setup_PATH(self, no_cache: bool = False) -> None:
         """Populate PATH on first use with gem's bin_dir plus ambient PATH when using the default global gem home."""
         bin_dir = self.bin_dir
         assert bin_dir is not None
@@ -82,8 +83,56 @@ class GemProvider(BinProvider):
             self.PATH = self._merge_PATH(bin_dir)
         else:
             self.PATH = self._merge_PATH(bin_dir, PATH=self.PATH)
-        super().setup_PATH()
+        super().setup_PATH(no_cache=no_cache)
 
+    def INSTALLER_BINARY(self, no_cache: bool = False):
+        from . import DEFAULT_PROVIDER_NAMES, PROVIDER_CLASS_BY_NAME
+
+        loaded = super().INSTALLER_BINARY(no_cache=no_cache)
+        raw_provider_names = os.environ.get("ABXPKG_BINPROVIDERS")
+        selected_provider_names = (
+            [provider_name.strip() for provider_name in raw_provider_names.split(",")]
+            if raw_provider_names
+            else list(DEFAULT_PROVIDER_NAMES)
+        )
+        dependency_providers = [
+            EnvProvider(install_root=None, bin_dir=None)
+            if provider_name == "env"
+            else PROVIDER_CLASS_BY_NAME[provider_name]()
+            for provider_name in selected_provider_names
+            if provider_name
+            and provider_name in PROVIDER_CLASS_BY_NAME
+            and provider_name != self.name
+        ]
+        ruby_loaded = (
+            Binary(
+                name="ruby",
+                binproviders=dependency_providers,
+            ).load(no_cache=no_cache)
+            if dependency_providers
+            else None
+        )
+        if (
+            ruby_loaded
+            and ruby_loaded.loaded_abspath
+            and ruby_loaded.loaded_version
+            and ruby_loaded.loaded_sha256
+        ):
+            self.write_cached_binary(
+                "ruby",
+                ruby_loaded.loaded_abspath,
+                ruby_loaded.loaded_version,
+                ruby_loaded.loaded_sha256,
+                resolved_provider_name=(
+                    ruby_loaded.loaded_binprovider.name
+                    if ruby_loaded.loaded_binprovider is not None
+                    else self.name
+                ),
+                cache_kind="dependency",
+            )
+        return loaded
+
+    @log_method_call()
     def setup(
         self,
         *,
@@ -105,6 +154,7 @@ class GemProvider(BinProvider):
         bin_dir.mkdir(parents=True, exist_ok=True)
 
     def _patch_generated_wrappers(self) -> None:
+        """Patch generated Ruby wrappers so they stay bound to this provider's GEM_HOME."""
         install_root = self.install_root
         bin_dir = self.bin_dir
         assert install_root is not None
@@ -147,18 +197,13 @@ class GemProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        self.setup(
-            postinstall_scripts=postinstall_scripts,
-            min_release_age=min_release_age,
-            min_version=min_version,
-        )
-
         install_args = install_args or self.get_install_args(bin_name)
         if min_version and not any(arg.startswith("--version") for arg in install_args):
             install_args = ["--version", f">={min_version}", *install_args]
-        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
 
         proc = self.exec(
@@ -169,7 +214,7 @@ class GemProvider(BinProvider):
                 str(self.install_root),
                 "--bindir",
                 str(self.bin_dir),
-                *self.gem_install_args,
+                "--no-document",
                 *install_args,
             ],
             timeout=timeout,
@@ -188,18 +233,13 @@ class GemProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        self.setup(
-            postinstall_scripts=postinstall_scripts,
-            min_release_age=min_release_age,
-            min_version=min_version,
-        )
-
         install_args = install_args or self.get_install_args(bin_name)
         if min_version and not any(arg.startswith("--version") for arg in install_args):
             install_args = ["--version", f">={min_version}", *install_args]
-        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
 
         proc = self.exec(
@@ -210,7 +250,7 @@ class GemProvider(BinProvider):
                 str(self.install_root),
                 "--bindir",
                 str(self.bin_dir),
-                *self.gem_install_args,
+                "--no-document",
                 *install_args,
             ],
             timeout=timeout,
@@ -229,10 +269,11 @@ class GemProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> bool:
         install_args = install_args or self.get_install_args(bin_name)
-        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
 
         proc = self.exec(

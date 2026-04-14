@@ -12,6 +12,7 @@ from typing import Self
 from platformdirs import user_cache_path
 from pydantic import Field, TypeAdapter, computed_field, model_validator
 
+from .binary import Binary
 from .base_types import (
     BinName,
     BinProviderName,
@@ -21,7 +22,13 @@ from .base_types import (
     abxpkg_install_root_default,
     bin_abspath,
 )
-from .binprovider import BinProvider, env_flag_is_true, remap_kwargs
+from .binprovider import (
+    BinProvider,
+    EnvProvider,
+    env_flag_is_true,
+    log_method_call,
+    remap_kwargs,
+)
 from .logging import format_subprocess_output
 from .semver import SemVer
 
@@ -37,6 +44,7 @@ class PnpmProvider(BinProvider):
     """
 
     name: BinProviderName = "pnpm"
+    _log_emoji = "📦"
     INSTALLER_BIN: BinName = "pnpm"
 
     PATH: PATHStr = ""  # Starts empty; setup_PATH() lazily uses install_root/bin_dir only, or PNPM_HOME in global mode.
@@ -55,19 +63,22 @@ class PnpmProvider(BinProvider):
         default_factory=lambda: abxpkg_install_root_default("pnpm"),
         validation_alias="pnpm_prefix",
     )
+    # detect_euid_to_use() fills this with ``<install_root>/node_modules/.bin`` in managed
+    # mode; global mode leaves it unset and exec/setup_PATH() fall back to PNPM_HOME.
     bin_dir: Path | None = None
-
-    cache_dir: Path = USER_CACHE_PATH
-    cache_arg: str = ""  # re-derived per-instance from cache_dir in detect_cache_arg
-
-    pnpm_install_args: list[str] = ["--loglevel=error"]
 
     @computed_field
     @property
     def ENV(self) -> "dict[str, str]":
         env: dict[str, str] = {
             "PNPM_HOME": str(
-                self.bin_dir if self.bin_dir else self.cache_dir / "pnpm-home",
+                self.bin_dir
+                if self.bin_dir
+                else (
+                    Path(os.environ["PNPM_HOME"])
+                    if os.environ.get("PNPM_HOME")
+                    else self.cache_dir / "pnpm-home"
+                ),
             ),
         }
         if self.install_root:
@@ -100,49 +111,55 @@ class PnpmProvider(BinProvider):
             cache_info["fingerprint_paths"].append(package_json)
         return cache_info
 
-    @model_validator(mode="after")
-    def detect_cache_arg(self) -> Self:
-        # Re-derive cache_arg from the instance's cache_dir so that passing
-        # ``cache_dir=Path(...)`` at construction time actually takes effect
-        # (instead of silently inheriting the module-level default). An
-        # explicit ``cache_arg=...`` override is respected verbatim.
-        if not self.cache_arg:
-            self.cache_arg = f"--store-dir={self.cache_dir}"
-        return self
-
-    def supports_min_release_age(self, action) -> bool:
+    def supports_min_release_age(self, action, no_cache: bool = False) -> bool:
         if action not in ("install", "update"):
             return False
         threshold = SemVer.parse("10.16.0")
         try:
-            installer = self.INSTALLER_BINARY()
+            installer = self.INSTALLER_BINARY(no_cache=no_cache)
         except Exception:
             return False
         version = installer.loaded_version if installer else None
         return bool(version and threshold and version >= threshold)
 
-    def supports_postinstall_disable(self, action) -> bool:
+    def supports_postinstall_disable(self, action, no_cache: bool = False) -> bool:
         return action in ("install", "update")
+
+    def default_install_args_handler(
+        self,
+        bin_name: BinName,
+        **context,
+    ) -> InstallArgs:
+        if str(bin_name) == "puppeteer":
+            return ("puppeteer", "@puppeteer/browsers")
+        if str(bin_name) == "puppeteer-browsers":
+            return ("@puppeteer/browsers",)
+        return TypeAdapter(InstallArgs).validate_python(
+            super().default_install_args_handler(bin_name, **context)
+            or [str(bin_name)],
+        )
 
     @computed_field
     @property
     def is_valid(self) -> bool:
-        if self.bin_dir and not (
-            self.bin_dir.is_dir() and os.access(self.bin_dir, os.R_OK)
-        ):
-            return False
-        return bool(
-            bin_abspath(self.INSTALLER_BIN, PATH=self.PATH)
-            or bin_abspath(self.INSTALLER_BIN),
-        )
+        return super().is_valid
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
+        """Derive pnpm's managed node_modules/.bin dir from install_root."""
         if self.bin_dir is None and self.install_root is not None:
             self.bin_dir = self.install_root / "node_modules" / ".bin"
         return self
 
-    def setup_PATH(self) -> None:
+    @property
+    def cache_dir(self) -> Path:
+        """Return the writable pnpm store dir, falling back to a temp dir if needed."""
+        default_cache_dir = Path(USER_CACHE_PATH)
+        if self._ensure_writable_cache_dir(default_cache_dir):
+            return default_cache_dir
+        return Path(tempfile.gettempdir()) / f"abxpkg-pnpm-store-{os.getuid()}"
+
+    def setup_PATH(self, no_cache: bool = False) -> None:
         """Populate PATH on first use from install_root/bin_dir, or PNPM_HOME in global mode."""
         if self.bin_dir:
             self.PATH = self._merge_PATH(self.bin_dir)
@@ -153,8 +170,56 @@ class PnpmProvider(BinProvider):
                 self.cache_dir / "pnpm-home",
             )
             self.PATH = self._merge_PATH(pnpm_home, PATH=self.PATH)
-        super().setup_PATH()
+        super().setup_PATH(no_cache=no_cache)
 
+    def INSTALLER_BINARY(self, no_cache: bool = False):
+        from . import DEFAULT_PROVIDER_NAMES, PROVIDER_CLASS_BY_NAME
+
+        loaded = super().INSTALLER_BINARY(no_cache=no_cache)
+        raw_provider_names = os.environ.get("ABXPKG_BINPROVIDERS")
+        selected_provider_names = (
+            [provider_name.strip() for provider_name in raw_provider_names.split(",")]
+            if raw_provider_names
+            else list(DEFAULT_PROVIDER_NAMES)
+        )
+        dependency_providers = [
+            EnvProvider(install_root=None, bin_dir=None)
+            if provider_name == "env"
+            else PROVIDER_CLASS_BY_NAME[provider_name]()
+            for provider_name in selected_provider_names
+            if provider_name
+            and provider_name in PROVIDER_CLASS_BY_NAME
+            and provider_name != self.name
+        ]
+        node_loaded = (
+            Binary(
+                name="node",
+                binproviders=dependency_providers,
+            ).load(no_cache=no_cache)
+            if dependency_providers
+            else None
+        )
+        if (
+            node_loaded
+            and node_loaded.loaded_abspath
+            and node_loaded.loaded_version
+            and node_loaded.loaded_sha256
+        ):
+            self.write_cached_binary(
+                "node",
+                node_loaded.loaded_abspath,
+                node_loaded.loaded_version,
+                node_loaded.loaded_sha256,
+                resolved_provider_name=(
+                    node_loaded.loaded_binprovider.name
+                    if node_loaded.loaded_binprovider is not None
+                    else self.name
+                ),
+                cache_kind="dependency",
+            )
+        return loaded
+
+    @log_method_call(include_result=True)
     def exec(
         self,
         bin_name,
@@ -176,6 +241,7 @@ class PnpmProvider(BinProvider):
             **kwargs,
         )
 
+    @log_method_call()
     def setup(
         self,
         *,
@@ -189,23 +255,12 @@ class PnpmProvider(BinProvider):
                 owner_paths=(self.install_root,),
                 preserve_root=True,
             )
-        if not self._ensure_writable_cache_dir(self.cache_dir):
-            # pnpm 10.x has no ``--no-cache`` flag — passing one would be
-            # parsed as ``cache=false`` and silently create a literal
-            # ``./false/`` directory inside the caller's cwd. Fall back to a
-            # process-private temp dir as the store-dir instead so the cache
-            # is just relocated to a writable location with no host-visible
-            # side effects.
-            fallback_store = Path(
-                tempfile.mkdtemp(prefix="abxpkg-pnpm-store-"),
-            )
-            self.cache_dir = fallback_store
-            self.cache_arg = f"--store-dir={fallback_store}"
-            self._ensure_writable_cache_dir(fallback_store)
+        self._ensure_writable_cache_dir(self.cache_dir)
         if self.bin_dir:
             self.bin_dir.mkdir(parents=True, exist_ok=True)
 
     def _linked_bin_path(self, bin_name: BinName | HostBinPath) -> Path | None:
+        """Return the managed shim path for a pnpm-installed executable, if any."""
         if self.bin_dir is None:
             return None
         return self.bin_dir / str(bin_name)
@@ -215,6 +270,7 @@ class PnpmProvider(BinProvider):
         bin_name: BinName | HostBinPath,
         target: HostBinPath,
     ) -> HostBinPath:
+        """Recreate the managed shim symlink pointing at the resolved pnpm executable."""
         link_path = self._linked_bin_path(bin_name)
         assert link_path is not None, "_refresh_bin_link requires bin_dir to be set"
         link_path.parent.mkdir(parents=True, exist_ok=True)
@@ -234,7 +290,6 @@ class PnpmProvider(BinProvider):
         no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        self.setup(no_cache=no_cache)
         installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
         postinstall_scripts = bool(postinstall_scripts)
@@ -250,12 +305,15 @@ class PnpmProvider(BinProvider):
                 for arg in install_args
             ]
         if any(
-            arg == "--ignore-scripts"
-            for arg in (*self.pnpm_install_args, *install_args)
+            arg == "--ignore-scripts" for arg in ("--loglevel=error", *install_args)
         ):
             postinstall_scripts = False
 
-        cmd: list[str] = ["add", *self.pnpm_install_args, self.cache_arg]
+        cmd: list[str] = [
+            "add",
+            "--loglevel=error",
+            f"--store-dir={self.cache_dir}",
+        ]
         if not postinstall_scripts:
             cmd.append("--ignore-scripts")
         else:
@@ -267,7 +325,7 @@ class PnpmProvider(BinProvider):
             and not any(
                 arg == "--config.minimumReleaseAge"
                 or arg.startswith("--config.minimumReleaseAge=")
-                for arg in (*self.pnpm_install_args, *install_args)
+                for arg in ("--loglevel=error", *install_args)
             )
         ):
             cmd.append(
@@ -292,7 +350,6 @@ class PnpmProvider(BinProvider):
         no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        self.setup(no_cache=no_cache)
         installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
         postinstall_scripts = bool(postinstall_scripts)
@@ -308,15 +365,14 @@ class PnpmProvider(BinProvider):
                 for arg in install_args
             ]
         if any(
-            arg == "--ignore-scripts"
-            for arg in (*self.pnpm_install_args, *install_args)
+            arg == "--ignore-scripts" for arg in ("--loglevel=error", *install_args)
         ):
             postinstall_scripts = False
 
         cmd: list[str] = [
             "add" if min_version is not None else "update",
-            *self.pnpm_install_args,
-            self.cache_arg,
+            "--loglevel=error",
+            f"--store-dir={self.cache_dir}",
         ]
         if not postinstall_scripts:
             cmd.append("--ignore-scripts")
@@ -328,7 +384,7 @@ class PnpmProvider(BinProvider):
             and not any(
                 arg == "--config.minimumReleaseAge"
                 or arg.startswith("--config.minimumReleaseAge=")
-                for arg in (*self.pnpm_install_args, *install_args)
+                for arg in ("--loglevel=error", *install_args)
             )
         ):
             cmd.append(
@@ -350,15 +406,25 @@ class PnpmProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> bool:
-        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
         install_args = install_args or self.get_install_args(bin_name)
+        if str(bin_name) == "puppeteer" and tuple(install_args) == (
+            "puppeteer",
+            "@puppeteer/browsers",
+        ):
+            install_args = ["puppeteer"]
 
         # pnpm remove rejects --ignore-scripts and --config.minimumReleaseAge,
         # so don't pass either even if they were set as provider defaults.
-        cmd: list[str] = ["remove", *self.pnpm_install_args, self.cache_arg]
+        cmd: list[str] = [
+            "remove",
+            "--loglevel=error",
+            f"--store-dir={self.cache_dir}",
+        ]
         cmd.append(f"--dir={self.install_root}" if self.install_root else "--global")
         cmd.extend(install_args)
 

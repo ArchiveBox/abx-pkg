@@ -12,6 +12,7 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup
+from pydantic.fields import PydanticUndefined
 
 import abxpkg
 from abxpkg.binprovider import BinProvider
@@ -73,8 +74,7 @@ PROVIDER_METADATA: dict[str, dict[str, Any]] = {
         "category": CATEGORY_SYSTEM,
         "summary": (
             "Installs packages via Debian / Ubuntu's apt-get. Always runs as root "
-            "and targets the host package database. Tries pyinfra/ansible drivers "
-            "first, then falls back to direct apt-get."
+            "and targets the host package database. Shells out to apt-get directly."
         ),
         "tags": ["linux", "root", "no-hermetic"],
         "source_file": "abxpkg/binprovider_apt.py",
@@ -85,9 +85,9 @@ PROVIDER_METADATA: dict[str, dict[str, Any]] = {
         "display_title": "BrewProvider",
         "category": CATEGORY_SYSTEM,
         "summary": (
-            "Installs packages via Homebrew on macOS/Linuxbrew. Discovery-only "
-            "prefix; no isolated hermetic Homebrew cellar. Auto-switches to "
-            "pyinfra/ansible when postinstall_scripts=True."
+            "Installs packages via Homebrew on macOS/Linuxbrew. Uses the host "
+            "brew prefix for discovery and shells out to brew directly. No "
+            "isolated hermetic Homebrew cellar."
         ),
         "tags": ["macos", "linuxbrew", "postinstall-opt-in"],
         "source_file": "abxpkg/binprovider_brew.py",
@@ -395,19 +395,20 @@ GLOBAL_ENV_VARS: list[dict[str, str]] = [
     },
     {
         "name": "ABXPKG_BINPROVIDERS",
-        "default": "all",
+        "default": "DEFAULT_PROVIDER_NAMES",
         "description": (
             "Comma-separated provider names to enable (and their order) for the "
-            "abxpkg CLI. Example: env,uv,pip,apt,brew"
+            "abxpkg CLI. Defaults to DEFAULT_PROVIDER_NAMES from abxpkg.__init__. "
+            "Example: env,uv,pip,apt,brew"
         ),
     },
     {
         "name": "ABXPKG_LIB_DIR",
-        "default": "~/.config/abx/lib",
+        "default": "<platform default abx lib dir>",
         "description": (
-            "Centralized install root. When set, each provider defaults its "
+            "Centralized library root. When set, each provider defaults its "
             "install root to $ABXPKG_LIB_DIR/<provider name>. Accepts relative, "
-            "tilde, and absolute paths."
+            "tilde, and absolute paths. --global is a thin alias for --lib=None."
         ),
     },
 ]
@@ -570,13 +571,19 @@ def describe_annotation(annotation: Any) -> str:
 
 
 def collect_provider_fields(cls: type[BinProvider]) -> list[dict[str, Any]]:
-    """Return per-field metadata for a provider (incl. inherited base fields)."""
-    instance = cls()
+    """Return declared per-field metadata for a provider.
+
+    Use model-field defaults instead of a live provider instance so the docs
+    stay reproducible and do not bake host-specific resolved paths into the
+    generated site.
+    """
     fields: list[dict[str, Any]] = []
     for name, field in cls.model_fields.items():
-        try:
-            value = getattr(instance, name)
-        except Exception:
+        if field.default is not PydanticUndefined:
+            value = field.default
+        elif field.default_factory is not None:
+            value = "<dynamic>"
+        else:
             value = None
         # Skip noisy derived/mostly-internal base fields.
         if name in {"overrides"}:
@@ -626,7 +633,8 @@ def build_provider(cls: type[BinProvider]) -> dict[str, Any]:
 
     tags = list(meta.get("tags", []))
     summary = meta.get("summary", "")
-    emoji = meta.get("emoji", "📦")
+    emoji_attr = getattr(cls, "_log_emoji", None)
+    emoji = getattr(emoji_attr, "default", emoji_attr) or "📦"
     display_title = meta.get("display_title", cls.__name__)
 
     search_parts = [

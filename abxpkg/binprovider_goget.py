@@ -18,7 +18,14 @@ from .base_types import (
     bin_abspath,
 )
 from .semver import SemVer
-from .binprovider import BinProvider, DEFAULT_ENV_PATH, remap_kwargs
+from .binprovider import (
+    BinProvider,
+    BinProviderOverrides,
+    DEFAULT_ENV_PATH,
+    EnvProvider,
+    log_method_call,
+    remap_kwargs,
+)
 from .logging import format_subprocess_output
 
 
@@ -27,6 +34,7 @@ DEFAULT_GOPATH = Path(os.environ.get("GOPATH", "~/go")).expanduser()
 
 class GoGetProvider(BinProvider):
     name: BinProviderName = "goget"
+    _log_emoji = "🐹"
     INSTALLER_BIN: BinName = "go"
 
     PATH: PATHStr = DEFAULT_ENV_PATH  # Starts with ambient system PATH; setup_PATH() prepends the active GOBIN/bin_dir lazily.
@@ -35,8 +43,23 @@ class GoGetProvider(BinProvider):
         default_factory=lambda: abxpkg_install_root_default("goget"),
         validation_alias="gopath",
     )
+    # detect_euid_to_use() fills this from GOPATH/bin (or explicit GOBIN) and setup()
+    # creates it before ``go install`` starts writing binaries into the provider root.
     bin_dir: Path | None = Field(default=None, validation_alias="gobin")
-    go_install_args: list[str] = []
+
+    overrides: "BinProviderOverrides" = {
+        "*": {
+            "version": "self.default_version_handler",
+            "abspath": "self.default_abspath_handler",
+            "install_args": "self.default_install_args_handler",
+            "install": "self.default_install_handler",
+            "update": "self.default_update_handler",
+            "uninstall": "self.default_uninstall_handler",
+        },
+        "go": {
+            "version": ["go", "version"],
+        },
+    }
 
     @computed_field
     @property
@@ -51,18 +74,11 @@ class GoGetProvider(BinProvider):
     @computed_field
     @property
     def is_valid(self) -> bool:
-        if self.bin_dir and not (
-            self.bin_dir.is_dir() and os.access(self.bin_dir, os.R_OK)
-        ):
-            return False
-
-        return bool(
-            bin_abspath(self.INSTALLER_BIN, PATH=self.PATH)
-            or bin_abspath(self.INSTALLER_BIN),
-        )
+        return super().is_valid
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
+        """Resolve GOPATH/GOBIN defaults and expand the managed Go bin_dir."""
         if self.install_root is None:
             self.install_root = DEFAULT_GOPATH
         if self.bin_dir is None:
@@ -72,13 +88,81 @@ class GoGetProvider(BinProvider):
 
         return self
 
-    def setup_PATH(self) -> None:
+    def setup_PATH(self, no_cache: bool = False) -> None:
         """Populate PATH on first use by prepending the active Go bin_dir to ambient PATH."""
         bin_dir = self.bin_dir
         assert bin_dir is not None
         self.PATH = self._merge_PATH(bin_dir, PATH=self.PATH)
-        super().setup_PATH()
+        super().setup_PATH(no_cache=no_cache)
 
+    def INSTALLER_BINARY(self, no_cache: bool = False):
+        if not no_cache and self._INSTALLER_BINARY and self._INSTALLER_BINARY.is_valid:
+            return self._INSTALLER_BINARY
+
+        derived_env_path = self.derived_env_path
+        if not no_cache and derived_env_path and derived_env_path.is_file():
+            from .config import load_derived_cache
+
+            cache = load_derived_cache(derived_env_path)
+            for cached_record in cache.values():
+                if not isinstance(cached_record, dict):
+                    continue
+                if cached_record.get("provider_name") != self.name or cached_record.get(
+                    "bin_name",
+                ) != str(self.INSTALLER_BIN):
+                    continue
+                cached_abspath = cached_record.get("abspath")
+                if not isinstance(cached_abspath, str):
+                    continue
+                loaded = self.load_cached_binary(
+                    self.INSTALLER_BIN,
+                    Path(cached_abspath),
+                )
+                if loaded and loaded.loaded_abspath:
+                    self._INSTALLER_BINARY = loaded
+                    return loaded
+
+        env_provider = EnvProvider(
+            install_root=None,
+            bin_dir=None,
+        ).get_provider_with_overrides(
+            overrides={
+                "*": {
+                    "version": ["go", "version"],
+                },
+            },
+        )
+
+        env_var = f"{self.INSTALLER_BIN.upper()}_BINARY"
+        manual = os.environ.get(env_var)
+        if manual and os.path.isabs(manual) and Path(manual).is_file():
+            env_provider.PATH = env_provider._merge_PATH(
+                str(Path(manual).parent),
+                PATH=env_provider.PATH,
+                prepend=True,
+            )
+
+        loaded = env_provider.load(bin_name=self.INSTALLER_BIN, no_cache=no_cache)
+        if loaded and loaded.loaded_abspath:
+            if loaded.loaded_version and loaded.loaded_sha256:
+                self.write_cached_binary(
+                    self.INSTALLER_BIN,
+                    loaded.loaded_abspath,
+                    loaded.loaded_version,
+                    loaded.loaded_sha256,
+                    resolved_provider_name=(
+                        loaded.loaded_binprovider.name
+                        if loaded.loaded_binprovider is not None
+                        else self.name
+                    ),
+                    cache_kind="dependency",
+                )
+            self._INSTALLER_BINARY = loaded
+            return self._INSTALLER_BINARY
+
+        return super().INSTALLER_BINARY(no_cache=no_cache)
+
+    @log_method_call()
     def setup(
         self,
         *,
@@ -118,21 +202,16 @@ class GoGetProvider(BinProvider):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        self.setup(
-            postinstall_scripts=postinstall_scripts,
-            min_release_age=min_release_age,
-            min_version=min_version,
-        )
-
         install_args = install_args or self.get_install_args(bin_name)
-        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
 
         proc = self.exec(
             bin_name=installer_bin,
-            cmd=["install", *self.go_install_args, *install_args],
+            cmd=["install", *install_args],
             timeout=timeout,
         )
         if proc.returncode != 0:

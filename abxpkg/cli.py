@@ -3,12 +3,14 @@ from __future__ import annotations
 import json
 import logging as py_logging
 import os
+import platform
+import re
 import shutil
 import sys
 import tomllib
 from dataclasses import dataclass, replace
 from importlib import metadata
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any, cast
 
@@ -16,17 +18,24 @@ import rich_click as click
 from rich.highlighter import ReprHighlighter
 from rich.logging import RichHandler
 from rich.text import Text
+from rich.theme import Theme
 
-from . import ALL_PROVIDER_NAMES, ALL_PROVIDERS, Binary
+from . import ALL_PROVIDER_NAMES, DEFAULT_PROVIDER_NAMES, PROVIDER_CLASS_BY_NAME, Binary
 from .base_types import DEFAULT_LIB_DIR
-from .binprovider import BinProvider, env_flag_is_true
-from .exceptions import ABXPkgError, BinaryOperationError
-from .logging import RICH_INSTALLED, configure_logging
+from .binprovider import DEFAULT_ENV_PATH, BinProvider, HandlerDict, env_flag_is_true
+from .config import load_derived_cache
+from .exceptions import ABXPkgError
+from .logging import (
+    RICH_INSTALLED,
+    configure_logging,
+    format_command,
+    format_exception_with_output,
+    format_loaded_binary_line,
+    get_logger,
+    summarize_value,
+)
 
-PROVIDER_CLASS_BY_NAME: dict[str, type[BinProvider]] = {
-    cast(str, provider.model_fields["name"].default): provider
-    for provider in ALL_PROVIDERS
-}
+logger = get_logger(__name__)
 
 
 @dataclass(slots=True)
@@ -45,6 +54,7 @@ class CliOptions:
     postinstall_scripts: bool | None = None
     min_release_age: float | None = None
     overrides: dict[str, Any] | None = None
+    handler_overrides: HandlerDict | None = None
     # Provider-level fields forwarded to every provider constructor.
     install_root: Path | None = None
     bin_dir: Path | None = None
@@ -134,6 +144,16 @@ def _parse_overrides(raw: str | None) -> dict[str, Any] | None:
     if not isinstance(data, dict):
         raise click.BadParameter("--overrides must be a JSON object")
     return data
+
+
+def _parse_handler_override(raw: str | None) -> Any:
+    stripped = _none_or_stripped(raw)
+    if stripped is None:
+        return None
+    try:
+        return json.loads(stripped)
+    except json.JSONDecodeError:
+        return stripped
 
 
 def _parse_cli_path(raw: str | None) -> Path | None:
@@ -242,7 +262,7 @@ def parse_provider_names(raw_value: str | None) -> list[str]:
     if raw_value is None:
         env_value = os.environ.get("ABXPKG_BINPROVIDERS")
         if env_value is None:
-            return list(ALL_PROVIDER_NAMES)
+            return list(DEFAULT_PROVIDER_NAMES)
         raw_value = env_value
 
     provider_names: list[str] = []
@@ -318,6 +338,37 @@ def build_providers(
 
 
 def build_binary(binary_name: str, options: CliOptions, *, dry_run: bool) -> Binary:
+    merged_overrides = options.overrides
+    if options.handler_overrides:
+        merged_overrides = {
+            provider_name: dict(options.handler_overrides)
+            for provider_name in options.provider_names
+        }
+        if options.overrides:
+
+            def merge_dicts(
+                base: dict[str, Any],
+                override: dict[str, Any],
+            ) -> dict[str, Any]:
+                merged: dict[str, Any] = dict(base)
+                for key, value in override.items():
+                    existing = merged.get(key)
+                    if isinstance(existing, dict) and isinstance(value, dict):
+                        merged[key] = merge_dicts(existing, value)
+                    else:
+                        merged[key] = value
+                return merged
+
+            for provider_name, provider_overrides in options.overrides.items():
+                existing = merged_overrides.get(provider_name, {})
+                if isinstance(existing, dict) and isinstance(provider_overrides, dict):
+                    merged_overrides[provider_name] = merge_dicts(
+                        existing,
+                        provider_overrides,
+                    )
+                else:
+                    merged_overrides[provider_name] = provider_overrides
+
     binary_kwargs: dict[str, Any] = {
         "name": binary_name,
         "binproviders": build_providers(
@@ -340,7 +391,7 @@ def build_binary(binary_name: str, options: CliOptions, *, dry_run: bool) -> Bin
         ("min_version", options.min_version),
         ("postinstall_scripts", options.postinstall_scripts),
         ("min_release_age", options.min_release_age),
-        ("overrides", options.overrides),
+        ("overrides", merged_overrides),
     ):
         if value is not None:
             binary_kwargs[key] = value
@@ -351,11 +402,16 @@ def build_cli_options(
     ctx: click.Context | None,
     *,
     lib_dir: str | None,
+    global_mode: bool | None,
     binproviders: str | None,
     dry_run: bool | None,
     debug: bool | None,
     no_cache: bool | None,
     min_version: str | None,
+    abspath_override: Any = None,
+    version_override: Any = None,
+    install_args_override: Any = None,
+    packages_override: Any = None,
     postinstall_scripts: bool | None,
     min_release_age: float | None,
     overrides: dict[str, Any] | None,
@@ -391,14 +447,33 @@ def build_cli_options(
         """Inherit from group unless the subcommand supplied a value."""
         return group_value if value is None else value
 
+    if global_mode is True:
+        lib_dir = "None"
+
+    handler_overrides: HandlerDict | None = None
+    for key, value in (
+        ("abspath", abspath_override),
+        ("version", version_override),
+        ("install_args", install_args_override),
+        ("packages", packages_override),
+    ):
+        if value is None:
+            continue
+        if handler_overrides is None:
+            handler_overrides = {}
+        handler_overrides[key] = value
+
     if group is None:
+        provider_names = parse_provider_names(binproviders)
+        os.environ["ABXPKG_BINPROVIDERS"] = ",".join(provider_names)
         return CliOptions(
             lib_dir=resolve_lib_dir(lib_dir),
-            provider_names=parse_provider_names(binproviders),
+            provider_names=provider_names,
             dry_run=resolve_dry_run(dry_run),
             debug=resolve_debug(debug),
             no_cache=resolve_no_cache(no_cache),
             min_version=min_version,
+            handler_overrides=handler_overrides,
             postinstall_scripts=postinstall_scripts,
             min_release_age=min_release_age,
             overrides=overrides,
@@ -408,17 +483,31 @@ def build_cli_options(
             install_timeout=install_timeout,
             version_timeout=version_timeout,
         )
+    provider_names = (
+        group.provider_names
+        if binproviders is None
+        else parse_provider_names(binproviders)
+    )
+    os.environ["ABXPKG_BINPROVIDERS"] = ",".join(provider_names)
     return CliOptions(
-        lib_dir=group.lib_dir if lib_dir is None else resolve_lib_dir(lib_dir),
-        provider_names=(
-            group.provider_names
-            if binproviders is None
-            else parse_provider_names(binproviders)
+        lib_dir=(
+            group.lib_dir
+            if lib_dir is None
+            else resolve_lib_dir("None" if global_mode is True else lib_dir)
         ),
+        provider_names=provider_names,
         dry_run=_override(dry_run, group.dry_run),
         debug=_override(debug, group.debug),
         no_cache=_override(no_cache, group.no_cache),
         min_version=_override(min_version, group.min_version),
+        handler_overrides=(
+            group.handler_overrides
+            if handler_overrides is None
+            else {
+                **(group.handler_overrides or {}),
+                **handler_overrides,
+            }
+        ),
         postinstall_scripts=_override(postinstall_scripts, group.postinstall_scripts),
         min_release_age=_override(min_release_age, group.min_release_age),
         overrides=_override(overrides, group.overrides),
@@ -445,33 +534,139 @@ def _console_for_stream(*, err: bool):
     from rich.console import Console
     from rich.highlighter import ReprHighlighter
 
-    return Console(file=stream, highlighter=ReprHighlighter())
+    return Console(
+        file=stream,
+        highlighter=ReprHighlighter(),
+        theme=Theme(
+            {
+                "repr.str": "#87af87",
+                "repr.path": "#87af87",
+                "repr.filename": "#87af87",
+                "repr.url": "#87af87",
+            },
+        ),
+    )
 
 
-def _echo(message: str, *, err: bool = False) -> None:
+def _echo(message: Any, *, err: bool = False) -> None:
     console = _console_for_stream(err=err)
     if console is not None:
-        console.print(ReprHighlighter()(Text.from_ansi(message)), highlight=False)
+        if isinstance(message, str):
+            console.print(ReprHighlighter()(Text.from_ansi(message)), highlight=False)
+        else:
+            console.print(message, highlight=False)
         return
-    click.echo(message, err=err)
+    click.echo(str(message), err=err)
 
 
 class _CliRichHandler(RichHandler):
+    _STDERR_PAYLOAD_PREFIX = "  \x1b[2;31m>\x1b[0m "
+    _STDOUT_PAYLOAD_PREFIX = "  > "
+
     def render_message(
         self,
         record: py_logging.LogRecord,
         message: str,
     ) -> Text:
-        message_text = Text.from_ansi(message)
-        highlighter = getattr(record, "highlighter", self.highlighter)
-        if highlighter:
-            message_text = highlighter(message_text)
-        if record.levelno == py_logging.INFO:
-            message_text.stylize("dim grey42")
+        contains_ansi = "\x1b[" in message
+        lines = message.splitlines()
+        highlighter = (
+            getattr(record, "highlighter", None)
+            or self.highlighter
+            or getattr(self.console, "highlighter", None)
+        )
+        has_completed_process_payload = any(
+            line.lstrip(" ").startswith("> ")
+            or line.lstrip(" ").startswith(self._STDERR_PAYLOAD_PREFIX.strip())
+            for line in lines
+        )
+        if contains_ansi or has_completed_process_payload:
+            message_text = Text()
+            for idx, line in enumerate(lines):
+                indent = line[: len(line) - len(line.lstrip(" "))]
+                stripped = line[len(indent) :]
+                if stripped.startswith(self._STDERR_PAYLOAD_PREFIX.strip()):
+                    message_text.append(indent)
+                    message_text.append(">", style="red")
+                    message_text.append(
+                        " " + stripped[len(self._STDERR_PAYLOAD_PREFIX.strip()) :],
+                        style="grey42",
+                    )
+                elif stripped.startswith(self._STDOUT_PAYLOAD_PREFIX.strip()):
+                    message_text.append(indent + stripped, style="grey42")
+                elif "\x1b[" in line:
+                    line_text = Text.from_ansi(line)
+                    if highlighter:
+                        line_text = highlighter(line_text)
+                    plain = line_text.plain
+                    for match in re.finditer(
+                        r"(?<![\w.])([A-Za-z_][\w]*)\.([A-Za-z_][\w]*)(?=\()",
+                        plain,
+                    ):
+                        method_name = match.group(2)
+                        method_start = match.start(2)
+                        method_end = match.end(2)
+                        if "cache" in method_name:
+                            line_text.stylize("#4e4e4e", method_start, method_end)
+                        elif method_name in {
+                            "install",
+                            "update",
+                            "uninstall",
+                            "exec",
+                        }:
+                            line_text.stylize("#d78700", method_start, method_end)
+                        elif method_name == "load" or method_name.startswith("get_"):
+                            line_text.stylize("#2e8b57", method_start, method_end)
+                    message_text.append_text(line_text)
+                else:
+                    line_text = Text(line)
+                    if highlighter:
+                        line_text = highlighter(line_text)
+                    plain = line_text.plain
+                    for match in re.finditer(
+                        r"(?<![\w.])([A-Za-z_][\w]*)\.([A-Za-z_][\w]*)(?=\()",
+                        plain,
+                    ):
+                        method_name = match.group(2)
+                        method_start = match.start(2)
+                        method_end = match.end(2)
+                        if "cache" in method_name:
+                            line_text.stylize("#4e4e4e", method_start, method_end)
+                        elif method_name in {
+                            "install",
+                            "update",
+                            "uninstall",
+                            "exec",
+                        }:
+                            line_text.stylize("#d78700", method_start, method_end)
+                        elif method_name == "load" or method_name.startswith("get_"):
+                            line_text.stylize("#2e8b57", method_start, method_end)
+                    message_text.append_text(line_text)
+                if idx < len(lines) - 1:
+                    message_text.append("\n")
+        else:
+            message_text = Text.from_ansi(message)
+            if highlighter:
+                message_text = highlighter(message_text)
+            plain = message_text.plain
+            for match in re.finditer(
+                r"(?<![\w.])([A-Za-z_][\w]*)\.([A-Za-z_][\w]*)(?=\()",
+                plain,
+            ):
+                method_name = match.group(2)
+                method_start = match.start(2)
+                method_end = match.end(2)
+                if "cache" in method_name:
+                    message_text.stylize("#4e4e4e", method_start, method_end)
+                elif method_name in {"install", "update", "uninstall", "exec"}:
+                    message_text.stylize("#d78700", method_start, method_end)
+                elif method_name == "load" or method_name.startswith("get_"):
+                    message_text.stylize("#2e8b57", method_start, method_end)
         if self.keywords is None:
             self.keywords = self.KEYWORDS
         if self.keywords:
             message_text.highlight_words(self.keywords, "logging.keyword")
+        message_text.stylize("dim")
         return message_text
 
 
@@ -512,48 +707,316 @@ def configure_cli_logging(*, debug: bool) -> None:
 
 
 def format_error(err: Exception) -> str:
-    if isinstance(err, BinaryOperationError) and err.errors:
-        details = "\n".join(
-            f"{provider_name}: {message}"
-            for provider_name, message in err.errors.items()
+    return format_exception_with_output(err)
+
+
+def cached_binaries(
+    options: CliOptions,
+    names: tuple[str, ...] = (),
+    providers: Iterable[BinProvider] | None = None,
+) -> list[tuple[str, str, str, Path, str, str]]:
+    records: list[tuple[str, str, str, Path, str, str]] = []
+    selected_names = set(names)
+    provider_instances = tuple(
+        providers
+        if providers is not None
+        else build_providers(
+            options.provider_names,
+            dry_run=False,
+            install_root=options.install_root,
+            bin_dir=options.bin_dir,
+            euid=options.euid,
+            install_timeout=options.install_timeout,
+            version_timeout=options.version_timeout,
+        ),
+    )
+    for provider in provider_instances:
+        provider_name = provider.name
+        derived_env_path = provider.derived_env_path
+        if derived_env_path is None or not derived_env_path.is_file():
+            continue
+        cache = load_derived_cache(derived_env_path)
+        installer_bin = cast(
+            str,
+            type(provider).model_fields["INSTALLER_BIN"].default,
         )
-        summary = str(err).split(" ERRORS=", 1)[0]
-        return f"{summary}\n{details}"
-    return str(err)
+        for cache_key, record in sorted(cache.items()):
+            if not isinstance(record, dict):
+                continue
+
+            cached_provider_name = record.get("provider_name")
+            cached_bin_name = record.get("bin_name")
+            cached_abspath = record.get("abspath")
+            if (
+                not isinstance(cached_provider_name, str)
+                or not isinstance(cached_bin_name, str)
+                or not isinstance(cached_abspath, str)
+            ):
+                try:
+                    cached_provider_name, cached_bin_name, cached_abspath = json.loads(
+                        cache_key,
+                    )
+                except Exception:
+                    continue
+            if (
+                cached_provider_name != provider_name
+                or not isinstance(cached_bin_name, str)
+                or not isinstance(cached_abspath, str)
+            ):
+                continue
+            if names:
+                if provider_name in selected_names:
+                    pass
+                elif cached_bin_name == installer_bin:
+                    continue
+                elif cached_bin_name not in selected_names:
+                    continue
+
+            version = record.get("loaded_version")
+            resolved_provider_name = record.get("resolved_provider_name")
+            cache_kind = record.get("cache_kind")
+            if not isinstance(version, str):
+                continue
+            if not isinstance(resolved_provider_name, str):
+                resolved_provider_name = provider_name
+            if not isinstance(cache_kind, str):
+                cache_kind = (
+                    "dependency" if cached_bin_name == installer_bin else "binary"
+                )
+
+            abspath_path = Path(cached_abspath)
+            if not abspath_path.exists():
+                continue
+
+            records.append(
+                (
+                    provider_name,
+                    resolved_provider_name,
+                    cached_bin_name,
+                    abspath_path,
+                    version,
+                    cache_kind,
+                ),
+            )
+
+    return records
 
 
-def format_loaded_binary_line(
-    version: Any,
-    abspath: Path | str,
-    provider_name: str,
-) -> str:
-    return f"{version} {abspath} ({provider_name})"
+def list_cached_binaries(
+    options: CliOptions,
+    names: tuple[str, ...] = (),
+) -> list[str]:
+    providers = tuple(
+        build_providers(
+            options.provider_names,
+            dry_run=False,
+            install_root=options.install_root,
+            bin_dir=options.bin_dir,
+            euid=options.euid,
+            install_timeout=options.install_timeout,
+            version_timeout=options.version_timeout,
+        ),
+    )
+    installer_lines: list[str] = []
+    binary_lines: list[str] = []
+    seen_installer_lines: set[str] = set()
+    seen_binary_lines: set[str] = set()
+    for (
+        _cache_owner,
+        resolved_provider_name,
+        _bin_name,
+        abspath,
+        version,
+        _cache_kind,
+    ) in cached_binaries(options, names, providers=providers):
+        line = format_loaded_binary_line(
+            version,
+            abspath,
+            resolved_provider_name,
+            _bin_name,
+        )
+        installer_bin = cast(
+            str,
+            PROVIDER_CLASS_BY_NAME[_cache_owner].model_fields["INSTALLER_BIN"].default,
+        )
+        if _bin_name == installer_bin:
+            if line in seen_installer_lines:
+                continue
+            seen_installer_lines.add(line)
+            installer_lines.append(line)
+        else:
+            if line in seen_binary_lines or line in seen_installer_lines:
+                continue
+            seen_binary_lines.add(line)
+            binary_lines.append(line)
+    if installer_lines and binary_lines:
+        return [*installer_lines, "", *binary_lines]
+    return installer_lines or binary_lines
 
 
-def version_report(options: CliOptions) -> str:
-    lines = [get_package_version()]
+def version_report(options: CliOptions):
+    recognized_env_vars = [
+        "ABXPKG_DRY_RUN",
+        "DRY_RUN",
+        "ABXPKG_DEBUG",
+        "ABXPKG_NO_CACHE",
+        "ABXPKG_INSTALL_TIMEOUT",
+        "ABXPKG_VERSION_TIMEOUT",
+        "ABXPKG_POSTINSTALL_SCRIPTS",
+        "ABXPKG_MIN_RELEASE_AGE",
+        "ABXPKG_BINPROVIDERS",
+        "ABXPKG_LIB_DIR",
+    ]
+    for provider_name in ALL_PROVIDER_NAMES:
+        provider_class = PROVIDER_CLASS_BY_NAME[provider_name]
+        recognized_env_vars.append(f"ABXPKG_{provider_name.upper()}_ROOT")
+        recognized_env_vars.append(
+            f"{cast(str, provider_class.model_fields['INSTALLER_BIN'].default).upper()}_BINARY",
+        )
+    env_parts = []
+    for env_name in recognized_env_vars:
+        value = os.environ.get(env_name)
+        if value is None:
+            continue
+        rendered_value = (
+            summarize_value(value, 120)
+            if os.sep in value or value.startswith(("~", ".", "/"))
+            else value
+        )
+        env_parts.append(f"{env_name}={rendered_value}")
+    yield get_package_version()
+    yield " ".join(
+        (
+            f"ARCH={platform.machine()}",
+            f"OS={platform.system()}",
+            f"PLATFORM={platform.platform()}",
+            f"PYTHON={sys.implementation.name.title()}-{'.'.join(map(str, sys.version_info[:3]))}",
+            *env_parts,
+        ),
+    )
     for provider in build_providers(
         options.provider_names,
         dry_run=False,
+        install_root=options.install_root,
+        bin_dir=options.bin_dir,
+        euid=options.euid,
+        install_timeout=options.install_timeout,
+        version_timeout=options.version_timeout,
     ):
         try:
-            installer_binary = provider.INSTALLER_BINARY()
+            provider.setup_PATH(no_cache=options.no_cache)
         except Exception:
-            continue
-        if installer_binary is None:
-            continue
-        version = str(installer_binary.loaded_version or "unknown")
-        abspath = installer_binary.loaded_abspath
-        if not abspath:
-            continue
-        lines.append(
-            format_loaded_binary_line(
-                version,
-                abspath,
-                provider.name,
+            pass
+        emoji = (
+            type(provider).__private_attributes__["_log_emoji"].default
+            or BinProvider.__private_attributes__["_log_emoji"].default
+        )
+        installer_binary = None
+        try:
+            installer_binary = provider.INSTALLER_BINARY(no_cache=options.no_cache)
+        except Exception:
+            installer_binary = None
+
+        status = "✅" if provider.is_valid else "❌"
+        yield ""
+        heading = Text()
+        heading.append(f"{emoji} ", style="bold")
+        heading.append(
+            f"{provider.__class__.__name__} ({provider.name})",
+            style="bold bright_white",
+        )
+        heading.append(f" {status}", style="green" if status == "✅" else "red")
+        yield heading
+
+        installer_line = Text("   ")
+        installer_line.append("INSTALLER_BINARY=", style="bold cyan")
+        if installer_binary and installer_binary.loaded_abspath:
+            resolved_by = (
+                installer_binary.loaded_binprovider.name
+                if installer_binary.loaded_binprovider is not None
+                else provider.name
+            )
+            installer_line.append(
+                " ".join(
+                    (
+                        str(installer_binary.loaded_version or "unknown"),
+                        summarize_value(installer_binary.loaded_abspath, 10_000),
+                        f"({installer_binary.name})",
+                        resolved_by,
+                        f"euid={provider.EUID}",
+                    ),
+                ),
+            )
+        else:
+            installer_line.append(f"None euid={provider.EUID}")
+        yield installer_line
+
+        path_line = Text("   ")
+        path_line.append("PATH=", style="bold cyan")
+        path_line.append(
+            summarize_value(
+                str(provider.PATH).replace(DEFAULT_ENV_PATH, "$PATH"),
+                10_000,
             ),
         )
-    return "\n".join(lines)
+        yield path_line
+
+        provider_env = provider.ENV
+        env_line = Text("   ")
+        env_line.append("ENV=", style="bold cyan")
+        env_line.append(
+            "{"
+            + ", ".join(
+                f"{key}: {summarize_value(str(value).replace(DEFAULT_ENV_PATH, '$PATH'), 10_000) if isinstance(value, str) else summarize_value(value, 10_000)}"
+                for key, value in provider_env.items()
+                if value is not None
+            )
+            + "}",
+        )
+        yield env_line
+        install_root_line = Text("   ")
+        install_root_line.append("install_root=", style="bold cyan")
+        install_root_line.append(summarize_value(provider.install_root, 10_000))
+        yield install_root_line
+        bin_dir_line = Text("   ")
+        bin_dir_line.append("bin_dir=", style="bold cyan")
+        bin_dir_line.append(summarize_value(provider.bin_dir, 10_000))
+        yield bin_dir_line
+
+        upstream_binary_lines: list[str] = []
+        installed_binary_lines: list[str] = []
+        for (
+            _cache_owner,
+            resolved_provider_name,
+            cached_bin_name,
+            abspath,
+            version,
+            cache_kind,
+        ) in cached_binaries(options, (provider.name,), providers=(provider,)):
+            line = format_loaded_binary_line(
+                version,
+                abspath,
+                resolved_provider_name,
+                cached_bin_name,
+            )
+            if cache_kind == "dependency":
+                upstream_binary_lines.append(line)
+                continue
+            installed_binary_lines.append(line)
+
+        if upstream_binary_lines:
+            upstream_line = Text("   ")
+            upstream_line.append("depends_on_binaries=", style="bold cyan")
+            yield upstream_line
+            for line in upstream_binary_lines:
+                yield Text("      " + line)
+
+        if installed_binary_lines:
+            installed_line = Text("   ")
+            installed_line.append("installed_binaries=", style="bold cyan")
+            yield installed_line
+            for line in installed_binary_lines:
+                yield Text("      " + line)
 
 
 def shared_options(command):
@@ -655,11 +1118,57 @@ def shared_options(command):
             help="Comma-separated provider order. Defaults to ABXPKG_BINPROVIDERS or all providers.",
         ),
         click.option(
+            "--global",
+            "global_mode",
+            default=None,
+            flag_value=True,
+            help="Thin alias for --lib=None. Bare --global = True.",
+        ),
+        click.option(
             "--lib",
             "lib_dir",
             metavar="PATH",
             default=None,
             help="Base library directory. Defaults to ABXPKG_LIB_DIR or $XDG_CONFIG_HOME/abx/lib.",
+        ),
+    ):
+        command = decorator(command)
+    return command
+
+
+def binary_override_options(command):
+    for decorator in (
+        click.option(
+            "--packages",
+            "packages_override",
+            metavar="JSON_OR_STR",
+            default=None,
+            callback=_click_parse(_parse_handler_override),
+            help="Default packages override applied to all selected providers unless --overrides specifies a provider-specific value.",
+        ),
+        click.option(
+            "--install-args",
+            "install_args_override",
+            metavar="JSON_OR_STR",
+            default=None,
+            callback=_click_parse(_parse_handler_override),
+            help="Default install_args override applied to all selected providers unless --overrides specifies a provider-specific value.",
+        ),
+        click.option(
+            "--version",
+            "version_override",
+            metavar="JSON_OR_STR",
+            default=None,
+            callback=_click_parse(_parse_handler_override),
+            help="Default version override applied to all selected providers unless --overrides specifies a provider-specific value.",
+        ),
+        click.option(
+            "--abspath",
+            "abspath_override",
+            metavar="JSON_OR_STR",
+            default=None,
+            callback=_click_parse(_parse_handler_override),
+            help="Default abspath override applied to all selected providers unless --overrides specifies a provider-specific value.",
         ),
     ):
         command = decorator(command)
@@ -672,11 +1181,16 @@ def shared_options(command):
 # source of truth for what gets forwarded to ``build_cli_options``.
 _SHARED_OPTION_NAMES: tuple[str, ...] = (
     "lib_dir",
+    "global_mode",
     "binproviders",
     "dry_run",
     "debug",
     "no_cache",
     "min_version",
+    "abspath_override",
+    "version_override",
+    "install_args_override",
+    "packages_override",
     "postinstall_scripts",
     "min_release_age",
     "overrides",
@@ -727,6 +1241,7 @@ def run_binary_command(
             result.loaded_version,
             result.loaded_abspath,
             provider_name,
+            result.name,
         ),
     )
 
@@ -735,6 +1250,8 @@ def clear_lib_dir(lib_dir: Path) -> None:
     if lib_dir.is_symlink() or lib_dir.is_file():
         lib_dir.unlink(missing_ok=True)
         return
+    if lib_dir.exists():
+        logger.info("$ %s", format_command(["rm", "-rf", str(lib_dir)]))
     shutil.rmtree(lib_dir, ignore_errors=True)
 
 
@@ -781,7 +1298,8 @@ def cli(
     ctx.obj["update_before_run"] = update_before_run
 
     if show_version:
-        _echo(version_report(options))
+        for line in version_report(options):
+            _echo(line)
         ctx.exit()
 
     if ctx.invoked_subcommand is None:
@@ -804,21 +1322,31 @@ def version_command(
         options = replace(options, dry_run=False)
         run_binary_command(binary_name, action="load", options=options)
         return
-    _echo(version_report(options))
+    for line in version_report(options):
+        _echo(line)
 
 
 @cli.command("list")
+@click.argument("names", nargs=-1)
 @click.pass_context
 @shared_options
-def list_command(ctx: click.Context, **shared_kwargs: Any) -> None:
+def list_command(
+    ctx: click.Context,
+    names: tuple[str, ...],
+    **shared_kwargs: Any,
+) -> None:
     """List binaries installed under the configured library directory."""
 
-    get_command_options(ctx, **shared_kwargs)
+    options = get_command_options(ctx, **shared_kwargs)
+    lines = list_cached_binaries(options, names)
+    if lines:
+        _echo("\n".join(lines))
 
 
 @cli.command("install")
 @click.argument("binary_name")
 @click.pass_context
+@binary_override_options
 @shared_options
 def install_command(
     ctx: click.Context,
@@ -827,6 +1355,19 @@ def install_command(
 ) -> None:
     """Install a binary via the selected providers in order."""
 
+    options = get_command_options(ctx, **shared_kwargs)
+    run_binary_command(binary_name, action="install", options=options)
+
+
+@cli.command("add", hidden=True)
+@click.argument("binary_name")
+@click.pass_context
+@shared_options
+def add_command(
+    ctx: click.Context,
+    binary_name: str,
+    **shared_kwargs: Any,
+) -> None:
     options = get_command_options(ctx, **shared_kwargs)
     run_binary_command(binary_name, action="install", options=options)
 
@@ -844,6 +1385,7 @@ def clear_command(ctx: click.Context, **shared_kwargs: Any) -> None:
 @cli.command("update")
 @click.argument("binary_name")
 @click.pass_context
+@binary_override_options
 @shared_options
 def update_command(
     ctx: click.Context,
@@ -856,9 +1398,23 @@ def update_command(
     run_binary_command(binary_name, action="update", options=options)
 
 
+@cli.command("upgrade", hidden=True)
+@click.argument("binary_name")
+@click.pass_context
+@shared_options
+def upgrade_command(
+    ctx: click.Context,
+    binary_name: str,
+    **shared_kwargs: Any,
+) -> None:
+    options = get_command_options(ctx, **shared_kwargs)
+    run_binary_command(binary_name, action="update", options=options)
+
+
 @cli.command("uninstall")
 @click.argument("binary_name")
 @click.pass_context
+@binary_override_options
 @shared_options
 def uninstall_command(
     ctx: click.Context,
@@ -871,9 +1427,23 @@ def uninstall_command(
     run_binary_command(binary_name, action="uninstall", options=options)
 
 
+@cli.command("remove", hidden=True)
+@click.argument("binary_name")
+@click.pass_context
+@shared_options
+def remove_command(
+    ctx: click.Context,
+    binary_name: str,
+    **shared_kwargs: Any,
+) -> None:
+    options = get_command_options(ctx, **shared_kwargs)
+    run_binary_command(binary_name, action="uninstall", options=options)
+
+
 @cli.command("load")
 @click.argument("binary_name")
 @click.pass_context
+@binary_override_options
 @shared_options
 def load_command(
     ctx: click.Context,
@@ -899,6 +1469,7 @@ def load_command(
         "help_option_names": [],
     },
 )
+@binary_override_options
 @shared_options
 @click.option(
     "--install",
@@ -952,6 +1523,7 @@ def run_command(
     configure_cli_logging(debug=run_options.debug)
 
     runtime_binproviders: list[BinProvider] = []
+    binary_options = run_options
 
     # --script: the OS appends the script path as binary_args[0] via the
     # shebang.  Parse its /// metadata and resolve deps before normal run.
@@ -987,6 +1559,9 @@ def run_command(
         # Resolve all declared dependencies and collect their runtime ENV for
         # the final script execution. Provider resolution remains hermetic:
         # only the subprocess env gets the merged dependency PATH / ENV.
+        explicit_provider_selection = shared_kwargs.get(
+            "binproviders",
+        ) is not None or os.environ.get("ABXPKG_BINPROVIDERS") not in (None, "")
         for dep in meta.get("dependencies", []):
             if isinstance(dep, str):
                 dep_name = dep
@@ -1004,6 +1579,79 @@ def run_command(
                 if "min_version" in dep:
                     dep_options = replace(dep_options, min_version=dep["min_version"])
             else:
+                continue
+
+            if dep_name == binary_name:
+                if not isinstance(dep, dict):
+                    continue
+                if (
+                    not explicit_provider_selection
+                    and "binproviders" in dep
+                    and binary_options.provider_names == run_options.provider_names
+                ):
+                    binary_options = replace(
+                        binary_options,
+                        provider_names=dep["binproviders"],
+                    )
+                replacement_kwargs: dict[str, Any] = {}
+                for field_name in (
+                    "min_version",
+                    "postinstall_scripts",
+                    "min_release_age",
+                    "euid",
+                    "install_timeout",
+                    "version_timeout",
+                ):
+                    if (
+                        field_name in dep
+                        and getattr(binary_options, field_name) is None
+                    ):
+                        replacement_kwargs[field_name] = dep[field_name]
+                for field_name in ("install_root", "bin_dir"):
+                    if (
+                        field_name in dep
+                        and getattr(binary_options, field_name) is None
+                        and dep[field_name] is not None
+                    ):
+                        replacement_kwargs[field_name] = (
+                            Path(
+                                dep[field_name],
+                            )
+                            .expanduser()
+                            .resolve()
+                        )
+                if "overrides" in dep and dep["overrides"] is not None:
+                    merged_overrides = json.loads(
+                        json.dumps(dep["overrides"]),
+                    )
+                    if binary_options.overrides:
+                        stack: list[tuple[dict[str, Any], dict[str, Any]]] = [
+                            (merged_overrides, binary_options.overrides),
+                        ]
+                        while stack:
+                            base_dict, override_dict = stack.pop()
+                            for key, value in override_dict.items():
+                                existing = base_dict.get(key)
+                                if isinstance(existing, dict) and isinstance(
+                                    value,
+                                    dict,
+                                ):
+                                    stack.append((existing, value))
+                                else:
+                                    base_dict[key] = value
+                    replacement_kwargs["overrides"] = merged_overrides
+                dep_handler_overrides = {
+                    key: dep[key]
+                    for key in ("abspath", "version", "install_args", "packages")
+                    if key in dep and dep[key] is not None
+                }
+                if dep_handler_overrides:
+                    replacement_kwargs["handler_overrides"] = {
+                        **dep_handler_overrides,
+                        **(binary_options.handler_overrides or {}),
+                    }
+                if replacement_kwargs:
+                    binary_options = replace(binary_options, **replacement_kwargs)
                 continue
 
             try:
@@ -1032,9 +1680,11 @@ def run_command(
 
     binary = build_binary(
         binary_name,
-        run_options,
+        binary_options,
         dry_run=run_options.dry_run,
     )
+    if not script_mode:
+        runtime_binproviders.extend(binary.binproviders)
     update_provider_names = [
         provider_name
         for provider_name in run_options.provider_names
@@ -1182,7 +1832,7 @@ _ABXPKG_GROUP_OPTS_WITH_VALUES = frozenset(
     if isinstance(param, click.Option) and not param.is_flag
     for opt in param.opts
     if opt.startswith("--") and opt not in _BARE_TRUE_BOOL_FLAGS
-)
+) | frozenset({"--abspath", "--version", "--install-args", "--packages"})
 
 _ABX_USAGE = (
     "Usage: abx [OPTIONS] BINARY_NAME [BINARY_ARGS]...\n"
@@ -1193,7 +1843,7 @@ _ABX_USAGE = (
     "Options (forwarded to abxpkg): --lib, --binproviders, --dry-run,\n"
     "--debug, "
     "--no-cache, "
-    "--update, --version, --help.\n"
+    "--update, --version, --help, --abspath, --install-args, --packages.\n"
 )
 
 
@@ -1254,6 +1904,7 @@ def abx_main() -> None:
     # Expand bare bool flags only in the pre-binary-name slice; rest is
     # the child binary's argv and must be forwarded verbatim.
     pre = _expand_bare_bool_flags(pre)
+    pre = ["--update" if tok == "--upgrade" else tok for tok in pre]
 
     if not rest:
         # No binary name given. Forward info-only flags so `abx --version`

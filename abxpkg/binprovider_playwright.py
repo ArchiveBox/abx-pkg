@@ -9,7 +9,7 @@ import sys
 import platform
 from pathlib import Path
 
-from pydantic import Field, PrivateAttr, TypeAdapter, computed_field
+from pydantic import Field, TypeAdapter, computed_field
 
 from .base_types import (
     BinName,
@@ -21,9 +21,9 @@ from .base_types import (
     bin_abspath,
 )
 from .binary import Binary
-from .binprovider import BinProvider, EnvProvider, remap_kwargs
+from .binprovider import BinProvider, EnvProvider, log_method_call, remap_kwargs
 from .binprovider_npm import NpmProvider
-from .logging import format_subprocess_output, get_logger
+from .logging import format_command, format_subprocess_output, get_logger
 from .semver import SemVer
 
 logger = get_logger(__name__)
@@ -52,6 +52,7 @@ class PlaywrightProvider(BinProvider):
     """
 
     name: BinProviderName = "playwright"
+    _log_emoji = "🎬"
     INSTALLER_BIN: BinName = "playwright"
 
     PATH: PATHStr = ""  # Starts empty; setup_PATH() fills it with bin_dir and any install_root/npm helper bins.
@@ -66,13 +67,14 @@ class PlaywrightProvider(BinProvider):
         default_factory=lambda: abxpkg_install_root_default("playwright"),
         validation_alias="playwright_root",
     )
+    # Only set in managed mode: setup()/default_abspath_handler() use it to create and read
+    # stable browser shims under ``<install_root>/bin``; global mode leaves it unset.
     bin_dir: Path | None = None
 
     # Only Linux needs the sudo-first execution path for
     # ``playwright install --with-deps``. On macOS and elsewhere,
     # run as the normal user by default.
     euid: int | None = 0 if platform.system().lower() == "linux" else None
-    _NODE_BINARY: Binary | None = PrivateAttr(default=None)
 
     @computed_field
     @property
@@ -81,13 +83,164 @@ class PlaywrightProvider(BinProvider):
             return {}
         return {"PLAYWRIGHT_BROWSERS_PATH": str(self.install_root)}
 
-    def supports_min_release_age(self, action) -> bool:
+    def supports_min_release_age(self, action, no_cache: bool = False) -> bool:
         return False
 
-    def supports_postinstall_disable(self, action) -> bool:
+    def supports_postinstall_disable(self, action, no_cache: bool = False) -> bool:
         return False
 
-    def setup_PATH(self) -> None:
+    def INSTALLER_BINARY(self, no_cache: bool = False):
+        from . import DEFAULT_PROVIDER_NAMES, PROVIDER_CLASS_BY_NAME
+
+        lib_dir = os.environ.get("ABXPKG_LIB_DIR")
+        if (
+            self.install_root is not None
+            and lib_dir
+            and str(self.install_root).startswith(lib_dir.rstrip("/") + "/")
+        ):
+            local_cli = Path(lib_dir) / "npm" / "node_modules" / ".bin" / "playwright"
+        elif self.install_root is not None:
+            local_cli = (
+                self.install_root / "npm" / "node_modules" / ".bin" / "playwright"
+            )
+        else:
+            local_cli = None
+
+        if (
+            local_cli is not None
+            and local_cli.is_file()
+            and os.access(local_cli, os.X_OK)
+        ):
+            if not no_cache:
+                loaded = self.load_cached_binary(self.INSTALLER_BIN, local_cli)
+                if loaded and loaded.loaded_abspath:
+                    self._INSTALLER_BINARY = loaded
+                    return loaded
+            if (
+                not no_cache
+                and self._INSTALLER_BINARY
+                and self._INSTALLER_BINARY.loaded_abspath == local_cli
+                and self._INSTALLER_BINARY.is_valid
+            ):
+                return self._INSTALLER_BINARY
+            env_provider = EnvProvider(
+                PATH=str(local_cli.parent),
+                install_root=None,
+                bin_dir=None,
+            )
+            loaded = env_provider.load(
+                bin_name=self.INSTALLER_BIN,
+                no_cache=no_cache,
+            )
+            if loaded and loaded.loaded_abspath:
+                raw_provider_names = os.environ.get("ABXPKG_BINPROVIDERS")
+                selected_provider_names = (
+                    [
+                        provider_name.strip()
+                        for provider_name in raw_provider_names.split(",")
+                    ]
+                    if raw_provider_names
+                    else list(DEFAULT_PROVIDER_NAMES)
+                )
+                upstream_providers = [
+                    EnvProvider(install_root=None, bin_dir=None)
+                    if provider_name == "env"
+                    else PROVIDER_CLASS_BY_NAME[provider_name]()
+                    for provider_name in selected_provider_names
+                    if provider_name and provider_name in PROVIDER_CLASS_BY_NAME
+                ]
+                if loaded.loaded_version and loaded.loaded_sha256:
+                    self.write_cached_binary(
+                        self.INSTALLER_BIN,
+                        loaded.loaded_abspath,
+                        loaded.loaded_version,
+                        loaded.loaded_sha256,
+                        resolved_provider_name=(
+                            loaded.loaded_binprovider.name
+                            if loaded.loaded_binprovider is not None
+                            else self.name
+                        ),
+                        cache_kind="dependency",
+                    )
+                dependency_providers = [
+                    provider
+                    for provider in upstream_providers
+                    if provider.name != self.name
+                ]
+                node_loaded = (
+                    Binary(
+                        name="node",
+                        binproviders=dependency_providers,
+                    ).load(no_cache=no_cache)
+                    if dependency_providers
+                    else None
+                )
+                if (
+                    node_loaded
+                    and node_loaded.loaded_abspath
+                    and node_loaded.loaded_version
+                    and node_loaded.loaded_sha256
+                ):
+                    self.write_cached_binary(
+                        "node",
+                        node_loaded.loaded_abspath,
+                        node_loaded.loaded_version,
+                        node_loaded.loaded_sha256,
+                        resolved_provider_name=(
+                            node_loaded.loaded_binprovider.name
+                            if node_loaded.loaded_binprovider is not None
+                            else self.name
+                        ),
+                        cache_kind="dependency",
+                    )
+                self._INSTALLER_BINARY = loaded
+                return self._INSTALLER_BINARY
+
+        loaded = super().INSTALLER_BINARY(no_cache=no_cache)
+        raw_provider_names = os.environ.get("ABXPKG_BINPROVIDERS")
+        selected_provider_names = (
+            [provider_name.strip() for provider_name in raw_provider_names.split(",")]
+            if raw_provider_names
+            else list(DEFAULT_PROVIDER_NAMES)
+        )
+        upstream_providers = [
+            EnvProvider(install_root=None, bin_dir=None)
+            if provider_name == "env"
+            else PROVIDER_CLASS_BY_NAME[provider_name]()
+            for provider_name in selected_provider_names
+            if provider_name
+            and provider_name in PROVIDER_CLASS_BY_NAME
+            and provider_name != self.name
+        ]
+        node_loaded = (
+            Binary(
+                name="node",
+                binproviders=upstream_providers,
+            ).load(no_cache=no_cache)
+            if upstream_providers
+            else None
+        )
+        if (
+            node_loaded
+            and node_loaded.loaded_abspath
+            and node_loaded.loaded_version
+            and node_loaded.loaded_sha256
+        ):
+            self.write_cached_binary(
+                "node",
+                node_loaded.loaded_abspath,
+                node_loaded.loaded_version,
+                node_loaded.loaded_sha256,
+                resolved_provider_name=(
+                    node_loaded.loaded_binprovider.name
+                    if node_loaded.loaded_binprovider is not None
+                    else self.name
+                ),
+                cache_kind="dependency",
+            )
+        return loaded
+
+    def setup_PATH(self, no_cache: bool = False) -> None:
         """Populate PATH on first use with bin_dir and any install_root/npm helper bin dirs."""
         if self.bin_dir is None and self.install_root is not None:
             self.bin_dir = self.install_root / "bin"
@@ -109,8 +262,9 @@ class PlaywrightProvider(BinProvider):
                 PATH=self.PATH,
                 prepend=True,
             )
-        super().setup_PATH()
+        super().setup_PATH(no_cache=no_cache)
 
+    @log_method_call(include_result=True)
     def exec(
         self,
         bin_name,
@@ -170,6 +324,7 @@ class PlaywrightProvider(BinProvider):
             **kwargs,
         )
 
+    @log_method_call()
     def setup(
         self,
         *,
@@ -335,21 +490,19 @@ class PlaywrightProvider(BinProvider):
             "try{process.stdout.write(bt.executablePath());}"
             "catch(e){process.exit(3);}"
         )
-        node_binary = None if no_cache else self._NODE_BINARY
-        if node_binary is None:
-            node_binary = Binary(
-                name="node",
-                binproviders=[
-                    EnvProvider(
-                        postinstall_scripts=True,
-                        min_release_age=0,
-                    ),
-                ],
-                postinstall_scripts=True,
-                min_release_age=0,
-            ).load(no_cache=no_cache)
-            if not no_cache and node_binary is not None:
-                self._NODE_BINARY = node_binary
+        # Resolve node via the normal provider API every time instead of
+        # caching hidden provider-local state.
+        node_binary = Binary(
+            name="node",
+            binproviders=[
+                EnvProvider(
+                    postinstall_scripts=True,
+                    min_release_age=0,
+                ),
+            ],
+            postinstall_scripts=True,
+            min_release_age=0,
+        ).load(no_cache=no_cache)
         if node_binary is None or node_binary.loaded_abspath is None:
             return None
         proc = self.exec(
@@ -364,6 +517,7 @@ class PlaywrightProvider(BinProvider):
         return path if path.exists() else None
 
     def _refresh_symlink(self, bin_name: str, target: Path) -> Path:
+        """Refresh the managed browser shim, using a tiny launcher for macOS .app bundles."""
         assert self.bin_dir is not None, (
             "_refresh_symlink must only be called when bin_dir is set"
         )
@@ -409,7 +563,7 @@ class PlaywrightProvider(BinProvider):
                 return link
         resolved = self._playwright_browser_path(
             str(bin_name),
-            no_cache=bool(context.get("no_cache", False)),
+            no_cache=no_cache,
         )
         if not resolved:
             return None
@@ -438,7 +592,6 @@ class PlaywrightProvider(BinProvider):
         no_cache: bool = False,
         **context,
     ) -> str:
-        self.setup(no_cache=no_cache)
         install_args = list(install_args or self.get_install_args(bin_name))
         merged_args = ["--with-deps", *install_args]
         if no_cache and "--force" not in merged_args:
@@ -448,7 +601,7 @@ class PlaywrightProvider(BinProvider):
             return f"DRY_RUN would run: playwright install {' '.join(merged_args)}"
 
         effective_timeout = timeout if timeout is not None else self.install_timeout
-        installer_bin = self.INSTALLER_BINARY().loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
         install_cmd = ["install", *merged_args]
         # Retry on dpkg lock contention (apt-get may be held by a
@@ -578,6 +731,7 @@ class PlaywrightProvider(BinProvider):
         if self.install_root is not None and self.install_root.is_dir():
             for entry in self.install_root.iterdir():
                 if entry.is_dir() and entry.name.startswith(f"{bin_name}-"):
+                    logger.info("$ %s", format_command(["rm", "-rf", str(entry)]))
                     shutil.rmtree(entry, ignore_errors=True)
         return True
 

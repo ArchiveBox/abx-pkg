@@ -70,7 +70,7 @@ class TestAptProvider:
             bin_name=test_machine.pick_missing_apt_package(),
         )
 
-    def test_helper_install_args_used_by_pyinfra_ansible_backends(self, test_machine):
+    def test_helper_install_args_used_by_native_apt_backend(self, test_machine):
         test_machine.require_tool("apt-get")
 
         primary = test_machine.pick_missing_apt_package()

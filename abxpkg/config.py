@@ -16,6 +16,8 @@ DERIVED_CACHE_KEY = "ABXPKG_DERIVED_CACHE"
 class SupportsExecEnv(Protocol):
     PATH: str
 
+    def setup_PATH(self) -> None: ...
+
     @property
     def ENV(self) -> dict[str, str]: ...
 
@@ -99,6 +101,7 @@ def build_exec_env(
             continue
         seen_providers.add(provider_id)
 
+        provider.setup_PATH()
         provider_env = dict(provider.ENV)
         provider_path = provider_env.pop("PATH", None)
         if provider_path:

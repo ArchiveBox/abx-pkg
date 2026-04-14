@@ -71,20 +71,20 @@ from .binprovider_bash import BashProvider
 ALL_PROVIDERS = [
     EnvProvider,
     UvProvider,
-    PipProvider,
     PnpmProvider,
-    NpmProvider,
-    YarnProvider,
-    BunProvider,
-    BrewProvider,
+    PuppeteerProvider,
     GemProvider,
     GoGetProvider,
     CargoProvider,
+    BrewProvider,
     PlaywrightProvider,
-    PuppeteerProvider,
     AptProvider,
     NixProvider,
     DockerProvider,
+    PipProvider,
+    NpmProvider,
+    BunProvider,
+    YarnProvider,
     DenoProvider,
     AnsibleProvider,
     PyinfraProvider,
@@ -104,19 +104,32 @@ ALL_PROVIDER_CLASS_NAMES = [
     _provider_class(provider).__name__ for provider in ALL_PROVIDERS
 ]  # PipProvider, AptProvider, BrewProvider, etc.
 
+
+# Default provider names: names of providers that are enabled by default based on the current OS
+DEFAULT_PROVIDER_NAMES = [
+    provider_name
+    for provider_name in ALL_PROVIDER_NAMES
+    if not (OPERATING_SYSTEM == "darwin" and provider_name == "apt")
+    and provider_name not in ("ansible", "pyinfra")
+]
+
 # Lazy provider singletons: maps provider name -> class
 # e.g. 'apt' -> AptProvider, 'pip' -> PipProvider, 'env' -> EnvProvider
-_PROVIDER_CLASS_BY_NAME = {
+PROVIDER_CLASS_BY_NAME = {
     _provider_class(provider).model_fields["name"].default: _provider_class(provider)
     for provider in ALL_PROVIDERS
 }
 _provider_singletons: dict = {}
 
 
+# Lazy provider singletons: maps provider name -> class
+# e.g. 'apt' -> AptProvider, 'pip' -> PipProvider, 'env' -> EnvProvider
+# This is a lazy singleton pattern that allows us to instantiate providers
+# only when they are needed, and not when the module is imported.
 def __getattr__(name: str):
-    if name in _PROVIDER_CLASS_BY_NAME:
+    if name in PROVIDER_CLASS_BY_NAME:
         if name not in _provider_singletons:
-            _provider_singletons[name] = _PROVIDER_CLASS_BY_NAME[name]()
+            _provider_singletons[name] = PROVIDER_CLASS_BY_NAME[name]()
         return _provider_singletons[name]
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
@@ -166,6 +179,9 @@ __all__ = [
     "DEFAULT_PATH",
     "DEFAULT_ENV_PATH",
     "PYTHON_BIN_DIR",
+    "PROVIDER_CLASS_BY_NAME",
+    "ALL_PROVIDER_NAMES",
+    "DEFAULT_PROVIDER_NAMES",
     # BinProviders (classes)
     "EnvProvider",
     "AptProvider",

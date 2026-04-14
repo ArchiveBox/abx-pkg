@@ -1604,6 +1604,8 @@ uv tool add abxpkg
 
 # CLI
 abxpkg --version
+abxpkg version
+abxpkg list
 abxpkg install yt-dlp
 abxpkg update yt-dlp
 abxpkg uninstall yt-dlp
@@ -1614,7 +1616,7 @@ abxpkg install --binproviders=env,uv,pip,apt,brew prettier
 env ABXPKG_BINPROVIDERS=env,uv,pip,apt,brew abxpkg install yt-dlp
 
 # Customize install location
-abxpkg --lib=~/.config/abx/lib install yt-dlp
+abxpkg --lib=~/my-abx-lib install yt-dlp
 env ABXPKG_LIB_DIR=/tmp/abxlib abxpkg install yt-dlp
 
 # Dry-run mode

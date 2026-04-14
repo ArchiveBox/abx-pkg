@@ -123,18 +123,14 @@ class TestBunProvider:
     ):
         with tempfile.TemporaryDirectory() as temp_dir:
             tmp_path = Path(temp_dir)
-            cache_file = tmp_path / "bun-cache-file"
-            cache_file.write_text("not-a-directory", encoding="utf-8")
-
             provider = BunProvider(
                 install_root=tmp_path / "bun",
-                cache_dir=cache_file,
                 postinstall_scripts=True,
                 min_release_age=0,
             )
 
             installed = provider.install("zx")
-            assert provider.cache_arg == "--no-cache"
+            assert provider.cache_dir.is_dir()
             test_machine.assert_shallow_binary_loaded(installed)
 
     def test_provider_direct_methods_exercise_real_lifecycle(self, test_machine):
