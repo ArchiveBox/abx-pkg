@@ -364,7 +364,7 @@ class TestMachine:
         if expect_present_before:
             assert dry_removed is True
         else:
-            assert dry_removed in (False, True)
+            assert dry_removed is False
 
         after = provider.load(bin_name, quiet=True, no_cache=True)
         if expect_present_before:
