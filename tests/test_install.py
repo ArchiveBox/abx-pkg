@@ -16,7 +16,7 @@ class TestInstall:
         test_machine.assert_shallow_binary_loaded(loaded)
         test_machine.assert_shallow_binary_loaded(installed)
         test_machine.assert_shallow_binary_loaded(loaded_or_installed)
-        test_machine.assert_shallow_binary_loaded(updated)
+        assert updated is None
         assert uninstalled is False
 
     def test_pip_binary_install_surface(self, test_machine):

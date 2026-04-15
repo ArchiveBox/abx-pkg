@@ -1546,7 +1546,7 @@ def test_help_command_matches_root_help_output():
 
     assert help_result.exit_code == 0
     assert alias_result.exit_code == 0
-    assert alias_result.output == help_result.output
+    assert click.unstyle(alias_result.output) == click.unstyle(help_result.output)
 
 
 def test_install_postinstall_scripts_false_warns_on_unsupporting_providers(tmp_path):

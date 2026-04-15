@@ -21,9 +21,31 @@ def _pyinfra_provider_for_host(test_machine):
     )
     return provider, test_machine.pick_missing_provider_binary(
         provider,
-        ("tree", "rename", "jq", "tmux", "screen")
+        (
+            "tree",
+            "rename",
+            "jq",
+            "tmux",
+            "screen",
+            "sl",
+            "toilet",
+            "btop",
+            "ranger",
+            "mc",
+        )
         if shutil.which("apt-get")
-        else ("hello", "jq", "watch", "fzy", "tree"),
+        else (
+            "hello",
+            "jq",
+            "watch",
+            "fzy",
+            "tree",
+            "sl",
+            "toilet",
+            "btop",
+            "ranger",
+            "nnn",
+        ),
     )
 
 

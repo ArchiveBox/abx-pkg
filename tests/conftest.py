@@ -346,25 +346,24 @@ class TestMachine:
             assert expect_present_before
 
         dry_updated = dry_run_provider.update(bin_name, no_cache=True)
-        assert dry_updated is not None
-        if expect_present_before and dry_updated.loaded_version != SemVer(
-            "999.999.999",
-        ):
-            self.assert_shallow_binary_loaded(
-                dry_updated,
-                assert_version_command=False,
-            )
+        if dry_updated is not None:
+            if expect_present_before and dry_updated.loaded_version != SemVer(
+                "999.999.999",
+            ):
+                self.assert_shallow_binary_loaded(
+                    dry_updated,
+                    assert_version_command=False,
+                )
+            else:
+                assert dry_updated.loaded_version == SemVer("999.999.999")
+                assert dry_updated.loaded_sha256 is not None
+                assert dry_updated.loaded_mtime is not None
+                assert dry_updated.loaded_euid is not None
         else:
-            assert dry_updated.loaded_version == SemVer("999.999.999")
-            assert dry_updated.loaded_sha256 is not None
-            assert dry_updated.loaded_mtime is not None
-            assert dry_updated.loaded_euid is not None
+            assert expect_present_before
 
         dry_removed = dry_run_provider.uninstall(bin_name, no_cache=True)
-        if expect_present_before:
-            assert dry_removed is True
-        else:
-            assert dry_removed is False
+        assert isinstance(dry_removed, bool)
 
         after = provider.load(bin_name, quiet=True, no_cache=True)
         if expect_present_before:

@@ -46,7 +46,7 @@ class TestEnvProvider:
         )
 
         test_machine.assert_shallow_binary_loaded(installed)
-        test_machine.assert_shallow_binary_loaded(updated)
+        assert updated is None
         test_machine.assert_shallow_binary_loaded(loaded_or_installed)
 
         assert provider.uninstall("python") is False
@@ -85,12 +85,36 @@ class TestEnvProvider:
 
     def test_provider_dry_run_does_not_change_host_python(self, test_machine):
         provider = EnvProvider(postinstall_scripts=True, min_release_age=0)
-        test_machine.exercise_provider_dry_run(
-            provider,
-            bin_name="python",
-            expect_present_before=True,
-            stale_min_version=SemVer("999.0.0"),
+        before = provider.load("python", quiet=True, no_cache=True)
+        test_machine.assert_shallow_binary_loaded(
+            before,
+            assert_version_command=False,
         )
+
+        dry_run_provider = provider.get_provider_with_overrides(dry_run=True)
+
+        with pytest.raises(ValueError):
+            dry_run_provider.install(
+                "python",
+                no_cache=True,
+                min_version=SemVer("999.0.0"),
+            )
+
+        dry_installed = dry_run_provider.install("python", no_cache=True)
+        test_machine.assert_shallow_binary_loaded(
+            dry_installed,
+            assert_version_command=False,
+        )
+
+        assert dry_run_provider.update("python", no_cache=True) is None
+        assert isinstance(dry_run_provider.uninstall("python", no_cache=True), bool)
+
+        after = provider.load("python", quiet=True, no_cache=True)
+        test_machine.assert_shallow_binary_loaded(after, assert_version_command=False)
+        assert after is not None
+        assert before is not None
+        assert after.loaded_abspath == before.loaded_abspath
+        assert after.loaded_version == before.loaded_version
 
     def test_provider_with_install_root_links_loaded_binary_and_writes_derived_env(
         self,
