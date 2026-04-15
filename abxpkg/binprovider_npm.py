@@ -155,34 +155,6 @@ class NpmProvider(BinProvider):
                     return arg.split("=", 1)[1]
         return None
 
-    def _resolve_security_constraints(
-        self,
-        install_args: InstallArgs,
-        *,
-        postinstall_scripts: bool,
-        min_release_age: float | None,
-    ) -> tuple[bool, float]:
-        """Resolve effective security settings after honoring explicit user CLI overrides."""
-        effective_postinstall_scripts = postinstall_scripts
-        if self._install_args_have_option(install_args, "--ignore-scripts"):
-            effective_postinstall_scripts = False
-
-        explicit_min_release_age = self._install_arg_value(
-            install_args,
-            "--min-release-age",
-        )
-        if explicit_min_release_age is not None:
-            try:
-                effective_min_release_age = float(explicit_min_release_age)
-            except ValueError as err:
-                raise ValueError(
-                    f"{self.__class__.__name__} got invalid --min-release-age value: {explicit_min_release_age!r}",
-                ) from err
-        else:
-            effective_min_release_age = min_release_age or 0
-
-        return effective_postinstall_scripts, effective_min_release_age
-
     def default_install_args_handler(
         self,
         bin_name: BinName,
@@ -435,11 +407,21 @@ class NpmProvider(BinProvider):
                 else arg
                 for arg in install_args
             ]
-        postinstall_scripts, min_release_age = self._resolve_security_constraints(
+        if self._install_args_have_option(install_args, "--ignore-scripts"):
+            postinstall_scripts = False
+        explicit_min_release_age = self._install_arg_value(
             install_args,
-            postinstall_scripts=postinstall_scripts,
-            min_release_age=min_release_age,
+            "--min-release-age",
         )
+        if explicit_min_release_age is not None:
+            try:
+                min_release_age = float(explicit_min_release_age)
+            except ValueError as err:
+                raise ValueError(
+                    f"{self.__class__.__name__} got invalid --min-release-age value: {explicit_min_release_age!r}",
+                ) from err
+        else:
+            min_release_age = 7.0 if min_release_age is None else min_release_age
 
         mutation_args = self._build_mutation_args(
             install_args,
@@ -488,11 +470,21 @@ class NpmProvider(BinProvider):
                 else arg
                 for arg in install_args
             ]
-        postinstall_scripts, min_release_age = self._resolve_security_constraints(
+        if self._install_args_have_option(install_args, "--ignore-scripts"):
+            postinstall_scripts = False
+        explicit_min_release_age = self._install_arg_value(
             install_args,
-            postinstall_scripts=postinstall_scripts,
-            min_release_age=min_release_age,
+            "--min-release-age",
         )
+        if explicit_min_release_age is not None:
+            try:
+                min_release_age = float(explicit_min_release_age)
+            except ValueError as err:
+                raise ValueError(
+                    f"{self.__class__.__name__} got invalid --min-release-age value: {explicit_min_release_age!r}",
+                ) from err
+        else:
+            min_release_age = 7.0 if min_release_age is None else min_release_age
 
         mutation_args = self._build_mutation_args(
             install_args,
@@ -537,11 +529,8 @@ class NpmProvider(BinProvider):
             "@puppeteer/browsers",
         ):
             install_args = ["puppeteer"]
-        postinstall_scripts, _ = self._resolve_security_constraints(
-            install_args,
-            postinstall_scripts=postinstall_scripts,
-            min_release_age=min_release_age,
-        )
+        if self._install_args_have_option(install_args, "--ignore-scripts"):
+            postinstall_scripts = False
 
         cache_arg = (
             "--no-cache"

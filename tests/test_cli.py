@@ -1150,7 +1150,7 @@ def test_abx_version_flag_is_forwarded_without_running_a_binary():
     assert proc.returncode == 0, proc.stderr
     from abxpkg.cli import get_package_version
 
-    assert get_package_version() in proc.stdout
+    assert proc.stdout.strip() == get_package_version()
 
 
 def test_abxpkg_version_runs_without_error():

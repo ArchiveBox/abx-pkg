@@ -404,7 +404,8 @@ class PlaywrightProvider(BinProvider):
         # didn't express a preference.
         if effective_postinstall is None:
             effective_postinstall = True
-        effective_min_release_age = effective_min_release_age or 0
+        if effective_min_release_age is None:
+            effective_min_release_age = 0.0
 
         # Determine where to install the playwright npm package.
         # Hermetic: install_root/npm

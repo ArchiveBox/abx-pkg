@@ -364,7 +364,10 @@ class YarnProvider(BinProvider):
     ) -> str:
         installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
-        postinstall_scripts = bool(postinstall_scripts)
+        postinstall_scripts = (
+            False if postinstall_scripts is None else postinstall_scripts
+        )
+        min_release_age = 7.0 if min_release_age is None else min_release_age
         install_args = install_args or self.get_install_args(bin_name)
         if min_version:
             install_args = [
@@ -459,7 +462,10 @@ class YarnProvider(BinProvider):
     ) -> str:
         installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
-        postinstall_scripts = bool(postinstall_scripts)
+        postinstall_scripts = (
+            False if postinstall_scripts is None else postinstall_scripts
+        )
+        min_release_age = 7.0 if min_release_age is None else min_release_age
         install_args = install_args or self.get_install_args(bin_name)
         if min_version:
             install_args = [

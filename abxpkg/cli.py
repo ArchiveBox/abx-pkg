@@ -1871,7 +1871,7 @@ _ABXPKG_GROUP_OPTS_WITH_VALUES = frozenset(
     if isinstance(param, click.Option) and not param.is_flag
     for opt in param.opts
     if opt.startswith("--") and opt not in _BARE_TRUE_BOOL_FLAGS
-) | frozenset({"--abspath", "--version", "--install-args", "--packages"})
+) | frozenset({"--abspath", "--install-args", "--packages"})
 
 _ABX_USAGE = (
     "Usage: abx [OPTIONS] BINARY_NAME [BINARY_ARGS]...\n"
@@ -1949,7 +1949,10 @@ def abx_main() -> None:
         # No binary name given. Forward info-only flags so `abx --version`
         # and `abx --help` still do something useful; otherwise print our
         # own usage to stderr and exit 2 like click would.
-        if any(flag in pre for flag in ("--help", "-h", "--version")):
+        if "--version" in pre:
+            _echo(get_package_version())
+            return
+        if any(flag in pre for flag in ("--help", "-h")):
             cli(pre)
             return
         _echo(_ABX_USAGE, err=True)

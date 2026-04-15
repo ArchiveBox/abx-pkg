@@ -233,8 +233,10 @@ class PuppeteerProvider(BinProvider):
                     prepend=True,
                 )
             return
-        postinstall_scripts = bool(postinstall_scripts)
-        min_release_age = 0 if min_release_age is None else min_release_age
+        postinstall_scripts = (
+            False if postinstall_scripts is None else postinstall_scripts
+        )
+        min_release_age = 0.0 if min_release_age is None else min_release_age
 
         if self.install_root is not None:
             self.install_root.mkdir(parents=True, exist_ok=True)
