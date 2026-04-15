@@ -1,0 +1,56 @@
+abxpkg/binprovider_deno.py
+  67a976da5825c26a 198-201
+abxpkg/binprovider_npm.py
+  675681f7d2b2b8ca 410-412,414,416-424,473-475,477,479-487,532-533
+README.md
+  67a976da5825c26a 706-707,783,802-803,806,825,845,864-865,873,884-885,888,904-905,908,925-926,929,966-967,970,987-988,991,1007-1008,1011,1027-1028,1048-1049,1052,1069-1070,1073,1090-1091,1095,1101
+abxpkg/binprovider_puppeteer.py
+  67a976da5825c26a 236-239
+abxpkg/cli.py
+  67a976da5825c26a 1874,1952-1955
+abxpkg/binprovider_yarn.py
+  67a976da5825c26a 367-370,465-468
+abxpkg/binprovider_playwright.py
+  67a976da5825c26a 407-408
+abxpkg/binprovider_bun.py
+  67a976da5825c26a 232-235,297-300
+tests/test_cli.py
+  67a976da5825c26a 1153
+abxpkg/binprovider_uv.py
+  67a976da5825c26a 361-364,429-432
+abxpkg/binprovider_pnpm.py
+  67a976da5825c26a 295-298,358-361
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "58e5a0d36002393121eb3e5d5d5f4f715c27ff77",
+  "prompts": {
+    "675681f7d2b2b8ca": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d84cf-f8bf-7421-aa46-1ef0e140c385",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 28,
+      "total_deletions": 39,
+      "accepted_lines": 28,
+      "overriden_lines": 0
+    },
+    "67a976da5825c26a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019d717c-705b-75f1-8c2f-c652b4164be1",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 92,
+      "total_deletions": 78,
+      "accepted_lines": 91,
+      "overriden_lines": 0
+    }
+  }
+}
