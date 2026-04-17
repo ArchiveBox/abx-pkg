@@ -288,7 +288,7 @@ class PlaywrightProvider(BinProvider):
         # (root host or already-elevated). The first command token
         # must be an absolute path because sudo's secure_path may not
         # contain our bin_dir.
-        env = (kwargs.pop("env", None) or os.environ.copy()).copy()
+        env = self.build_exec_env(base_env=(kwargs.pop("env", None) or os.environ))
         env_assignments: list[str] = []
         if self.install_root is not None:
             env["PLAYWRIGHT_BROWSERS_PATH"] = str(self.install_root)
