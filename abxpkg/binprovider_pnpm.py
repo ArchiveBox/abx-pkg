@@ -30,6 +30,7 @@ from .binprovider import (
     remap_kwargs,
 )
 from .logging import format_subprocess_output
+from .windows_compat import link_binary
 from .semver import SemVer
 
 
@@ -276,8 +277,9 @@ class PnpmProvider(BinProvider):
         link_path.parent.mkdir(parents=True, exist_ok=True)
         if link_path.exists() or link_path.is_symlink():
             link_path.unlink(missing_ok=True)
-        link_path.symlink_to(target)
-        return TypeAdapter(HostBinPath).validate_python(link_path)
+        # Symlink on Unix, hardlink/copy fallback on Windows.
+        result = link_binary(target, link_path)
+        return TypeAdapter(HostBinPath).validate_python(result)
 
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(

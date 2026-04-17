@@ -30,6 +30,7 @@ from .binprovider import (
     remap_kwargs,
 )
 from .binprovider_npm import NpmProvider
+from .windows_compat import get_current_euid, link_binary
 from .logging import (
     format_command,
     format_subprocess_output,
@@ -405,8 +406,8 @@ class PuppeteerProvider(BinProvider):
             )
             link_path.chmod(0o755)
             return link_path
-        link_path.symlink_to(target)
-        return link_path
+        # Cross-platform: symlink on Unix, hardlink/copy fallback on Windows.
+        return link_binary(target, link_path)
 
     def default_abspath_handler(
         self,
@@ -604,7 +605,7 @@ class PuppeteerProvider(BinProvider):
             proc.returncode != 0
             and "--install-deps" in normalized_install_args
             and "requires root privileges" in install_output
-            and os.geteuid() != 0
+            and get_current_euid() != 0
             and self._has_sudo()
         ):
             sudo_proc = self._run_install_with_sudo(
