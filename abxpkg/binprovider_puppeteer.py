@@ -317,11 +317,6 @@ class PuppeteerProvider(BinProvider):
             cwd=self.install_root or ".",
             quiet=True,
             timeout=self.version_timeout,
-            env=(
-                {**os.environ, "PUPPETEER_CACHE_DIR": str(self.cache_dir)}
-                if self.cache_dir is not None
-                else None
-            ),
         )
         if proc.returncode != 0:
             return []
@@ -549,11 +544,6 @@ class PuppeteerProvider(BinProvider):
             cmd=["-E", str(installer_bin), "install", *install_args],
             cwd=self.install_root or ".",
             timeout=self.install_timeout,
-            env=(
-                {**os.environ, "PUPPETEER_CACHE_DIR": str(self.cache_dir)}
-                if self.cache_dir is not None
-                else None
-            ),
         )
         if (
             proc.returncode == 0
@@ -607,11 +597,6 @@ class PuppeteerProvider(BinProvider):
             cmd=["install", *normalized_install_args],
             cwd=self.install_root or ".",
             timeout=timeout if timeout is not None else self.install_timeout,
-            env=(
-                {**os.environ, "PUPPETEER_CACHE_DIR": str(self.cache_dir)}
-                if self.cache_dir is not None
-                else None
-            ),
         )
 
         install_output = f"{proc.stdout}\n{proc.stderr}"
@@ -645,11 +630,6 @@ class PuppeteerProvider(BinProvider):
                 cmd=["install", *normalized_install_args],
                 cwd=self.install_root or ".",
                 timeout=timeout if timeout is not None else self.install_timeout,
-                env=(
-                    {**os.environ, "PUPPETEER_CACHE_DIR": str(self.cache_dir)}
-                    if self.cache_dir is not None
-                    else None
-                ),
             )
             install_output = f"{proc.stdout}\n{proc.stderr}"
 
@@ -662,11 +642,6 @@ class PuppeteerProvider(BinProvider):
                 cmd=["install", *normalized_install_args],
                 cwd=self.install_root or ".",
                 timeout=timeout if timeout is not None else self.install_timeout,
-                env=(
-                    {**os.environ, "PUPPETEER_CACHE_DIR": str(self.cache_dir)}
-                    if self.cache_dir is not None
-                    else None
-                ),
             )
             install_output = f"{proc.stdout}\n{proc.stderr}"
 

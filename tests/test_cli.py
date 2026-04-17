@@ -1500,6 +1500,36 @@ def test_upgrade_command_dispatches_to_update(monkeypatch):
     assert captured["action"] == "update"
 
 
+def test_upgrade_command_accepts_binary_override_flags(monkeypatch):
+    captured = {}
+
+    def fake_run_binary_command(binary_name, *, action, options):
+        captured["binary_name"] = binary_name
+        captured["action"] = action
+        captured["options"] = options
+
+    monkeypatch.setattr(cli_module, "run_binary_command", fake_run_binary_command)
+
+    result = CliRunner().invoke(
+        cli_module.cli,
+        [
+            "upgrade",
+            "--binproviders=pip",
+            '--install-args=["black==24.2.0"]',
+            '--overrides={"pip":{"version_timeout":99}}',
+            "black",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["binary_name"] == "black"
+    assert captured["action"] == "update"
+    assert captured["options"].handler_overrides == {
+        "install_args": ["black==24.2.0"],
+    }
+    assert captured["options"].overrides == {"pip": {"version_timeout": 99}}
+
+
 def test_add_command_dispatches_to_install(monkeypatch):
     captured = {}
 

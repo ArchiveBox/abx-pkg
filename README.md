@@ -10,10 +10,12 @@
 
 <br/>
 
-**It's an ORM for your package managers, providing a nice python types for packages + installers.**  
+**It's an ORM for your package managers, providing nice python types for packages + installers.**  
   
-**This is a [Python library](https://pypi.org/project/abxpkg/) for installing & managing packages locally with a variety of package managers.**  
-It's designed for when `requirements.txt` isn't enough, and you have to detect or install dependencies at runtime. It's great for installing and managing MCP servers and their dependencies at runtime.
+**This is a [Python library](https://pypi.org/project/abxpkg/) and all-in-one CLI for installing & managing packages locally with a variety of package managers.**  
+It's designed for when you have to detect or install binary or source dependencies at runtime.
+
+Stop distributing your apps via `curl | sh`! Instead you can bake package installation into your app, or use our `uv`-style [`abxpkg run --script`](https://github.com/ArchiveBox/abxpkg/#shebang-line-in-scripts) shebang headers to auto-install dependencies for you.
 
 
 ```bash

@@ -1440,6 +1440,7 @@ def update_command(
 @cli.command("upgrade", hidden=True)
 @click.argument("binary_name")
 @click.pass_context
+@binary_override_options
 @shared_options
 def upgrade_command(
     ctx: click.Context,

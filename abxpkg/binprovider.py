@@ -2544,10 +2544,9 @@ class EnvProvider(BinProvider):
             self.bin_dir = self.install_root / "bin"
         if self.bin_dir is not None:
             self.bin_dir.mkdir(parents=True, exist_ok=True)
-            base_path = "" if self.PATH == DEFAULT_ENV_PATH else self.PATH
             self.PATH = self._merge_PATH(
                 self.bin_dir,
-                PATH=base_path,
+                PATH=self.PATH,
                 prepend=True,
             )
         super().setup_PATH(no_cache=no_cache)
@@ -2689,8 +2688,6 @@ class EnvProvider(BinProvider):
             abspath = bin_abspath(bin_name_str, PATH=str(self.bin_dir))
         if not abspath:
             abspath = bin_abspath(bin_name_str, PATH=self.PATH)
-        if not abspath and self.PATH != DEFAULT_ENV_PATH:
-            abspath = bin_abspath(bin_name_str, PATH=DEFAULT_ENV_PATH)
         if not abspath:
             return None
         return self._link_loaded_binary(bin_name_str, abspath)

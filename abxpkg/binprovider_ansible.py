@@ -28,6 +28,7 @@ from .logging import (
     get_logger,
     log_subprocess_output,
 )
+from .config import apply_exec_env
 
 logger = get_logger(__name__)
 
@@ -187,9 +188,7 @@ def ansible_package_install(
             resolved_installer_module,
         )
         env["TMPDIR"] = SYSTEM_TEMP_DIR
-        env["PATH"] = ":".join(
-            [str(Path(sys.executable).parent), env.get("PATH", "")],
-        ).strip(":")
+        apply_exec_env({"PATH": f"{Path(sys.executable).parent}:"}, env)
         cmd = [
             ansible_playbook_abspath,
             "-i",
