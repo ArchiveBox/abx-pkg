@@ -2098,27 +2098,6 @@ class BinProvider(BaseModel):
         )
 
         self.setup_PATH(no_cache=no_cache)
-
-        if self.dry_run:
-            # return fake ShallowBinary without calling the handler
-            # no point running the real install if nothing should actually be installed
-            logger.info(
-                "DRY RUN (%s): skipping install of %s",
-                self.__class__.__name__,
-                bin_name,
-            )
-            return ShallowBinary.model_construct(
-                name=bin_name,
-                description=bin_name,
-                loaded_binprovider=self,
-                loaded_abspath=UNKNOWN_ABSPATH,
-                loaded_version=UNKNOWN_VERSION,
-                loaded_sha256=UNKNOWN_SHA256,
-                loaded_mtime=UNKNOWN_MTIME,
-                loaded_euid=UNKNOWN_EUID,
-                binproviders=[self],
-            )
-
         install_log = None
         exec_log_prefix_token = ACTIVE_EXEC_LOG_PREFIX.set(
             f"⛟  Installing {bin_name} via {self.name}...",
@@ -2145,6 +2124,19 @@ class BinProvider(BaseModel):
                 raise
         finally:
             ACTIVE_EXEC_LOG_PREFIX.reset(exec_log_prefix_token)
+
+        if self.dry_run:
+            return ShallowBinary.model_construct(
+                name=bin_name,
+                description=bin_name,
+                loaded_binprovider=self,
+                loaded_abspath=UNKNOWN_ABSPATH,
+                loaded_version=UNKNOWN_VERSION,
+                loaded_sha256=UNKNOWN_SHA256,
+                loaded_mtime=UNKNOWN_MTIME,
+                loaded_euid=UNKNOWN_EUID,
+                binproviders=[self],
+            )
 
         self.invalidate_cache(bin_name)
 
@@ -2281,25 +2273,6 @@ class BinProvider(BaseModel):
         )
 
         self.setup_PATH(no_cache=no_cache)
-
-        if self.dry_run:
-            logger.info(
-                "DRY RUN (%s): skipping update of %s",
-                self.__class__.__name__,
-                bin_name,
-            )
-            return ShallowBinary.model_construct(
-                name=bin_name,
-                description=bin_name,
-                loaded_binprovider=self,
-                loaded_abspath=UNKNOWN_ABSPATH,
-                loaded_version=UNKNOWN_VERSION,
-                loaded_sha256=UNKNOWN_SHA256,
-                loaded_mtime=UNKNOWN_MTIME,
-                loaded_euid=UNKNOWN_EUID,
-                binproviders=[self],
-            )
-
         update_log = None
         exec_log_prefix_token = ACTIVE_EXEC_LOG_PREFIX.set(
             f"⬆ Updating {bin_name} via {self.name}...",
@@ -2326,6 +2299,19 @@ class BinProvider(BaseModel):
                 raise
         finally:
             ACTIVE_EXEC_LOG_PREFIX.reset(exec_log_prefix_token)
+
+        if self.dry_run:
+            return ShallowBinary.model_construct(
+                name=bin_name,
+                description=bin_name,
+                loaded_binprovider=self,
+                loaded_abspath=UNKNOWN_ABSPATH,
+                loaded_version=UNKNOWN_VERSION,
+                loaded_sha256=UNKNOWN_SHA256,
+                loaded_mtime=UNKNOWN_MTIME,
+                loaded_euid=UNKNOWN_EUID,
+                binproviders=[self],
+            )
 
         self.invalidate_cache(bin_name)
 
@@ -2392,15 +2378,6 @@ class BinProvider(BaseModel):
             return False
         install_args = self.get_install_args(bin_name, quiet=quiet, no_cache=no_cache)
         self.setup_PATH(no_cache=no_cache)
-
-        if self.dry_run:
-            logger.info(
-                "DRY RUN (%s): skipping uninstall of %s",
-                self.__class__.__name__,
-                bin_name,
-            )
-            return True
-
         uninstall_result = None
         exec_log_prefix_token = ACTIVE_EXEC_LOG_PREFIX.set(
             f"🗑️ Uninstalling {bin_name} via {self.name}...",
@@ -2429,6 +2406,9 @@ class BinProvider(BaseModel):
             ACTIVE_EXEC_LOG_PREFIX.reset(exec_log_prefix_token)
 
         self.invalidate_cache(bin_name)
+
+        if self.dry_run:
+            return True
 
         if uninstall_result is not False:
             logger.info("🗑️ Uninstalled %s via %s", bin_name, self.name)
