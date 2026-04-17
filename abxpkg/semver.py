@@ -104,7 +104,7 @@ class SemVer(SemVerTuple):
             line.strip() for line in version_stdout.splitlines()[:5] if line.strip()
         ):
             version_columns = list(
-                filter(contains_semver, map(just_numbers, line.split()[:5])),
+                filter(contains_semver, map(just_numbers, line.split()[:10])),
             )
             if version_columns:
                 first_version_tuple = version_columns[0].split(".", 3)[:3]

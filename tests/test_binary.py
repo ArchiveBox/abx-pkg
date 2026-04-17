@@ -43,12 +43,15 @@ class TestBinary:
         test_machine,
     ):
         with tempfile.TemporaryDirectory() as tmpdir:
-            # Point EnvProvider at an empty PATH so the test stays hermetic
-            # even when ``black`` is already installed elsewhere on the host
-            # (common on dev machines and any image with uv tool installs).
+            # Point EnvProvider at an empty PATH and install_root so the test
+            # stays hermetic even when ``black`` is already installed
+            # elsewhere on the host or cached from a prior test run.
             empty_bin_dir = Path(tmpdir) / "empty_bin"
             empty_bin_dir.mkdir()
-            env_provider = EnvProvider(PATH=str(empty_bin_dir))
+            env_provider = EnvProvider(
+                PATH=str(empty_bin_dir),
+                install_root=Path(tmpdir) / "empty_env",
+            )
             pip_provider = PipProvider(
                 install_root=Path(tmpdir) / "venv",
                 postinstall_scripts=True,
