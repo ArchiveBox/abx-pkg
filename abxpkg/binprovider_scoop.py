@@ -38,20 +38,23 @@ class ScoopProvider(BinProvider):
 
     Maps each abxpkg lifecycle verb onto the matching ``scoop`` subcommand:
     ``install`` / ``update`` / ``uninstall``. Binaries land under
-    ``<install_root>/apps/<pkg>/current/`` and Scoop shims them into
-    ``<install_root>/shims/`` — the latter becomes this provider's
-    ``bin_dir``.
+    ``<install_root>/apps/<pkg>/current/``; scoop itself publishes
+    auto-generated PS/batch wrappers under ``<install_root>/shims/``
+    while abxpkg's managed symlinks live under ``<install_root>/bin/``
+    (same ``bin_dir`` convention as brew / cargo / gem / etc.).
     """
 
     name: BinProviderName = "scoop"
     _log_emoji = "🥄"
     INSTALLER_BIN: BinName = "scoop"
 
-    # Starts seeded with the known shim dirs; setup_PATH() normalizes this
-    # to ``<install_root>/shims`` + ``<install_root>/apps`` as soon as we
-    # know the real install_root.
+    # Starts seeded with the known layout dirs so resolution works even
+    # before setup_PATH() runs: abxpkg's managed ``bin/`` dir first, then
+    # scoop's native ``shims/`` (where its .ps1/.cmd wrappers live), then
+    # the raw ``apps/`` tree as a last-resort lookup for the actual exes.
     PATH: PATHStr = os.pathsep.join(
         [
+            str(DEFAULT_SCOOP_ROOT / "bin"),
             str(DEFAULT_SCOOP_ROOT / "shims"),
             str(DEFAULT_SCOOP_ROOT / "apps"),
         ],
@@ -63,8 +66,10 @@ class ScoopProvider(BinProvider):
         ),
         validation_alias="scoop_root",
     )
-    # bin_dir is unset until setup_PATH() resolves it from install_root.
-    # Tracks the shim dir where scoop-managed bins become resolvable.
+    # bin_dir is unset until setup_PATH() resolves it from install_root,
+    # then holds ``<install_root>/bin`` — the abxpkg-managed shim dir
+    # where ``_link_loaded_binary`` writes symlinks/hardlinks to
+    # scoop-installed binaries (mirrors brew / cargo / gem layout).
     bin_dir: Path | None = None
 
     @computed_field
@@ -85,8 +90,9 @@ class ScoopProvider(BinProvider):
         install_root = self.install_root
         if install_root is not None:
             if self.bin_dir is None:
-                self.bin_dir = install_root / "shims"
+                self.bin_dir = install_root / "bin"
             self.PATH = self._merge_PATH(
+                install_root / "bin",
                 install_root / "shims",
                 install_root / "apps",
                 PATH=self.PATH,
