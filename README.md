@@ -12,7 +12,7 @@
 
 **It's an ORM for your package managers, providing nice python types for packages + installers.**  
   
-**This is a [Python library](https://pypi.org/project/abxpkg/) and all-in-one CLI for installing & managing packages locally with a variety of package managers.**  
+**This is a [Python library](https://pypi.org/project/abxpkg/) and all-in-one CLI for managing packages locally with a variety of package managers.**  
 It's designed for when you have to detect or install binary or source dependencies at runtime.
 
 Stop distributing your apps via `curl | sh`! Instead you can bake package installation into your app, or use our `uv`-style [`abxpkg run --script`](https://github.com/ArchiveBox/abxpkg/#shebang-line-in-scripts) shebang headers to auto-install dependencies for you.
@@ -20,6 +20,8 @@ Stop distributing your apps via `curl | sh`! Instead you can bake package instal
 
 ```bash
 pip install abxpkg
+
+abxpkg --version
 ```
 
 ```python
@@ -67,6 +69,8 @@ for binary in dependencies:
 
 <br/>
 
+---
+
 > [!TIP]
 > **🔒 Stay safe from supply-chain attcaks with `abxpkg`:** We default to safe behavior (when providers allow):
 > 
@@ -74,7 +78,7 @@ for binary in dependencies:
 >  - `postinstall_scripts=False` (we don't run post-install scripts for packages by default)
 >  - `install_root=<platform default abx lib dir>` (the CLI defaults to a dedicated provider-rooted library dir so host system stays clean)
 >
-> You can customize these defaults on `Binary` or `BinProvider`, or with `ABXPKG_MIN_RELEASE_AGE`/`ABXPKG_POSTINSTALL_SCRIPTS=`/`ABXPKG_NO_CACHE`/`ABXPKG_LIB_DIR` (see [Configuration](#Configuration) below).
+> You can customize these defaults on `Binary` or `BinProvider`, or with `ABXPKG_MIN_RELEASE_AGE`/`ABXPKG_POSTINSTALL_SCRIPTS`/`ABXPKG_LIB_DIR` (see [Configuration](#Configuration) below).
 
 ---
 
