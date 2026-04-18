@@ -25,7 +25,7 @@ from .binprovider import BinProvider, EnvProvider, log_method_call, remap_kwargs
 from .binprovider_npm import NpmProvider
 from .logging import format_command, format_subprocess_output, get_logger
 from .semver import SemVer
-from .windows_compat import get_current_euid, link_binary
+from .windows_compat import IS_WINDOWS, get_current_euid, link_binary
 
 logger = get_logger(__name__)
 
@@ -296,8 +296,13 @@ class PlaywrightProvider(BinProvider):
             env_assignments.append(
                 f"PLAYWRIGHT_BROWSERS_PATH={self.install_root}",
             )
+        # Unix-only: the ``/usr/bin/env KEY=VAL`` wrapper + sudo path below
+        # doesn't exist on Windows, and ``get_current_euid()`` returns ``-1``
+        # there which would spuriously trip the guard.
         needs_sudo_env_wrapper = (
-            get_current_euid() != 0 and self.EUID != get_current_euid()
+            not IS_WINDOWS
+            and get_current_euid() != 0
+            and self.EUID != get_current_euid()
         )
         if env_assignments and needs_sudo_env_wrapper:
             resolved_bin = bin_name
@@ -638,8 +643,11 @@ class PlaywrightProvider(BinProvider):
         # ``PermissionError``. The chown itself routes through the
         # same euid=0 → sudo path, so it gets root permission for
         # free. No-op when we're already root or there is no install_root.
+        # chown is Unix-only; ``os.getuid()`` / ``os.getgid()`` below don't
+        # exist on Windows and NTFS ACL inheritance makes this block moot there.
         if (
-            self.install_root is not None
+            not IS_WINDOWS
+            and self.install_root is not None
             and self.install_root.is_dir()
             and get_current_euid() != 0
         ):

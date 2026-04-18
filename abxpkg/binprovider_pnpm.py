@@ -30,7 +30,7 @@ from .binprovider import (
     remap_kwargs,
 )
 from .logging import format_subprocess_output
-from .windows_compat import link_binary
+from .windows_compat import IS_WINDOWS, get_current_euid, link_binary
 from .semver import SemVer
 
 
@@ -158,7 +158,14 @@ class PnpmProvider(BinProvider):
         default_cache_dir = Path(USER_CACHE_PATH)
         if self._ensure_writable_cache_dir(default_cache_dir):
             return default_cache_dir
-        return Path(tempfile.gettempdir()) / f"abxpkg-pnpm-store-{os.getuid()}"
+        # ``os.getuid()`` is Unix-only; fall back to ``USERNAME`` on Windows
+        # so two concurrent users still land in distinct per-user stores.
+        user_suffix = (
+            get_current_euid()
+            if not IS_WINDOWS
+            else (os.environ.get("USERNAME") or "user")
+        )
+        return Path(tempfile.gettempdir()) / f"abxpkg-pnpm-store-{user_suffix}"
 
     def setup_PATH(self, no_cache: bool = False) -> None:
         """Populate PATH on first use from install_root/bin_dir, or PNPM_HOME in global mode."""
