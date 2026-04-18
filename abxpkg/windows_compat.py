@@ -29,7 +29,8 @@ import subprocess
 import tempfile
 from collections import namedtuple
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 
 
 IS_WINDOWS: bool = platform.system().lower() == "windows"
@@ -152,9 +153,7 @@ def get_pw_record(uid: int) -> Any:
                 raise
             return pwd.struct_passwd(
                 (
-                    os.environ.get("USER")
-                    or os.environ.get("LOGNAME")
-                    or str(uid),
+                    os.environ.get("USER") or os.environ.get("LOGNAME") or str(uid),
                     "x",
                     uid,
                     os.getegid(),
@@ -203,10 +202,7 @@ def ensure_writable_cache_dir(
             pass
         try:
             cache_dir.chmod(
-                cache_dir.stat().st_mode
-                | stat.S_IWUSR
-                | stat.S_IWGRP
-                | stat.S_IWOTH,
+                cache_dir.stat().st_mode | stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH,
             )
         except (PermissionError, OSError):
             pass
