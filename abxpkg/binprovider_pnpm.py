@@ -30,7 +30,7 @@ from .binprovider import (
     remap_kwargs,
 )
 from .logging import format_subprocess_output
-from .windows_compat import IS_WINDOWS, get_current_euid, link_binary
+from .windows_compat import IS_WINDOWS, link_binary
 from .semver import SemVer
 
 
@@ -158,12 +158,12 @@ class PnpmProvider(BinProvider):
         default_cache_dir = Path(USER_CACHE_PATH)
         if self._ensure_writable_cache_dir(default_cache_dir):
             return default_cache_dir
-        # ``os.getuid()`` is Unix-only; fall back to ``USERNAME`` on Windows
-        # so two concurrent users still land in distinct per-user stores.
+        # Use the real UID (not effective): under ``sudo`` the effective
+        # UID flips to 0, which would split the pnpm store between sudo
+        # and non-sudo runs and cause cache misses. ``os.getuid()`` is
+        # Unix-only so fall back to ``USERNAME`` on Windows.
         user_suffix = (
-            get_current_euid()
-            if not IS_WINDOWS
-            else (os.environ.get("USERNAME") or "user")
+            os.getuid() if not IS_WINDOWS else (os.environ.get("USERNAME") or "user")
         )
         return Path(tempfile.gettempdir()) / f"abxpkg-pnpm-store-{user_suffix}"
 

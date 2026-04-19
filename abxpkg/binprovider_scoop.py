@@ -18,9 +18,11 @@ from pydantic import Field, computed_field
 from .base_types import (
     BinName,
     BinProviderName,
+    HostBinPath,
     InstallArgs,
     PATHStr,
     abxpkg_install_root_default,
+    bin_abspath,
 )
 from .binprovider import BinProvider, remap_kwargs
 from .logging import format_subprocess_output
@@ -105,6 +107,33 @@ class ScoopProvider(BinProvider):
 
     def supports_postinstall_disable(self, action, no_cache: bool = False) -> bool:
         return False
+
+    def default_abspath_handler(
+        self,
+        bin_name: BinName | HostBinPath,
+        no_cache: bool = False,
+        **context,
+    ) -> HostBinPath | None:
+        """Resolve a scoop-installed binary.
+
+        The base class only searches ``bin_dir`` when it's set, but scoop
+        drops its generated shims under ``<install_root>/shims/`` — not
+        ``<install_root>/bin/``. So we mirror ``EnvProvider``'s fall-through
+        pattern: check the managed ``bin/`` dir first for any previously
+        linked symlink, fall through to ``self.PATH`` (which includes
+        ``shims/`` + ``apps/``) to locate scoop's own shim, then link the
+        resolved path into ``bin_dir`` so future lookups are fast.
+        """
+        bin_name_str = str(bin_name)
+        self.setup_PATH(no_cache=no_cache)
+        abspath = None
+        if self.bin_dir is not None:
+            abspath = bin_abspath(bin_name_str, PATH=str(self.bin_dir))
+        if not abspath:
+            abspath = bin_abspath(bin_name_str, PATH=self.PATH)
+        if not abspath:
+            return None
+        return self._link_loaded_binary(bin_name_str, abspath)
 
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(
