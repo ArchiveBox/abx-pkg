@@ -23,7 +23,7 @@ class SupportsExecEnv(Protocol):
 
 
 def _split_path(path_value: str | None) -> list[str]:
-    return [entry for entry in str(path_value or "").split(":") if entry]
+    return [entry for entry in str(path_value or "").split(os.pathsep) if entry]
 
 
 def apply_exec_env(
@@ -69,7 +69,7 @@ def merge_exec_path(
             seen.add(entry)
             merged.append(entry)
 
-    return ":".join(merged)
+    return os.pathsep.join(merged)
 
 
 def build_exec_env(

@@ -30,6 +30,7 @@ from .binprovider import (
     remap_kwargs,
 )
 from .binprovider_npm import NpmProvider
+from .windows_compat import IS_WINDOWS, get_current_euid, link_binary
 from .logging import (
     format_command,
     format_subprocess_output,
@@ -405,8 +406,8 @@ class PuppeteerProvider(BinProvider):
             )
             link_path.chmod(0o755)
             return link_path
-        link_path.symlink_to(target)
-        return link_path
+        # Cross-platform: symlink on Unix, hardlink/copy fallback on Windows.
+        return link_binary(target, link_path)
 
     def default_abspath_handler(
         self,
@@ -600,11 +601,15 @@ class PuppeteerProvider(BinProvider):
         )
 
         install_output = f"{proc.stdout}\n{proc.stderr}"
+        # The sudo-retry path is Unix-only: ``_run_install_with_sudo`` uses
+        # ``os.getuid()`` / ``os.getgid()`` to chown the cache dir back after
+        # a privileged install, neither of which exists on Windows.
         if (
-            proc.returncode != 0
+            not IS_WINDOWS
+            and proc.returncode != 0
             and "--install-deps" in normalized_install_args
             and "requires root privileges" in install_output
-            and os.geteuid() != 0
+            and get_current_euid() != 0
             and self._has_sudo()
         ):
             sudo_proc = self._run_install_with_sudo(
