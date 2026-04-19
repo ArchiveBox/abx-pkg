@@ -13,7 +13,7 @@ __package__ = "abxpkg"
 import os
 from pathlib import Path
 
-from pydantic import Field, computed_field
+from pydantic import Field, TypeAdapter, computed_field
 
 from .base_types import (
     BinName,
@@ -27,6 +27,7 @@ from .base_types import (
 from .binprovider import BinProvider, remap_kwargs
 from .logging import format_subprocess_output
 from .semver import SemVer
+from .windows_compat import link_binary
 
 
 _USER_PROFILE = Path(os.environ.get("USERPROFILE") or str(Path.home()))
@@ -118,11 +119,11 @@ class ScoopProvider(BinProvider):
 
         The base class only searches ``bin_dir`` when it's set, but scoop
         drops its generated shims under ``<install_root>/shims/`` — not
-        ``<install_root>/bin/``. So we mirror ``EnvProvider``'s fall-through
-        pattern: check the managed ``bin/`` dir first for any previously
-        linked symlink, fall through to ``self.PATH`` (which includes
-        ``shims/`` + ``apps/``) to locate scoop's own shim, then link the
-        resolved path into ``bin_dir`` so future lookups are fast.
+        ``<install_root>/bin/``. So we check the managed ``bin/`` dir
+        first for any previously linked shim, fall through to
+        ``self.PATH`` (which includes ``shims/`` + ``apps/``) to locate
+        scoop's own shim, then link the resolved path into ``bin_dir``
+        so subsequent lookups hit the managed ``bin/`` symlink directly.
         """
         bin_name_str = str(bin_name)
         self.setup_PATH(no_cache=no_cache)
@@ -133,7 +134,11 @@ class ScoopProvider(BinProvider):
             abspath = bin_abspath(bin_name_str, PATH=self.PATH)
         if not abspath:
             return None
-        return self._link_loaded_binary(bin_name_str, abspath)
+        link_name = Path(bin_name_str).name
+        if self.bin_dir is None or not link_name or link_name in {".", ".."}:
+            return TypeAdapter(HostBinPath).validate_python(abspath)
+        result = link_binary(Path(abspath), self.bin_dir / link_name)
+        return TypeAdapter(HostBinPath).validate_python(result)
 
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(
